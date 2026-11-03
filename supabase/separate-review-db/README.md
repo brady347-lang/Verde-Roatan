@@ -21,10 +21,11 @@ This folder is for the separate Supabase project named **Verde Roatan DB** only.
 | `PRIMARY_SUPABASE_ANON_KEY` | Secret | Existing project's public anon/publishable key |
 | `REVIEW_SUPABASE_URL` | Variable | `https://moaqgqbqfeckeabigfha.supabase.co` |
 | `REVIEW_SUPABASE_SERVICE_ROLE_KEY` | Secret | Service-role key from the separate Verde Roatan DB project |
+| `VERDE_ADMIN_EMAILS` | Secret | Comma-separated email allowlist matching the administrator account(s) already configured in the app |
 
 Never put either service-role key in the app, GitHub source, or a message. Add it only in Cloudflare Worker secrets.
-7. In the primary Supabase project's Auth user metadata, ensure administrators have a trusted `app_metadata.role = admin` claim. This must be set through a secure admin/server process, not by the user-editable profile metadata.
-8. Deploy the updated Gemini Worker only after reviewing the code and setting all four variables/secrets.
+7. Set `VERDE_ADMIN_EMAILS` to the exact email address(es) already authorized by the app's administrator identity check. Optionally, administrators may also use a trusted `app_metadata.role = admin` claim set through a secure admin/server process; never use user-editable profile metadata.
+8. Deploy the updated Gemini Worker only after reviewing the code and setting all five variables/secrets.
 
 ## Authentication and data flow
 
@@ -33,7 +34,7 @@ Never put either service-role key in the app, GitHub source, or a message. Add i
 - The Worker verifies the token against the primary project's Auth endpoint.
 - The Worker uploads the specimen photo to the separate project's private storage bucket and writes the review and confirmation records using the separate project's service-role key.
 - The separate project's service-role key never leaves Cloudflare.
-- The Worker admin-review endpoint checks the verified primary user's trusted `app_metadata.role = admin` claim before changing a review status.
+- The Worker admin-review endpoints check the verified primary user against the server-side `VERDE_ADMIN_EMAILS` allowlist or a trusted `app_metadata.role = admin` claim before exposing the queue or changing a review status.
 
 ## Security behavior
 
