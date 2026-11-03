@@ -1,0 +1,131 @@
+
+name: Prepare Verde Roatan Project
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract-project:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Extract original project
+        run: |
+          python - <<'PY'
+          import zipfile
+          import tempfile
+          import pathlib
+          import shutil
+          import os
+
+          repo = pathlib.Path.cwd()
+          zips = [
+              p for p in repo.glob("*.zip")
+              if p.is_file()
+          ]
+
+          if not zips:
+              raise SystemExit("ERROR: No project ZIP found in repository root.")
+
+          temp = pathlib.Path(tempfile.mkdtemp())
+          extracted = []
+
+          def safe_extract(archive, destination):
+              with zipfile.ZipFile(archive) as z:
+                  for item in z.infolist():
+                      target = (destination / item.filename).resolve()
+                      if not target.is_relative_to(destination.resolve()):
+                          raise RuntimeError("Unsafe ZIP path detected")
+                  z.extractall(destination)
+
+          for archive in zips:
+              folder = temp / archive.stem
+              folder.mkdir(parents=True, exist_ok=True)
+              safe_extract(archive, folder)
+              extracted.append(folder)
+
+          # Also inspect nested ZIP files.
+          for _ in range(3):
+              nested = []
+              for folder in list(extracted):
+                  for archive in folder.rglob("*.zip"):
+                      destination = archive.parent / (archive.stem + "_extracted")
+                      if not destination.exists():
+                          destination.mkdir(parents=True)
+                          safe_extract(archive, destination)
+                          nested.append(destination)
+              extracted.extend(nested)
+              if not nested:
+                  break
+
+          # Find the real React project.
+          candidates = []
+          for folder in extracted:
+              for package in folder.rglob("package.json"):
+                  project = package.parent
+                  score = 1
+                  if (project / "src" / "App.tsx").exists():
+                      score += 10
+                  if (project / "server.ts").exists():
+                      score += 5
+                  if (project / "vite.config.ts").exists():
+                      score += 3
+                  candidates.append((score, project))
+
+          if not candidates:
+              raise SystemExit(
+                  "ERROR: Could not find the original project package.json."
+              )
+
+          candidates.sort(key=lambda item: item[0], reverse=True)
+          project = candidates[0][1]
+
+          print("Selected project:", project)
+
+          excluded = {
+              ".git",
+              "node_modules",
+              "dist",
+              ".env",
+              ".env.local"
+          }
+
+          for item in project.iterdir():
+              if item.name in excluded:
+                  continue
+
+              if item.name == ".github":
+                  continue
+
+              target = repo / item.name
+
+              if item.is_dir():
+                  shutil.copytree(item, target, dirs_exist_ok=True)
+              else:
+                  shutil.copy2(item, target)
+
+          print("Project files restored successfully.")
+          PY
+
+      - name: Commit restored project
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No project changes to commit."
+          else
+            git commit -m "Restore complete Verde Roatan project structure"
+            git push
+          fi
