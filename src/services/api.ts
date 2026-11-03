@@ -477,6 +477,12 @@ export async function fetchAdminOrders(token: string): Promise<ActiveOrder[]> {
   });
 }
 
+// Customer reads use the same Supabase REST queries as the admin loader; RLS limits
+// this authenticated request to the signed-in customer's own orders and related rows.
+export async function fetchCustomerOrders(token: string): Promise<ActiveOrder[]> {
+  return fetchAdminOrders(token);
+}
+
 export async function fetchAdminTransactions(token: string): Promise<TransactionRecord[]> {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/transaction_records?select=*&order=timestamp.desc&limit=200`, {
     headers: {
