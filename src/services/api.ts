@@ -365,6 +365,52 @@ export async function refineBotanicalIdentification(
   throw new Error(lastError?.message || 'The refinement service is unavailable. Your original identification has been kept unchanged.');
 }
 
+export async function submitIdentificationFeedback(
+  mode: 'plant' | 'pest',
+  image: string,
+  result: AIAnalysisResult,
+  decision: 'confirmed' | 'corrected',
+  correctedCommonName: string,
+  correctedScientificName: string,
+  accessToken: string
+): Promise<{ review_id: string; review_status: string; message: string }> {
+  if (!accessToken) throw new Error('Please sign in before confirming an identification.');
+  if (!image?.startsWith('data:image/')) throw new Error('The original specimen photo is missing.');
+  if (mode !== 'plant') throw new Error('Plant identification feedback is currently available for plant specimens.');
+
+  const record = result.verified_botanical_record;
+  const candidate = result.candidates?.[0];
+  const payload = {
+    image,
+    identification: {
+      candidate: {
+        common_name: record?.common_name || candidate?.common_name || '',
+        scientific_name: record?.scientific_name || candidate?.scientific_name || '',
+        confidence_score: candidate?.confidence_score
+      }
+    },
+    decision,
+    corrected_common_name: correctedCommonName.trim(),
+    corrected_scientific_name: correctedScientificName.trim()
+  };
+
+  const response = await fetch(`${AI_WORKER_URL}/identification-review`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status !== 'success') {
+    throw new Error(data.error || data.message || 'Your identification feedback could not be saved.');
+  }
+  return data;
+}
+
 export async function supabaseAuthRequest(path: string, payload: any, token?: string): Promise<any> {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/${path}`, {
     method: 'POST',
