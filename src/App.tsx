@@ -38,6 +38,7 @@ import {
   fetchDeliveryZones,
   refineBotanicalIdentification,
   submitOrderCheckout,
+  submitIdentificationFeedback,
   supabaseAuthRequest,
   supabaseRpcRequest,
   refreshSupabaseSession,
@@ -651,6 +652,33 @@ export default function App() {
       setIdentifyError(err.message || 'Analysis could not be completed.');
       setIdentifyLoading(false);
     }
+  };
+
+  const handleSubmitIdentificationFeedback = async (
+    decision: 'confirmed' | 'corrected',
+    correctedCommonName = '',
+    correctedScientificName = ''
+  ) => {
+    if (!identifyPhoto || !identifyResult) {
+      throw new Error('Analyze a plant photo before submitting feedback.');
+    }
+    if (!session?.access_token) {
+      throw new Error('Please sign in to confirm or correct plant identifications.');
+    }
+    await submitIdentificationFeedback(
+      identifyMode,
+      identifyPhoto,
+      identifyResult,
+      decision,
+      correctedCommonName,
+      correctedScientificName,
+      session.access_token
+    );
+    showToast(
+      lang === 'es'
+        ? '¡Gracias! Tu confirmación se guardó para revisión botánica.'
+        : 'Thank you! Your feedback was saved for botanical review.'
+    );
   };
 
   const handleDeepRefreshSpecimen = async () => {
@@ -1678,6 +1706,7 @@ export default function App() {
                 setIdentifyError(null);
               }}
               onSaveToGarden={handleSaveToGarden}
+              onSubmitFeedback={handleSubmitIdentificationFeedback}
               onAddToCart={(storeId, qty) => handleAddToCart(storeId, qty)}
               formatMoney={formatMoney}
               catalog={currentCatalog}
