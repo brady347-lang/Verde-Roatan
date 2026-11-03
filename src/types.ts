@@ -372,3 +372,23 @@ export interface ActiveOrder {
   messages?: OrderMessage[];
 }
 
+
+
+export interface IdentificationReviewRecord {
+  id: string;
+  submitted_by: string;
+  image_path: string;
+  image_url?: string | null;
+  identification_mode: 'plant' | 'pest';
+  ai_common_name?: string | null;
+  ai_scientific_name?: string | null;
+  ai_confidence?: number | null;
+  proposed_common_name?: string | null;
+  proposed_scientific_name?: string | null;
+  submitter_notes?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+}
