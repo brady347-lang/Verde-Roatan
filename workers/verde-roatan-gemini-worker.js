@@ -93,15 +93,6 @@ export default {
     }
 
     const apiKey = env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({
-          status: 'error',
-          error: 'GEMINI_API_KEY is not configured in worker environment.'
-        }),
-        { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
-      );
-    }
 
     try {
       const body = await request.json().catch(() => ({}));
@@ -116,6 +107,18 @@ export default {
       }
       if (pathname === '/identification-review/admin/review') {
         return await handleIdentificationReviewAdmin(request, body, env);
+      }
+
+      // Review endpoints do not call Gemini and must remain available even if
+      // the Gemini secret is temporarily missing or being rotated.
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({
+            status: 'error',
+            error: 'GEMINI_API_KEY is not configured in worker environment.'
+          }),
+          { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        );
       }
 
       // Route 1: Refine Identification (Continuous Accuracy Pass)
@@ -589,7 +592,17 @@ async function handleIdentificationReview(request, body, env) {
     })
   });
   if (!confirmation.ok) {
-    throw new Error('The review photo was saved, but its confirmation record could not be saved. Please contact support.');
+    // Roll back the pending review and private photo so the user is not left
+    // with a review record that has no matching confirmation evidence.
+    await fetch(`${url}/rest/v1/identification_reviews?id=eq.${reviewId}`, {
+      method: 'DELETE',
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    }).catch(() => undefined);
+    await fetch(`${url}/storage/v1/object/identification-review-images/${objectPath}`, {
+      method: 'DELETE',
+      headers: { apikey: key, Authorization: `Bearer ${key}` }
+    }).catch(() => undefined);
+    throw new Error('The review could not be completed. Please try again.');
   }
 
   return new Response(JSON.stringify({
@@ -647,7 +660,7 @@ async function handleIdentificationReviewAdminList(request, body, env) {
 
 async function handleIdentificationReviewAdmin(request, body, env) {
   const user = await verifyPrimaryUser(request, env);
-  if (user.app_metadata?.role !== 'admin') {
+  if (!isVerifiedReviewAdmin(user, env)) {
     return new Response(JSON.stringify({ status: 'error', error: 'Administrator access is required.' }), {
       status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
     });
