@@ -5,9 +5,10 @@ export const API_WORKER_VERSION = '2.2.0';
 export const API_URL = 'https://verde-roatan-api.brady347.workers.dev';
 export const AI_WORKER_URL = 'https://verde-roatan-gemini-worker.brady347.workers.dev';
 export const CURRENCY_WORKER_URL = 'https://verde-roatan-currency-worker.brady347.workers.dev';
-export const SUPABASE_URL = 'https://moaqgqbqfeckeabigfha.supabase.co';
-// Public browser key is injected at build time; never use a service-role key here.
-export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_NIwpf0aZlDZkp5iVKLUZaA_fP_LmCTM';
+// Keep the established production Supabase project as the app's primary database.
+export const SUPABASE_URL = 'https://tjzqxsyxvfdabfguezmu.supabase.co';
+// Public publishable key for the established production project; never use a service-role key here.
+export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_vj7nV0g2fbPF11TfKtalKQ_BMUbQ8RD';
 
 // Masked Admin Verification (Never expose in plain text)
 const _AUTH_SIG = [89,110,74,104,90,72,107,51,78,68,78,65,90,50,49,104,97,87,119,117,89,50,57,116];
