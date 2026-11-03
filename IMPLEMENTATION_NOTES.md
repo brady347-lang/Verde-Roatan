@@ -44,3 +44,25 @@ This pass preserves the original React/TypeScript application and its existing S
 - Full `npm run build` and `npm run lint` could not be run in this environment: dependencies are not installed and npm package installation timed out. A direct `tsc --noEmit` attempt stopped because `vite/client` type definitions were unavailable.
 - No Android APK was built in this environment. The included GitHub Actions workflow is the prepared cloud build path; it must be run from a GitHub repository to produce the downloadable debug APK.
 - No remote Supabase database, Storage bucket, user metadata, or Cloudflare Worker was changed by this source preparation. The SQL migration must be applied in the user's Supabase project and the admin JWT app_metadata claim must be set before the photo upload test will pass.
+
+
+## 2026-11-03 — Catalog persistence and identification review workflow
+
+- Catalog refresh now merges API rows with cached records, preserving a previous permanent image URL when the API response omits it and retaining local draft rows instead of wiping them on launch.
+- Existing plant/product edit forms now upload newly selected photos to the existing production project's `product-images` bucket before saving the returned permanent URL locally. The upload helper attempts to update both existing `products` and `catalog_items` records and requires at least one matching row.
+- Newly created catalog records are still local drafts until the existing Cloudflare API worker's insert contract is available. The front end does not claim these drafts have been synced to the server.
+- Added a customer-facing plant identification feedback panel to confirm an AI result or submit a proposed correction.
+- Added a Cloudflare Gemini Worker route that verifies the existing primary Supabase access token against the primary project's Auth API, stores the specimen photo privately in the separate Verde Roatan DB, and records a pending review plus the customer's confirmation/correction.
+- Added a secure admin queue route with signed private image previews and approve/reject operations. Admin access is checked server-side against the `VERDE_ADMIN_EMAILS` Cloudflare secret or a trusted `app_metadata.role = admin` claim.
+- Added the administrator Identification Review tab to the app.
+- Added `supabase/separate-review-db/identification_review_schema.sql` and setup documentation. The separate review database denies direct `anon` / `authenticated` table access; the Cloudflare Worker uses its service-role key. No production database or Cloudflare Worker has been changed remotely.
+- Added a CI syntax check for the Cloudflare Worker.
+
+### Required external setup before runtime testing
+
+1. Run the SQL only in Supabase project `moaqgqbqfeckeabigfha`.
+2. Add `PRIMARY_SUPABASE_URL`, `PRIMARY_SUPABASE_ANON_KEY`, `REVIEW_SUPABASE_URL`, `REVIEW_SUPABASE_SERVICE_ROLE_KEY`, and `VERDE_ADMIN_EMAILS` to the Cloudflare Gemini Worker settings. Service-role keys must remain Cloudflare secrets.
+3. Deploy the updated Gemini Worker.
+4. Test as a signed-in customer and as the configured administrator.
+
+The app and worker source changes are on the safety branch only. No live SQL, Worker deployment, main-branch merge, or production release has been performed.
