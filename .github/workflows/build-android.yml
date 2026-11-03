@@ -3,6 +3,9 @@ name: Verde Roatan - Android APK Build
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - safety/supabase-target-hardening
 
 permissions:
   contents: read
