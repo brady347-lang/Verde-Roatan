@@ -463,7 +463,7 @@ export async function fetchAdminOrders(token: string): Promise<ActiveOrder[]> {
       payment_status: row.payment_status || 'pending',
       payment_method: row.payment_method || undefined,
       delivery_type: row.delivery_type || 'island_delivery',
-      exchange_rate_used: Number(row.exchange_rate_used || 26),
+      exchange_rate_used: Number(row.usd_to_hnl_rate || row.exchange_rate_used || 26),
       assigned_supplier_id: row.assigned_supplier_id || undefined,
       assigned_supplier_name: row.assigned_supplier_name || undefined,
       supplier_cost: Number(row.supplier_cost || 0),
