@@ -475,7 +475,27 @@ export default function App() {
 
     // Refresh the catalog from the existing API worker on every app launch.
     fetchCatalog().then((res) => {
-      if (Array.isArray(res)) setCatalog(res);
+      if (Array.isArray(res)) {
+        // Keep locally cached photos for matching records when the API response omits image_url.
+        // Also retain locally created draft items; these are not yet synced to the catalog API.
+        setCatalog((previousCatalog) => {
+          const previousById = new Map(previousCatalog.map((item) => [String(item.id), item]));
+          const remoteIds = new Set(res.map((item) => String(item.id)));
+          const mergedRemote = res.map((remoteItem) => {
+            const previousItem = previousById.get(String(remoteItem.id));
+            return {
+              ...previousItem,
+              ...remoteItem,
+              image_url: remoteItem.image_url || previousItem?.image_url || ''
+            };
+          });
+          const localDrafts = previousCatalog.filter((item) =>
+            !remoteIds.has(String(item.id)) &&
+            (String(item.id).startsWith('p-') || String(item.id).startsWith('prd-'))
+          );
+          return [...localDrafts, ...mergedRemote];
+        });
+      }
     }).catch((error) => {
       console.warn('Live catalog refresh skipped; keeping the last saved catalog.', error);
     });
