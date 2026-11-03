@@ -52,6 +52,6 @@ Never put either service-role key in the app, GitHub source, or a message. Add i
 - [ ] Run the SQL in the separate project.
 - [ ] Add the four Cloudflare variables/secrets and deploy the updated Worker.
 - [ ] Build and test with a customer account and an admin account.
-- [ ] Add the admin review queue UI.
+- [x] Add the admin review queue UI (pending reviews, signed private image previews, approve/reject actions).
 
 Until the SQL and Worker setup steps are completed, the app will show a clear configuration error instead of pretending feedback was saved.
