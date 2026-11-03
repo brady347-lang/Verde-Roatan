@@ -106,6 +106,15 @@ export default {
     try {
       const body = await request.json().catch(() => ({}));
 
+      // Authenticated review submission uses the primary app session and writes
+      // through a server-only service-role key to the separate review project.
+      if (pathname === '/identification-review') {
+        return await handleIdentificationReview(request, body, env);
+      }
+      if (pathname === '/identification-review/admin/review') {
+        return await handleIdentificationReviewAdmin(request, body, env);
+      }
+
       // Route 1: Refine Identification (Continuous Accuracy Pass)
       if (pathname === '/refine' || pathname === '/api/refine') {
         return await handleRefine(body, apiKey);
@@ -422,6 +431,198 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
   const parsed = JSON.parse(rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim());
 
   return new Response(JSON.stringify(parsed), {
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+  });
+}
+
+
+/**
+ * Verify the existing Verde app session, then store review evidence in the
+ * separate Verde Roatan DB. Service-role credentials remain server-side.
+ *
+ * Required Cloudflare secrets/vars:
+ * PRIMARY_SUPABASE_URL
+ * PRIMARY_SUPABASE_ANON_KEY
+ * REVIEW_SUPABASE_URL
+ * REVIEW_SUPABASE_SERVICE_ROLE_KEY
+ */
+async function verifyPrimaryUser(request, env) {
+  const authorization = request.headers.get('Authorization') || '';
+  const token = authorization.replace(/^Bearer\\s+/i, '').trim();
+  if (!token) throw new Error('Please sign in before submitting identification feedback.');
+
+  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\\/$/, '');
+  const primaryKey = env.PRIMARY_SUPABASE_ANON_KEY;
+  if (!primaryUrl || !primaryKey) throw new Error('Identification review authentication is not configured.');
+
+  const response = await fetch(`${primaryUrl}/auth/v1/user`, {
+    headers: { apikey: primaryKey, Authorization: `Bearer ${token}` }
+  });
+  if (!response.ok) throw new Error('Your session could not be verified. Please sign in again.');
+  const user = await response.json();
+  if (!user?.id) throw new Error('Your signed-in account could not be verified.');
+  return user;
+}
+
+function reviewDatabaseConfig(env) {
+  const url = String(env.REVIEW_SUPABASE_URL || '').replace(/\\/$/, '');
+  const key = env.REVIEW_SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error('The separate identification review database is not configured yet.');
+  return { url, key };
+}
+
+async function handleIdentificationReview(request, body, env) {
+  const user = await verifyPrimaryUser(request, env);
+  const { url, key } = reviewDatabaseConfig(env);
+  const image = String(body.image || '');
+  if (!image.startsWith('data:image/')) {
+    return new Response(JSON.stringify({ status: 'error', error: 'The original specimen photo is required.' }), {
+      status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const imageMatch = image.match(/^data:(image\\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!imageMatch) {
+    return new Response(JSON.stringify({ status: 'error', error: 'Use a JPEG, PNG, or WebP image.' }), {
+      status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
+  const mimeType = imageMatch[1];
+  const binary = atob(imageMatch[2]);
+  if (binary.length > 12 * 1024 * 1024) {
+    return new Response(JSON.stringify({ status: 'error', error: 'The review photo must be smaller than 12 MB.' }), {
+      status: 413, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const ai = body.identification || {};
+  const decision = body.decision === 'corrected' ? 'corrected' : 'confirmed';
+  const correctedCommon = String(body.corrected_common_name || '').trim().slice(0, 160);
+  const correctedScientific = String(body.corrected_scientific_name || '').trim().slice(0, 160);
+  if (decision === 'corrected' && !correctedCommon && !correctedScientific) {
+    return new Response(JSON.stringify({ status: 'error', error: 'Please enter the corrected plant name or scientific name.' }), {
+      status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
+
+  const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
+  const reviewId = crypto.randomUUID();
+  const objectPath = `${user.id}/${reviewId}.${extension}`;
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const upload = await fetch(`${url}/storage/v1/object/identification-review-images/${objectPath}`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': mimeType,
+      'x-upsert': 'false'
+    },
+    body: bytes
+  });
+  if (!upload.ok) {
+    const message = await upload.text();
+    throw new Error(`Could not store the private review photo: ${message.slice(0, 240)}`);
+  }
+
+  const candidate = ai.candidate || {};
+  const record = {
+    id: reviewId,
+    submitted_by: user.id,
+    image_path: objectPath,
+    identification_mode: 'plant',
+    ai_common_name: String(candidate.common_name || '').slice(0, 160) || null,
+    ai_scientific_name: String(candidate.scientific_name || '').slice(0, 160) || null,
+    ai_confidence: Number.isFinite(Number(candidate.confidence_score))
+      ? Math.max(0, Math.min(1, Number(candidate.confidence_score)))
+      : null,
+    proposed_common_name: decision === 'corrected' ? correctedCommon || null : null,
+    proposed_scientific_name: decision === 'corrected' ? correctedScientific || null : null,
+    submitter_notes: String(body.notes || '').slice(0, 1000) || null,
+    status: 'pending'
+  };
+
+  const insert = await fetch(`${url}/rest/v1/identification_reviews`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify(record)
+  });
+  const inserted = await insert.json().catch(() => []);
+  if (!insert.ok || !Array.isArray(inserted) || !inserted[0]) {
+    await fetch(`${url}/storage/v1/object/identification-review-images/${objectPath}`, {
+      method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${key}` }
+    }).catch(() => undefined);
+    throw new Error('The identification review could not be saved to the review database.');
+  }
+
+  const confirmation = await fetch(`${url}/rest/v1/identification_confirmations`, {
+    method: 'POST',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal'
+    },
+    body: JSON.stringify({
+      review_id: reviewId,
+      user_id: user.id,
+      decision,
+      corrected_common_name: decision === 'corrected' ? correctedCommon || null : null,
+      corrected_scientific_name: decision === 'corrected' ? correctedScientific || null : null,
+      notes: String(body.notes || '').slice(0, 1000) || null
+    })
+  });
+  if (!confirmation.ok) {
+    throw new Error('The review photo was saved, but its confirmation record could not be saved. Please contact support.');
+  }
+
+  return new Response(JSON.stringify({
+    status: 'success',
+    review_id: reviewId,
+    review_status: 'pending',
+    message: 'Thank you. Your feedback has been saved for botanical review.'
+  }), { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+}
+
+async function handleIdentificationReviewAdmin(request, body, env) {
+  const user = await verifyPrimaryUser(request, env);
+  if (user.app_metadata?.role !== 'admin') {
+    return new Response(JSON.stringify({ status: 'error', error: 'Administrator access is required.' }), {
+      status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
+  const { url, key } = reviewDatabaseConfig(env);
+  const reviewId = String(body.review_id || '');
+  const status = body.status;
+  if (!/^[0-9a-f-]{36}$/i.test(reviewId) || !['approved', 'rejected'].includes(status)) {
+    return new Response(JSON.stringify({ status: 'error', error: 'A valid review ID and approval status are required.' }), {
+      status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
+  const response = await fetch(`${url}/rest/v1/identification_reviews?id=eq.${reviewId}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation'
+    },
+    body: JSON.stringify({
+      status,
+      admin_notes: String(body.admin_notes || '').slice(0, 1000) || null,
+      reviewed_by: user.id,
+      reviewed_at: new Date().toISOString()
+    })
+  });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows) || !rows.length) {
+    throw new Error('The review could not be updated.');
+  }
+  return new Response(JSON.stringify({ status: 'success', review: rows[0] }), {
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
   });
 }
