@@ -46,6 +46,7 @@ interface IdentifyScreenProps {
   currentPhoto: string | null;
   onReset: () => void;
   onSaveToGarden: () => void;
+  onSubmitFeedback: (decision: 'confirmed' | 'corrected', correctedCommonName?: string, correctedScientificName?: string) => Promise<void>;
   onAddToCart: (storeProductId: string, qty: number) => void;
   formatMoney: (val: number, cur: string) => React.ReactNode;
   catalog: CatalogItem[];
@@ -66,6 +67,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   currentPhoto,
   onReset,
   onSaveToGarden,
+  onSubmitFeedback,
   onAddToCart,
   formatMoney,
   catalog,
@@ -82,6 +84,11 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   const [cropModalOpen, setCropModalOpen] = useState(false);
   const [pendingCropImage, setPendingCropImage] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
+  const [correctedCommonName, setCorrectedCommonName] = useState('');
+  const [correctedScientificName, setCorrectedScientificName] = useState('');
 
   useEffect(() => {
     let interval: any;
@@ -97,6 +104,27 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
     }
     return () => clearInterval(interval);
   }, [isLoading]);
+
+  useEffect(() => {
+    setFeedbackBusy(false);
+    setFeedbackSaved(false);
+    setFeedbackError(null);
+    setCorrectedCommonName('');
+    setCorrectedScientificName('');
+  }, [currentPhoto]);
+
+  const submitFeedback = async (decision: 'confirmed' | 'corrected') => {
+    setFeedbackBusy(true);
+    setFeedbackError(null);
+    try {
+      await onSubmitFeedback(decision, correctedCommonName, correctedScientificName);
+      setFeedbackSaved(true);
+    } catch (error) {
+      setFeedbackError(error instanceof Error ? error.message : 'Feedback could not be saved.');
+    } finally {
+      setFeedbackBusy(false);
+    }
+  };
 
   const t = (k: string) => STRINGS[lang]?.[k] || STRINGS.en[k] || k;
 
@@ -992,6 +1020,68 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                 Verified via {result.model_used}
               </span>
             </div>
+          )}
+
+          {mode === 'plant' && (
+            <section className="flex flex-col gap-3 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-xs">
+              <div>
+                <h3 className="text-[15px] font-extrabold text-[var(--ink)]">
+                  {lang === 'es' ? '¿Es correcta esta identificación?' : 'Is this identification correct?'}
+                </h3>
+                <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">
+                  {lang === 'es'
+                    ? 'Tu confirmación ayuda a mejorar la inteligencia botánica de Verde Roatán. Las correcciones quedan pendientes de revisión.'
+                    : 'Your confirmation helps improve Verde Roatán botanical intelligence. Corrections are queued for review.'}
+                </p>
+              </div>
+
+              {feedbackSaved ? (
+                <div className="flex items-center gap-2 rounded-xl bg-[var(--palm)]/10 p-3 text-[13px] font-bold text-[var(--palm)]">
+                  <CheckCircle2 className="h-5 w-5 shrink-0" />
+                  {lang === 'es' ? 'Comentario enviado para revisión' : 'Feedback submitted for review'}
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    disabled={feedbackBusy}
+                    onClick={() => submitFeedback('confirmed')}
+                    className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 text-[13px] font-bold text-white disabled:opacity-60"
+                  >
+                    {feedbackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    {lang === 'es' ? 'Confirmar identificación' : 'Confirm identification'}
+                  </button>
+                  <div className="border-t border-[var(--line)] pt-3">
+                    <p className="mb-2 text-[12px] font-bold text-[var(--ink)]">
+                      {lang === 'es' ? '¿Identificó otra planta?' : 'Think it is a different plant?'}
+                    </p>
+                    <input
+                      value={correctedCommonName}
+                      onChange={(event) => setCorrectedCommonName(event.target.value)}
+                      placeholder={lang === 'es' ? 'Nombre común correcto' : 'Correct common name'}
+                      className="mb-2 min-h-[42px] w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--palm)]"
+                    />
+                    <input
+                      value={correctedScientificName}
+                      onChange={(event) => setCorrectedScientificName(event.target.value)}
+                      placeholder={lang === 'es' ? 'Nombre científico (opcional)' : 'Scientific name (optional)'}
+                      className="mb-2 min-h-[42px] w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--palm)]"
+                    />
+                    <button
+                      type="button"
+                      disabled={feedbackBusy || (!correctedCommonName.trim() && !correctedScientificName.trim())}
+                      onClick={() => submitFeedback('corrected')}
+                      className="flex min-h-[42px] w-full items-center justify-center rounded-xl border border-[var(--palm)] px-3 text-[13px] font-bold text-[var(--palm)] disabled:opacity-50"
+                    >
+                      {lang === 'es' ? 'Enviar corrección' : 'Submit correction'}
+                    </button>
+                  </div>
+                  {feedbackError && (
+                    <p role="alert" className="text-[12px] font-semibold text-red-600">{feedbackError}</p>
+                  )}
+                </>
+              )}
+            </section>
           )}
 
           {/* Action Buttons: Save to My Garden & Scan Another */}
