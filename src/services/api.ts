@@ -98,34 +98,50 @@ export async function uploadCatalogPhoto(
   };
   const patchBody = JSON.stringify({ image_url: publicUrl, updated_at: new Date().toISOString() });
   const filter = encodeURIComponent(`eq.${productId}`);
-  let productUpdated = false;
+  let catalogUpdated = false;
   let lastError = '';
-  try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/products?id=${filter}`, {
-      method: 'PATCH', headers, body: patchBody
-    });
-    const rows = await response.json().catch(() => []);
-    productUpdated = response.ok && Array.isArray(rows) && rows.length > 0;
-    if (!response.ok) lastError = rows.message || rows.details || 'Could not update the products catalog.';
-  } catch (error) {
-    lastError = error instanceof Error ? error.message : 'Catalog update failed.';
+  // Plant rows may live in catalog_items while nursery products live in products.
+  // Update both known catalog tables and require at least one matching row.
+  for (const table of ['products', 'catalog_items']) {
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=${filter}`, {
+        method: 'PATCH', headers, body: patchBody
+      });
+      const rows = await response.json().catch(() => []);
+      if (response.ok && Array.isArray(rows) && rows.length > 0) {
+        catalogUpdated = true;
+      } else if (!response.ok) {
+        lastError = rows.message || rows.details || `Could not update the ${table} catalog.`;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Catalog update failed.';
+    }
   }
 
-  if (!productUpdated) {
+  if (!catalogUpdated) {
     // Remove the newly uploaded object so failed catalog writes do not leave orphaned files.
     await fetch(storageUrl, {
       method: 'DELETE',
       headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` }
     }).catch(() => undefined);
-    throw new Error(lastError || 'The image uploaded, but no matching products catalog record could be updated.');
+    throw new Error(lastError || 'The image uploaded, but no matching products or catalog_items record could be updated.');
   }
 
-  // Keep the secondary catalog table in sync when a matching row exists.
-  await fetch(`${SUPABASE_URL}/rest/v1/catalog_items?id=${filter}`, {
-    method: 'PATCH', headers, body: patchBody
-  }).catch((error) => console.warn('Secondary catalog_items image sync skipped:', error));
-
   return publicUrl;
+}
+
+export async function uploadCatalogPhotoDataUrl(
+  productId: string,
+  dataUrl: string,
+  accessToken: string
+): Promise<string> {
+  if (!dataUrl.startsWith('data:image/')) {
+    throw new Error('A compressed catalog image is required.');
+  }
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const file = new File([blob], 'catalog-photo.jpg', { type: blob.type || 'image/jpeg' });
+  return uploadCatalogPhoto(productId, file, accessToken);
 }
 
 export interface BchRateResponse {
