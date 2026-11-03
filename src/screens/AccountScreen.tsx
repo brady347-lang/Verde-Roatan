@@ -53,6 +53,7 @@ import { STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/init
 import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
 import { BotanicalKnowledgeCenter } from '../components/botanical/BotanicalKnowledgeCenter';
+import { IdentificationReviewCenter } from '../components/IdentificationReviewCenter';
 
 interface AccountScreenProps {
   lang: Language;
@@ -142,7 +143,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [adminTab, setAdminTab] = useState<
-    'command_center' | 'botanical_center' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
+    'command_center' | 'botanical_center' | 'identification_reviews' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
   const [activeSupplierId, setActiveSupplierId] = useState<string>(() => registeredSuppliers[0]?.id || 'sup-1');
   const [catalogFilter, setCatalogFilter] = useState<'all' | 'plants' | 'products'>('all');
@@ -316,6 +317,16 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setAdminTab('identification_reviews')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                    adminTab === 'identification_reviews' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  ID Reviews
+                </button>
+                <button
+                  type="button"
                   onClick={() => setAdminTab('supplier_portal')}
                   className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
                     adminTab === 'supplier_portal' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
@@ -401,6 +412,13 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                     catalogItems={catalog}
                     isAdmin={isAdmin}
                     onOpenStoreItem={onEditItem}
+                  />
+                )}
+
+                {adminTab === 'identification_reviews' && (
+                  <IdentificationReviewCenter
+                    lang={lang}
+                    accessToken={session?.access_token}
                   />
                 )}
 
