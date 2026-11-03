@@ -493,8 +493,8 @@ export default function App() {
     let cancelled = false;
     fetchAdminOrders(session.access_token).then((remoteOrders) => {
       if (cancelled) return;
-      const active = remoteOrders.filter((order) => !['completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
-      const archived = remoteOrders.filter((order) => ['completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
+      const active = remoteOrders.filter((order) => !['delivered', 'completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
+      const archived = remoteOrders.filter((order) => ['delivered', 'completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
       setActiveOrders(active);
       setOrderHistory(archived);
     }).catch((error) => {
@@ -515,8 +515,8 @@ export default function App() {
     let cancelled = false;
     fetchCustomerOrders(session.access_token).then((remoteOrders) => {
       if (cancelled) return;
-      const active = remoteOrders.filter((order) => !['completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
-      const archived = remoteOrders.filter((order) => ['completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
+      const active = remoteOrders.filter((order) => !['delivered', 'completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
+      const archived = remoteOrders.filter((order) => ['delivered', 'completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
       setActiveOrders(active);
       setOrderHistory(archived);
     }).catch((error) => {
