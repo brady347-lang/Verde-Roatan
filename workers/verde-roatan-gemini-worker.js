@@ -467,6 +467,15 @@ async function verifyPrimaryUser(request, env) {
   return user;
 }
 
+function isVerifiedReviewAdmin(user, env) {
+  const allowedEmails = String(env.VERDE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+  return user.app_metadata?.role === 'admin' ||
+    Boolean(user.email && allowedEmails.includes(String(user.email).toLowerCase()));
+}
+
 function reviewDatabaseConfig(env) {
   const url = String(env.REVIEW_SUPABASE_URL || '').replace(/\/$/, '');
   const key = env.REVIEW_SUPABASE_SERVICE_ROLE_KEY;
@@ -593,7 +602,7 @@ async function handleIdentificationReview(request, body, env) {
 
 async function handleIdentificationReviewAdminList(request, body, env) {
   const user = await verifyPrimaryUser(request, env);
-  if (user.app_metadata?.role !== 'admin') {
+  if (!isVerifiedReviewAdmin(user, env)) {
     return new Response(JSON.stringify({ status: 'error', error: 'Administrator access is required.' }), {
       status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
     });
