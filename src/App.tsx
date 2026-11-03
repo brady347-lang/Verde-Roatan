@@ -30,6 +30,7 @@ import {
   BchRateResponse,
   analyzeBotanicalImage,
   uploadCatalogPhoto,
+  uploadCatalogPhotoDataUrl,
   fetchBchRate,
   fetchCatalog,
   fetchAdminOrders,
@@ -1395,32 +1396,61 @@ export default function App() {
 
   // --- DATABASE MANIPULATION HANDLERS (PLANTS, PRODUCTS, LANDSCAPERS, SUPPLIERS) ---
 
-  // 1. Plant Add / Edit
-  const handleSavePlant = (plant: CatalogItem) => {
+  const persistCatalogPhotoIfPossible = async (item: CatalogItem): Promise<CatalogItem> => {
+    if (!item.image_url?.startsWith('data:image/')) return item;
+
+    // New records do not have a server-side row yet; retain them as local drafts.
+    const alreadyExistsInCatalog = catalog.some((existing) => String(existing.id) === String(item.id));
+    if (!alreadyExistsInCatalog) return item;
+
+    if (!session?.access_token || !isAdmin) {
+      throw new Error('Sign in with the authorized admin account to save catalog photos permanently.');
+    }
+
+    const permanentUrl = await uploadCatalogPhotoDataUrl(item.id, item.image_url, session.access_token);
+    return { ...item, image_url: permanentUrl };
+  };
+
+  const saveCatalogRecordLocally = (item: CatalogItem) => {
     setCatalog((prev) => {
-      const idx = prev.findIndex((p) => p.id === plant.id);
+      const idx = prev.findIndex((p) => p.id === item.id);
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = plant;
+        next[idx] = item;
         return next;
       }
-      return [plant, ...prev];
+      return [item, ...prev];
     });
-    showToast(`Plant specimen "${plant.name}" saved!`);
+  };
+
+  // 1. Plant Add / Edit
+  const handleSavePlant = async (plant: CatalogItem) => {
+    try {
+      const savedPlant = await persistCatalogPhotoIfPossible(plant);
+      saveCatalogRecordLocally(savedPlant);
+      const isLocalDraft = !catalog.some((existing) => String(existing.id) === String(plant.id));
+      showToast(isLocalDraft
+        ? `Plant specimen "${plant.name}" saved on this device; server catalog sync is still pending.`
+        : `Plant specimen "${plant.name}" saved; photo uploaded to Supabase when a new photo was selected.`);
+    } catch (error) {
+      console.error('Plant catalog photo save failed:', error);
+      showToast(error instanceof Error ? error.message : 'Plant photo could not be saved permanently.');
+    }
   };
 
   // 2. Product Add / Edit
-  const handleSaveProduct = (product: CatalogItem) => {
-    setCatalog((prev) => {
-      const idx = prev.findIndex((p) => p.id === product.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = product;
-        return next;
-      }
-      return [product, ...prev];
-    });
-    showToast(`Product "${product.name}" saved!`);
+  const handleSaveProduct = async (product: CatalogItem) => {
+    try {
+      const savedProduct = await persistCatalogPhotoIfPossible(product);
+      saveCatalogRecordLocally(savedProduct);
+      const isLocalDraft = !catalog.some((existing) => String(existing.id) === String(product.id));
+      showToast(isLocalDraft
+        ? `Product "${product.name}" saved on this device; server catalog sync is still pending.`
+        : `Product "${product.name}" saved; photo uploaded to Supabase when a new photo was selected.`);
+    } catch (error) {
+      console.error('Product catalog photo save failed:', error);
+      showToast(error instanceof Error ? error.message : 'Product photo could not be saved permanently.');
+    }
   };
 
   // 3. Delete Item from Catalog
