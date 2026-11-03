@@ -7,7 +7,7 @@ export const AI_WORKER_URL = 'https://verde-roatan-gemini-worker.brady347.worker
 export const CURRENCY_WORKER_URL = 'https://verde-roatan-currency-worker.brady347.workers.dev';
 export const SUPABASE_URL = 'https://moaqgqbqfeckeabigfha.supabase.co';
 // Public browser key is injected at build time; never use a service-role key here.
-export const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
+export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_NIwpf0aZlDZkp5iVKLUZaA_fP_LmCTM';
 
 // Masked Admin Verification (Never expose in plain text)
 const _AUTH_SIG = [89,110,74,104,90,72,107,51,78,68,78,65,90,50,49,104,97,87,119,117,89,50,57,116];
