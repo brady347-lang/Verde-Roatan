@@ -92,7 +92,14 @@ drop policy if exists "authenticated users can submit reviews"
 create policy "authenticated users can submit reviews"
 on public.identification_reviews
 for insert to authenticated
-with check (submitted_by = auth.uid());
+with check (
+  submitted_by = auth.uid()
+  and status = 'pending'
+  and reviewed_by is null
+  and reviewed_at is null
+  and admin_notes is null
+  and split_part(image_path, '/', 1) = auth.uid()::text
+);
 
 drop policy if exists "admins can update reviews"
   on public.identification_reviews;
