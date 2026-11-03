@@ -33,6 +33,7 @@ import {
   fetchBchRate,
   fetchCatalog,
   fetchAdminOrders,
+  fetchCustomerOrders,
   fetchAdminTransactions,
   fetchDeliveryZones,
   refineBotanicalIdentification,
@@ -503,6 +504,23 @@ export default function App() {
       if (!cancelled) setTransactions(remoteTransactions);
     }).catch((error) => {
       console.warn('Supabase transaction ledger is not readable for this session; retaining local records.', error);
+    });
+    return () => { cancelled = true; };
+  }, [isAdmin, session?.access_token]);
+
+  // Customer order history is loaded from Supabase after a verified customer sign-in.
+  // The database's customer RLS policies restrict this query to auth.uid() = customer_id.
+  useEffect(() => {
+    if (!session?.access_token || isAdmin) return;
+    let cancelled = false;
+    fetchCustomerOrders(session.access_token).then((remoteOrders) => {
+      if (cancelled) return;
+      const active = remoteOrders.filter((order) => !['completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
+      const archived = remoteOrders.filter((order) => ['completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
+      setActiveOrders(active);
+      setOrderHistory(archived);
+    }).catch((error) => {
+      console.warn('Customer order sync unavailable; retaining locally cached records.', error);
     });
     return () => { cancelled = true; };
   }, [isAdmin, session?.access_token]);
