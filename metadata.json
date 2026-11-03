@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Remix Verde Roatán · Plant Intelligence",
+  "description": "Tropical plant intelligence, live nursery catalog, island delivery, and landscaper quotes for Roatán, Honduras.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

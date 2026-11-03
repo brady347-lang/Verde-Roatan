@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --bg: #EDF3EE;
+  --surface: #FFFFFF;
+  --surface-2: #E2ECE4;
+  --ink: #12302A;
+  --ink-soft: #4A6359;
+  --line: #D0DDD3;
+  --palm: #1B6B4F;
+  --on-palm: #FFFFFF;
+  --lagoon: #12808E;
+  --bloom: #C73A68;
+  --sun: #E8A92B;
+  --note-bg: #FBF0D9;
+  --note-ink: #6B4A0B;
+  --f-display: 'Bricolage Grotesque', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-body: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0D1815;
+    --surface: #15251F;
+    --surface-2: #1E342A;
+    --ink: #E4EEE8;
+    --ink-soft: #9DB5A9;
+    --line: #2A4136;
+    --palm: #4FBF93;
+    --on-palm: #07201A;
+    --lagoon: #4CC3D1;
+    --bloom: #F07BA0;
+    --sun: #F2C265;
+    --note-bg: #33290F;
+    --note-ink: #F0D9A0;
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0D1815;
+  --surface: #15251F;
+  --surface-2: #1E342A;
+  --ink: #E4EEE8;
+  --ink-soft: #9DB5A9;
+  --line: #2A4136;
+  --palm: #4FBF93;
+  --on-palm: #07201A;
+  --lagoon: #4CC3D1;
+  --bloom: #F07BA0;
+  --sun: #F2C265;
+  --note-bg: #33290F;
+  --note-ink: #F0D9A0;
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: var(--f-body);
+  font-size: 15px;
+  line-height: 1.4;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--f-display);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+
+.animate-spin-fast {
+  animation: spin-slow 0.8s linear infinite;
+}
