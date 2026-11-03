@@ -448,10 +448,10 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
  */
 async function verifyPrimaryUser(request, env) {
   const authorization = request.headers.get('Authorization') || '';
-  const token = authorization.replace(/^Bearer\\s+/i, '').trim();
+  const token = authorization.replace(/^Bearer\s+/i, '').trim();
   if (!token) throw new Error('Please sign in before submitting identification feedback.');
 
-  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\\/$/, '');
+  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\/$/, '');
   const primaryKey = env.PRIMARY_SUPABASE_ANON_KEY;
   if (!primaryUrl || !primaryKey) throw new Error('Identification review authentication is not configured.');
 
@@ -465,7 +465,7 @@ async function verifyPrimaryUser(request, env) {
 }
 
 function reviewDatabaseConfig(env) {
-  const url = String(env.REVIEW_SUPABASE_URL || '').replace(/\\/$/, '');
+  const url = String(env.REVIEW_SUPABASE_URL || '').replace(/\/$/, '');
   const key = env.REVIEW_SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) throw new Error('The separate identification review database is not configured yet.');
   return { url, key };
@@ -481,7 +481,7 @@ async function handleIdentificationReview(request, body, env) {
     });
   }
 
-  const imageMatch = image.match(/^data:(image\\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  const imageMatch = image.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
   if (!imageMatch) {
     return new Response(JSON.stringify({ status: 'error', error: 'Use a JPEG, PNG, or WebP image.' }), {
       status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
