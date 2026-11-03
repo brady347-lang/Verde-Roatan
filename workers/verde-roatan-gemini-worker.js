@@ -111,6 +111,9 @@ export default {
       if (pathname === '/identification-review') {
         return await handleIdentificationReview(request, body, env);
       }
+      if (pathname === '/identification-review/admin/list') {
+        return await handleIdentificationReviewAdminList(request, body, env);
+      }
       if (pathname === '/identification-review/admin/review') {
         return await handleIdentificationReviewAdmin(request, body, env);
       }
@@ -586,6 +589,51 @@ async function handleIdentificationReview(request, body, env) {
     review_status: 'pending',
     message: 'Thank you. Your feedback has been saved for botanical review.'
   }), { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+}
+
+async function handleIdentificationReviewAdminList(request, body, env) {
+  const user = await verifyPrimaryUser(request, env);
+  if (user.app_metadata?.role !== 'admin') {
+    return new Response(JSON.stringify({ status: 'error', error: 'Administrator access is required.' }), {
+      status: 403, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
+  const { url, key } = reviewDatabaseConfig(env);
+  const requestedStatus = ['pending', 'approved', 'rejected'].includes(body.status) ? body.status : 'pending';
+  const response = await fetch(
+    `${url}/rest/v1/identification_reviews?status=eq.${requestedStatus}&select=*&order=created_at.desc&limit=100`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows)) throw new Error('The identification review queue could not be loaded.');
+
+  const reviews = await Promise.all(rows.map(async (row) => {
+    const signed = await fetch(
+      `${url}/storage/v1/object/sign/identification-review-images/${row.image_path}`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ expiresIn: 1800 })
+      }
+    );
+    const signedData = await signed.json().catch(() => ({}));
+    return {
+      ...row,
+      image_url: signed.ok && signedData.signedURL
+        ? (String(signedData.signedURL).startsWith('http')
+          ? signedData.signedURL
+          : `${url}/storage/v1${signedData.signedURL}`)
+        : null
+    };
+  }));
+
+  return new Response(JSON.stringify({ status: 'success', reviews }), {
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+  });
 }
 
 async function handleIdentificationReviewAdmin(request, body, env) {
