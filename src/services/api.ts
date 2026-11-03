@@ -15,7 +15,8 @@ import {
   CatalogItem,
   DeliveryZone,
   GardenAdvisorResult,
-  OrderCheckoutResult
+  OrderCheckoutResult,
+  IdentificationReviewRecord
 } from '../types';
 
 export function compressImage(file: File, maxDimension = 800, quality = 0.78): Promise<string> {
@@ -409,6 +410,50 @@ export async function submitIdentificationFeedback(
     throw new Error(data.error || data.message || 'Your identification feedback could not be saved.');
   }
   return data;
+}
+
+async function callIdentificationReviewAdmin(
+  route: 'admin/list' | 'admin/review',
+  payload: Record<string, unknown>,
+  accessToken: string
+): Promise<any> {
+  if (!accessToken) throw new Error('Administrator sign-in is required.');
+  const response = await fetch(`${AI_WORKER_URL}/identification-review/${route}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status !== 'success') {
+    throw new Error(data.error || data.message || 'The identification review service is unavailable.');
+  }
+  return data;
+}
+
+export async function fetchIdentificationReviewQueue(
+  accessToken: string,
+  status: 'pending' | 'approved' | 'rejected' = 'pending'
+): Promise<IdentificationReviewRecord[]> {
+  const data = await callIdentificationReviewAdmin('admin/list', { status }, accessToken);
+  return Array.isArray(data.reviews) ? data.reviews as IdentificationReviewRecord[] : [];
+}
+
+export async function reviewIdentificationRecord(
+  accessToken: string,
+  reviewId: string,
+  status: 'approved' | 'rejected',
+  adminNotes = ''
+): Promise<void> {
+  await callIdentificationReviewAdmin('admin/review', {
+    review_id: reviewId,
+    status,
+    admin_notes: adminNotes
+  }, accessToken);
 }
 
 export async function supabaseAuthRequest(path: string, payload: any, token?: string): Promise<any> {
