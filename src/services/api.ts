@@ -959,3 +959,43 @@ export async function respondToServiceQuote(token: string, requestId: string, ac
   });
   if (!result || result.success !== true) throw new Error('Your response was not confirmed. Please try again.');
 }
+
+
+// ---------------------------------------------------------------------------
+// Bulk botanical import (administrators only; served by the Cloudflare worker)
+// ---------------------------------------------------------------------------
+async function botanicalImportCall(route: string, payload: Record<string, unknown>, accessToken: string): Promise<any> {
+  if (!accessToken) throw new Error('Administrator sign-in is required.');
+  let response: Response;
+  try {
+    response = await fetch(`${AI_WORKER_URL}/botanical-import/${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    throw new Error('Could not reach the Verde Roatán service. Check your connection and try again.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 || (response.status === 405)) {
+    throw new Error('The import service is not deployed yet. Deploy the latest Cloudflare worker, then try again.');
+  }
+  if (!response.ok || data.status !== 'success') throw new Error(data.error || 'The import service returned an error (' + response.status + ').');
+  return data;
+}
+
+export interface TaxonomyCheck { name: string; match: string; status?: string | null; canonical?: string | null; family?: string | null; kingdom?: string | null }
+
+export async function fetchExistingBotanicalRecords(token: string): Promise<Array<{ scientific_name: string; common_name?: string }>> {
+  return (await botanicalImportCall('existing', {}, token)).records || [];
+}
+export async function validateBotanicalNames(token: string, names: string[]): Promise<TaxonomyCheck[]> {
+  return (await botanicalImportCall('validate', { names }, token)).results || [];
+}
+export async function suggestImportColumnMapping(token: string, headers: string[], sample: string[][]): Promise<Record<string, string | null>> {
+  return (await botanicalImportCall('map-columns', { headers, sample }, token)).mapping || {};
+}
+export interface BotanicalImportResult { batch_id: string; inserted: number; skipped: number; rejected: Array<{ name: string; reason: string }> }
+export async function commitBotanicalImport(token: string, filename: string, rows: unknown[]): Promise<BotanicalImportResult> {
+  return await botanicalImportCall('commit', { filename, rows }, token);
+}

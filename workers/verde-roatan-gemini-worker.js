@@ -180,6 +180,11 @@ export default {
         return await handleIdentificationReviewAdmin(request, body, env);
       }
 
+      // Administrator-only bulk botanical import (records live in the separate TV project).
+      if (pathname === '/botanical-import/existing') return await handleBotanicalImportExisting(request, env);
+      if (pathname === '/botanical-import/validate') return await handleBotanicalImportValidate(request, body, env);
+      if (pathname === '/botanical-import/commit') return await handleBotanicalImportCommit(request, body, env);
+
       // Review endpoints do not call Gemini and must remain available even if
       // the Gemini secret is temporarily missing or being rotated.
       if (!apiKey) {
@@ -190,6 +195,11 @@ export default {
           }),
           { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
         );
+      }
+
+      // Route 0: AI-assisted column mapping for bulk imports (administrators only)
+      if (pathname === '/botanical-import/map-columns') {
+        return await handleBotanicalImportMapColumns(request, body, apiKey, env);
       }
 
       // Route 1: Refine Identification (Continuous Accuracy Pass)
@@ -698,4 +708,205 @@ async function handleIdentificationReviewAdmin(request, body, env) {
   return new Response(JSON.stringify({ status: 'success', review: rows[0] }), {
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
   });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Bulk botanical import (administrators only). Records are written to the TV project's
+// botanical_taxa table with the server-only service-role key. Existing records are never
+// overwritten, and prices / stock / suppliers are not part of the accepted fields.
+// ---------------------------------------------------------------------------------------------
+const IMPORT_TEXT_FIELDS = [
+  'genus', 'species', 'family', 'description', 'habitat', 'distribution', 'sunlight', 'water',
+  'soil', 'propagation', 'toxicity', 'pests_diseases', 'climate', 'growth_habit'
+];
+const IMPORT_MAP_TARGETS = [
+  'scientific_name', 'common_name', 'family', 'genus', 'species', 'synonyms', 'description', 'habitat',
+  'distribution', 'sunlight', 'water', 'soil', 'propagation', 'toxicity', 'pests_diseases', 'climate',
+  'growth_habit', 'native_to_bay_islands', 'references', 'reference_photo_url'
+];
+const MAX_IMPORT_ROWS = 500;
+
+function jsonResponse(status, obj) {
+  return new Response(JSON.stringify(obj), { status, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
+}
+
+async function requireImportAdmin(request, env) {
+  let user;
+  try {
+    user = await verifyPrimaryUser(request, env);
+  } catch (e) {
+    return { response: jsonResponse(401, { status: 'error', error: e.message || 'Please sign in.' }) };
+  }
+  if (!isVerifiedReviewAdmin(user, env)) {
+    return { response: jsonResponse(403, { status: 'error', error: 'Administrator access is required.' }) };
+  }
+  return { user };
+}
+
+function importNameKey(canonical) {
+  return String(canonical || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function handleBotanicalImportExisting(request, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const { url, key } = reviewDatabaseConfig(env);
+  const res = await fetch(
+    `${url}/rest/v1/botanical_taxa?select=scientific_name,common_name&order=scientific_name.asc&limit=5000`,
+    { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+  );
+  const rows = await res.json().catch(() => null);
+  if (!res.ok || !Array.isArray(rows)) {
+    return jsonResponse(502, { status: 'error', error: 'The botanical records database could not be read. Has the botanical_taxa migration been applied?' });
+  }
+  return jsonResponse(200, { status: 'success', records: rows });
+}
+
+async function handleBotanicalImportValidate(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const names = Array.isArray(body.names)
+    ? [...new Set(body.names.map((n) => String(n || '').trim()).filter(Boolean))].slice(0, 40)
+    : [];
+  const results = await Promise.all(names.map(async (name) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const res = await fetch(
+        `https://api.gbif.org/v1/species/match?name=${encodeURIComponent(name)}&kingdom=Plantae&verbose=false`,
+        { signal: controller.signal, headers: { Accept: 'application/json' } }
+      );
+      if (!res.ok) return { name, match: 'UNAVAILABLE' };
+      const d = await res.json();
+      return {
+        name,
+        match: d.matchType || 'NONE',
+        status: d.status || null,
+        canonical: d.canonicalName || null,
+        family: d.family || null,
+        kingdom: d.kingdom || null,
+        confidence: typeof d.confidence === 'number' ? d.confidence : null
+      };
+    } catch {
+      return { name, match: 'UNAVAILABLE' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }));
+  return jsonResponse(200, { status: 'success', source: 'GBIF Backbone Taxonomy', results });
+}
+
+async function handleBotanicalImportCommit(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const email = String(auth.user.email || 'unknown');
+  const rows = Array.isArray(body.rows) ? body.rows : [];
+  if (rows.length === 0) return jsonResponse(400, { status: 'error', error: 'There are no approved rows to import.' });
+  if (rows.length > MAX_IMPORT_ROWS) {
+    return jsonResponse(400, { status: 'error', error: `Import at most ${MAX_IMPORT_ROWS} rows at a time.` });
+  }
+  const { url, key } = reviewDatabaseConfig(env);
+  const headers = { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' };
+  const text = (v, max = 4000) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+  const list = (v) => (Array.isArray(v) ? v.map((x) => String(x).trim().slice(0, 500)).filter(Boolean).slice(0, 50) : []);
+
+  const prepared = [];
+  const rejected = [];
+  const seen = new Set();
+  for (const r of rows) {
+    const scientific = text(r?.scientific_name, 200);
+    const common = text(r?.common_name, 200);
+    const nameKey = importNameKey(scientific);
+    if (!scientific || !common || !/^[a-z×]/i.test(scientific) || !nameKey.includes(' ')) {
+      rejected.push({ name: scientific || '(missing)', reason: 'Needs a scientific name (genus + species) and a common name.' });
+      continue;
+    }
+    if (seen.has(nameKey)) { rejected.push({ name: scientific, reason: 'Duplicate inside this import.' }); continue; }
+    seen.add(nameKey);
+    const rec = {
+      scientific_name: scientific,
+      name_key: nameKey,
+      common_name: common,
+      synonyms: list(r.synonyms),
+      scientific_references: list(r.references),
+      native_to_bay_islands: typeof r.native_to_bay_islands === 'boolean' ? r.native_to_bay_islands : null,
+      reference_photo_url: typeof r.reference_photo_url === 'string' && /^https:\/\//i.test(r.reference_photo_url)
+        ? r.reference_photo_url.slice(0, 1000) : null,
+      taxonomy_check: r.taxonomy_check && typeof r.taxonomy_check === 'object'
+        ? { match: String(r.taxonomy_check.match || '').slice(0, 20), status: r.taxonomy_check.status ? String(r.taxonomy_check.status).slice(0, 20) : null,
+            canonical: r.taxonomy_check.canonical ? String(r.taxonomy_check.canonical).slice(0, 200) : null, source: 'GBIF' }
+        : null,
+      record_status: 'published',
+      source_type: 'bulk_import',
+      verification_status: 'unverified',
+      created_by_email: email
+    };
+    for (const f of IMPORT_TEXT_FIELDS) rec[f] = text(r[f]);
+    prepared.push(rec);
+  }
+  if (prepared.length === 0) {
+    return jsonResponse(400, { status: 'error', error: 'None of the rows could be imported.', rejected });
+  }
+
+  const batchRes = await fetch(`${url}/rest/v1/botanical_import_batches`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'return=representation' },
+    body: JSON.stringify({ filename: String(body.filename || 'import').slice(0, 200), uploaded_by_email: email, row_count: rows.length })
+  });
+  const batch = await batchRes.json().catch(() => null);
+  if (!batchRes.ok || !Array.isArray(batch) || !batch[0]?.id) {
+    return jsonResponse(502, { status: 'error', error: 'The import could not be recorded. Has the botanical_taxa migration been applied?' });
+  }
+  const batchId = batch[0].id;
+  prepared.forEach((r) => { r.import_batch_id = batchId; });
+
+  // ignore-duplicates: an existing record is skipped, never overwritten.
+  const insRes = await fetch(`${url}/rest/v1/botanical_taxa?on_conflict=name_key`, {
+    method: 'POST',
+    headers: { ...headers, Prefer: 'resolution=ignore-duplicates,return=representation' },
+    body: JSON.stringify(prepared)
+  });
+  const inserted = await insRes.json().catch(() => null);
+  if (!insRes.ok || !Array.isArray(inserted)) {
+    return jsonResponse(502, { status: 'error', error: 'The botanical records could not be saved. Nothing was overwritten.', detail: inserted?.message || null });
+  }
+  const insertedKeys = new Set(inserted.map((r) => r.name_key));
+  for (const r of prepared) {
+    if (!insertedKeys.has(r.name_key)) rejected.push({ name: r.scientific_name, reason: 'Already exists; left unchanged.' });
+  }
+  await fetch(`${url}/rest/v1/botanical_import_batches?id=eq.${batchId}`, {
+    method: 'PATCH', headers,
+    body: JSON.stringify({ inserted_count: inserted.length, skipped_count: rows.length - inserted.length })
+  }).catch(() => {});
+
+  return jsonResponse(200, { status: 'success', batch_id: batchId, inserted: inserted.length, skipped: rows.length - inserted.length, rejected });
+}
+
+async function handleBotanicalImportMapColumns(request, body, apiKey, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const headers = Array.isArray(body.headers) ? body.headers.map((h) => String(h).slice(0, 80)).slice(0, 60) : [];
+  const sample = Array.isArray(body.sample)
+    ? body.sample.slice(0, 5).map((r) => (Array.isArray(r) ? r.map((c) => String(c).slice(0, 120)).slice(0, 60) : []))
+    : [];
+  if (headers.length === 0) return jsonResponse(400, { status: 'error', error: 'No column headers were provided.' });
+  const prompt = `You map spreadsheet columns of a plant list to fixed botanical fields.
+Allowed fields: ${IMPORT_MAP_TARGETS.join(', ')}.
+Rules: use each field at most once. Use null for any column that does not clearly match, and ALWAYS null for prices, costs, stock, quantities, suppliers, nurseries, SKUs or inventory photos.
+Headers: ${JSON.stringify(headers)}
+Sample rows: ${JSON.stringify(sample)}
+Respond ONLY with JSON: {"mapping": {"<exact header>": "<field or null>"}}`;
+  try {
+    const { parsed } = await callGemini(env, apiKey, [{ text: prompt }], { totalMs: 14000, perCallMs: 10000 });
+    const out = {};
+    const used = new Set();
+    for (const h of headers) {
+      const f = parsed?.mapping?.[h];
+      if (typeof f === 'string' && IMPORT_MAP_TARGETS.includes(f) && !used.has(f)) { out[h] = f; used.add(f); } else out[h] = null;
+    }
+    return jsonResponse(200, { status: 'success', mapping: out });
+  } catch (e) {
+    return jsonResponse(502, { status: 'error', error: e.message || 'AI column mapping is unavailable. Use the automatic mapping instead.' });
+  }
 }
