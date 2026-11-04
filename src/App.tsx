@@ -29,8 +29,9 @@ import {
 import {
   BchRateResponse,
   analyzeBotanicalImage,
-  uploadCatalogPhoto,
-  uploadCatalogPhotoDataUrl,
+  saveCatalogItem,
+  deleteCatalogItem,
+  updateCatalogStock,
   fetchBchRate,
   fetchCatalog,
   fetchAdminOrders,
@@ -1424,87 +1425,28 @@ export default function App() {
 
   // --- DATABASE MANIPULATION HANDLERS (PLANTS, PRODUCTS, LANDSCAPERS, SUPPLIERS) ---
 
-  const persistCatalogPhotoIfPossible = async (item: CatalogItem): Promise<CatalogItem> => {
-    if (!item.image_url?.startsWith('data:image/')) return item;
-
-    // New records do not have a server-side row yet; retain them as local drafts.
-    const alreadyExistsInCatalog = catalog.some((existing) => String(existing.id) === String(item.id));
-    if (!alreadyExistsInCatalog) return item;
-
-    if (!session?.access_token || !isAdmin) {
-      throw new Error('Sign in with the authorized admin account to save catalog photos permanently.');
-    }
-
-    const permanentUrl = await uploadCatalogPhotoDataUrl(item.id, item.image_url, session.access_token);
-    return { ...item, image_url: permanentUrl };
-  };
-
-  const saveCatalogRecordLocally = (item: CatalogItem) => {
-    setCatalog((prev) => {
-      const idx = prev.findIndex((p) => p.id === item.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = item;
-        return next;
-      }
-      return [item, ...prev];
-    });
-  };
-
-  // 1. Plant Add / Edit
+  // Production catalog changes are committed to Supabase before updating the screen.
   const handleSavePlant = async (plant: CatalogItem) => {
-    try {
-      const savedPlant = await persistCatalogPhotoIfPossible(plant);
-      saveCatalogRecordLocally(savedPlant);
-      const isLocalDraft = !catalog.some((existing) => String(existing.id) === String(plant.id));
-      showToast(isLocalDraft
-        ? `Plant specimen "${plant.name}" saved on this device; server catalog sync is still pending.`
-        : `Plant specimen "${plant.name}" saved; photo uploaded to Supabase when a new photo was selected.`);
-    } catch (error) {
-      console.error('Plant catalog photo save failed:', error);
-      showToast(error instanceof Error ? error.message : 'Plant photo could not be saved permanently.');
-    }
+    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to save catalog changes.'); return; }
+    try { const saved = await saveCatalogItem(plant, session.access_token); setCatalog(prev => { const i = prev.findIndex(x => String(x.id) === String(saved.id)); if (i < 0) return [saved, ...prev]; const next = [...prev]; next[i] = saved; return next; }); showToast('Plant saved to the production catalog.'); }
+    catch (error) { console.error('Plant save failed:', error); showToast(error instanceof Error ? error.message : 'Plant was not saved.'); }
   };
-
-  // 2. Product Add / Edit
   const handleSaveProduct = async (product: CatalogItem) => {
-    try {
-      const savedProduct = await persistCatalogPhotoIfPossible(product);
-      saveCatalogRecordLocally(savedProduct);
-      const isLocalDraft = !catalog.some((existing) => String(existing.id) === String(product.id));
-      showToast(isLocalDraft
-        ? `Product "${product.name}" saved on this device; server catalog sync is still pending.`
-        : `Product "${product.name}" saved; photo uploaded to Supabase when a new photo was selected.`);
-    } catch (error) {
-      console.error('Product catalog photo save failed:', error);
-      showToast(error instanceof Error ? error.message : 'Product photo could not be saved permanently.');
-    }
+    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to save catalog changes.'); return; }
+    try { const saved = await saveCatalogItem(product, session.access_token); setCatalog(prev => { const i = prev.findIndex(x => String(x.id) === String(saved.id)); if (i < 0) return [saved, ...prev]; const next = [...prev]; next[i] = saved; return next; }); showToast('Product saved to the production catalog.'); }
+    catch (error) { console.error('Product save failed:', error); showToast(error instanceof Error ? error.message : 'Product was not saved.'); }
   };
-
-  // 3. Delete Item from Catalog
-  const handleDeleteCatalogItem = (id: string, name: string) => {
-    setCatalog((prev) => prev.filter((p) => p.id !== id));
-    setCart((prev) => prev.filter((c) => c.id !== id));
-    showToast(`"${name}" removed from database.`);
+  const handleDeleteCatalogItem = async (id: string, name: string) => {
+    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to delete catalog items.'); return; }
+    try { await deleteCatalogItem(id, session.access_token); setCatalog(prev => prev.filter(x => String(x.id) !== String(id))); setCart(prev => prev.filter(x => String(x.id) !== String(id))); showToast('"' + name + '" deleted from the production catalog.'); }
+    catch (error) { console.error('Catalog deletion failed:', error); showToast(error instanceof Error ? error.message : 'Item was not deleted.'); }
   };
-
-  // 4. Update Stock Quantity in Database
-  const handleUpdateItemStock = (id: string, delta: number) => {
-    setCatalog((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const newQty = Math.max(0, item.stock_quantity + delta);
-          let newStock = item.stock;
-          if (newQty <= 0) newStock = 'Out of stock';
-          else if (newQty <= 5) newStock = 'Low stock';
-          else newStock = 'In stock';
-          return { ...item, stock_quantity: newQty, stock: newStock };
-        }
-        return item;
-      })
-    );
+  const handleUpdateItemStock = async (id: string, delta: number) => {
+    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to change stock.'); return; }
+    const current = catalog.find(x => String(x.id) === String(id)); if (!current) return;
+    try { const qty = await updateCatalogStock(id, current.stock_quantity + delta, session.access_token); setCatalog(prev => prev.map(x => String(x.id) !== String(id) ? x : { ...x, stock_quantity: qty, stock: qty <= 0 ? 'Out of stock' : qty <= 5 ? 'Low stock' : 'In stock' })); showToast('Stock saved: ' + qty + ' units.'); }
+    catch (error) { console.error('Stock update failed:', error); showToast(error instanceof Error ? error.message : 'Stock was not changed.'); }
   };
-
   // 5. Landscaper Add / Edit
   const handleSaveLandscaper = (crew: Landscaper) => {
     setLandscapers((prev) => {
