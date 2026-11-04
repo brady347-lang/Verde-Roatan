@@ -53,98 +53,77 @@ export function compressImage(file: File, maxDimension = 800, quality = 0.78): P
   });
 }
 
-export async function uploadCatalogPhoto(
-  productId: string,
-  file: File,
-  accessToken: string
-): Promise<string> {
-  if (!productId || !accessToken) throw new Error('A valid product and signed-in admin session are required.');
+function catalogHeaders(token: string) {
+  if (!token) throw new Error('Administrator sign-in is required.');
+  return { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json', Prefer: 'return=representation' };
+}
+
+function catalogBody(item: CatalogItem) {
+  return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true };
+}
+
+export async function saveCatalogItem(item: CatalogItem, token: string): Promise<CatalogItem> {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id);
+  const id = uuid ? item.id : crypto.randomUUID();
+  const body = { ...catalogBody(item), ...(uuid ? {} : { id }) };
+  const url = SUPABASE_URL + '/rest/v1/products' + (uuid ? '?id=eq.' + encodeURIComponent(id) : '');
+  const response = await fetch(url, { method: uuid ? 'PATCH' : 'POST', headers: catalogHeaders(token), body: JSON.stringify(body), cache: 'no-store' });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error(rows?.message || rows?.details || 'Supabase rejected the catalog save (' + response.status + ').');
+  const row = rows[0];
+  let saved: CatalogItem = { ...item, id: String(row.id), name: String(row.name || item.name), category: String(row.category || item.category), price: Number(row.price ?? item.price), currency: (row.currency || item.currency) as 'HNL' | 'USD', stock_quantity: Number(row.stock_quantity ?? item.stock_quantity), image_url: String(row.image_url || item.image_url || '') };
+  if (item.image_url?.startsWith('data:image/')) {
+    const blob = await (await fetch(item.image_url)).blob();
+    const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
+    const path = id + '/' + Date.now() + '-' + crypto.randomUUID() + '.' + ext;
+    const storage = SUPABASE_URL + '/storage/v1/object/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+    const upload = await fetch(storage, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+    const up = await upload.json().catch(() => ({}));
+    if (!upload.ok) throw new Error('Catalog saved, but photo upload failed: ' + (up.message || up.error || upload.status));
+    const imageUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+    const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: imageUrl }), cache: 'no-store' });
+    const patched = await patch.json().catch(() => []);
+    if (!patch.ok || !Array.isArray(patched) || patched.length !== 1) throw new Error('Catalog saved, but the image URL could not be stored.');
+    saved = { ...saved, image_url: imageUrl };
+  }
+  return saved;
+}
+
+export async function deleteCatalogItem(id: string, token: string): Promise<void> {
+  const response = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: catalogHeaders(token), cache: 'no-store' });
+  if (!response.ok) { const d = await response.json().catch(() => ({})); throw new Error(d.message || d.details || 'Supabase rejected catalog deletion (' + response.status + ').'); }
+}
+
+export async function updateCatalogStock(id: string, quantity: number, token: string): Promise<number> {
+  const response = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ stock_quantity: Math.max(0, Math.floor(quantity)) }), cache: 'no-store' });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error(rows?.message || rows?.details || 'Supabase rejected stock update (' + response.status + ').');
+  return Number(rows[0].stock_quantity);
+}
+
+export async function uploadCatalogPhoto(productId: string, file: File, token: string): Promise<string> {
   if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
   if (file.size > 15 * 1024 * 1024) throw new Error('Image must be smaller than 15 MB.');
+  const compressed = await compressImage(file, 1400, 0.84);
+  const blob = await (await fetch(compressed)).blob();
+  const dataUrl = 'data:' + (blob.type || 'image/jpeg') + ';base64,' + await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(blob); });
+  return saveCatalogItem({ id: productId, t: 'product', name: '', sci: '', kind: 'shrub', salt: 2, sun: '', water: '', price: 0, currency: 'HNL', size: '', stock: 'Out of stock', stock_quantity: 0, nursery: '', pet: 'check', tags: [], note: '', category: 'Outdoor', image_url: dataUrl }, token).then(x => x.image_url || '');
+}
 
-  const compressedDataUrl = await compressImage(file, 1400, 0.84);
-  const imageBlob = await (await fetch(compressedDataUrl)).blob();
-  const extension = imageBlob.type === 'image/webp' ? 'webp' : 'jpg';
-  const safeProductId = productId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const objectPath = `${safeProductId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
-  const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
-  const storageUrl = `${SUPABASE_URL}/storage/v1/object/product-images/${encodedPath}`;
-
-  const uploadResponse = await fetch(storageUrl, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': imageBlob.type || 'image/jpeg',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'x-upsert': 'false'
-    },
-    body: imageBlob
-  });
-  const uploadPayload = await uploadResponse.json().catch(() => ({}));
-  if (!uploadResponse.ok) {
-    const message = uploadPayload.message || uploadPayload.error || uploadPayload.statusCode;
-    if (uploadResponse.status === 403 || uploadResponse.status === 401) {
-      throw new Error('Supabase rejected this upload. Confirm the admin app_metadata role and run the photo-upload SQL migration.');
-    }
-    throw new Error(String(message || `Photo upload failed (${uploadResponse.status}).`));
-  }
-
-  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${encodedPath}`;
-  const headers = {
-    apikey: SUPABASE_PUBLISHABLE_KEY,
-    Authorization: `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=representation'
-  };
-  const patchBody = JSON.stringify({ image_url: publicUrl, updated_at: new Date().toISOString() });
-  const filter = encodeURIComponent(`eq.${productId}`);
-  let catalogUpdated = false;
-  let lastError = '';
-  // Plant rows may live in catalog_items while nursery products live in products.
-  // Update both known catalog tables and require at least one matching row.
-  for (const table of ['products', 'catalog_items']) {
-    try {
-      const response = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=${filter}`, {
-        method: 'PATCH', headers, body: patchBody
-      });
-      const rows = await response.json().catch(() => []);
-      if (response.ok && Array.isArray(rows) && rows.length > 0) {
-        catalogUpdated = true;
-      } else if (!response.ok) {
-        lastError = rows.message || rows.details || `Could not update the ${table} catalog.`;
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : 'Catalog update failed.';
-    }
-  }
-
-  if (!catalogUpdated) {
-    // Remove the newly uploaded object so failed catalog writes do not leave orphaned files.
-    await fetch(storageUrl, {
-      method: 'DELETE',
-      headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` }
-    }).catch(() => undefined);
-    throw new Error(lastError || 'The image uploaded, but no matching products or catalog_items record could be updated.');
-  }
-
+export async function uploadCatalogPhotoDataUrl(productId: string, dataUrl: string, token: string): Promise<string> {
+  if (!dataUrl.startsWith('data:image/')) throw new Error('A compressed catalog image is required.');
+  const blob = await (await fetch(dataUrl)).blob();
+  const path = productId + '/' + Date.now() + '-' + crypto.randomUUID() + '.jpg';
+  const storage = SUPABASE_URL + '/storage/v1/object/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+  const upload = await fetch(storage, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+  const d = await upload.json().catch(() => ({}));
+  if (!upload.ok) throw new Error(d.message || d.error || 'Photo upload failed (' + upload.status + ').');
+  const publicUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+  const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(productId), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: publicUrl }), cache: 'no-store' });
+  const rows = await patch.json().catch(() => []);
+  if (!patch.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('Photo uploaded but product image URL was not saved.');
   return publicUrl;
 }
-
-export async function uploadCatalogPhotoDataUrl(
-  productId: string,
-  dataUrl: string,
-  accessToken: string
-): Promise<string> {
-  if (!dataUrl.startsWith('data:image/')) {
-    throw new Error('A compressed catalog image is required.');
-  }
-  const response = await fetch(dataUrl);
-  const blob = await response.blob();
-  const file = new File([blob], 'catalog-photo.jpg', { type: blob.type || 'image/jpeg' });
-  return uploadCatalogPhoto(productId, file, accessToken);
-}
-
 export interface BchRateResponse {
   hnlPerUsd: number;
   rateDate: string;
