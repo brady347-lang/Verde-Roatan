@@ -18,11 +18,17 @@ FOR UPDATE TO authenticated
 USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
 WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
 
-DROP POLICY IF EXISTS "Verde admins can update catalog items" ON public.catalog_items;
-CREATE POLICY "Verde admins can update catalog items" ON public.catalog_items
-FOR UPDATE TO authenticated
-USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
-WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+-- catalog_items only exists in some environments; skip it where it does not.
+DO $$
+BEGIN
+  IF to_regclass('public.catalog_items') IS NOT NULL THEN
+    DROP POLICY IF EXISTS "Verde admins can update catalog items" ON public.catalog_items;
+    CREATE POLICY "Verde admins can update catalog items" ON public.catalog_items
+    FOR UPDATE TO authenticated
+    USING ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin')
+    WITH CHECK ((auth.jwt() -> 'app_metadata' ->> 'role') = 'admin');
+  END IF;
+END $$;
 
 DROP POLICY IF EXISTS "Verde admins can upload product images" ON storage.objects;
 CREATE POLICY "Verde admins can upload product images" ON storage.objects
