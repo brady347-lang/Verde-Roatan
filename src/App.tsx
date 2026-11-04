@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { putPhoto, deletePhoto, migrateGardenPhotos, requestPersistentStorage, safeSetItem } from './lib/photoStore';
 import {
   AIAnalysisResult,
   ActiveOrder,
@@ -267,7 +268,7 @@ export default function App() {
           }
         };
         setSession(verifiedSession);
-        localStorage.setItem('verde_auth_session', JSON.stringify(verifiedSession));
+        safeSetItem('verde_auth_session', JSON.stringify(verifiedSession));
       } catch (error) {
         if (cancelled) return;
         setSession(null);
@@ -417,45 +418,67 @@ export default function App() {
   const toggleLanguage = () => {
     const next = lang === 'en' ? 'es' : 'en';
     setLang(next);
-    localStorage.setItem('verde_lang', next);
+    safeSetItem('verde_lang', next);
     showToast(next === 'es' ? 'Idioma: Español' : 'Language: English');
   };
 
+  // --- One-time migration: move legacy base64 garden photos out of localStorage into IndexedDB ---
+  useEffect(() => {
+    requestPersistentStorage();
+    let cancelled = false;
+    (async () => {
+      if (!garden.some((g) => typeof g.photo === 'string' && g.photo.startsWith('data:image/'))) return;
+      const migrated = await migrateGardenPhotos(garden);
+      if (cancelled) return;
+      // Merge by id so anything saved while migrating is not lost.
+      setGarden((current) =>
+        current.map((g) => {
+          const m = migrated.find((x) => x.id === g.id);
+          return m && m.photoId ? { ...g, photo: null, photoId: m.photoId } : g;
+        })
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // --- Save persistent effects ---
   useEffect(() => {
-    localStorage.setItem('verde_cart', JSON.stringify(cart));
+    safeSetItem('verde_cart', JSON.stringify(cart));
   }, [cart]);
 
   useEffect(() => {
-    localStorage.setItem('verde_garden', JSON.stringify(garden));
+    safeSetItem('verde_garden', JSON.stringify(garden));
   }, [garden]);
 
   useEffect(() => {
-    localStorage.setItem('verde_catalog', JSON.stringify(catalog));
+    safeSetItem('verde_catalog', JSON.stringify(catalog));
   }, [catalog]);
 
   useEffect(() => {
-    localStorage.setItem('verde_landscapers', JSON.stringify(landscapers));
+    safeSetItem('verde_landscapers', JSON.stringify(landscapers));
   }, [landscapers]);
 
   useEffect(() => {
-    localStorage.setItem('verde_suppliers', JSON.stringify(registeredSuppliers));
+    safeSetItem('verde_suppliers', JSON.stringify(registeredSuppliers));
   }, [registeredSuppliers]);
 
   useEffect(() => {
-    localStorage.setItem('verde_custom_images', JSON.stringify(customImages));
+    safeSetItem('verde_custom_images', JSON.stringify(customImages));
   }, [customImages]);
 
   useEffect(() => {
-    localStorage.setItem('verde_zone_id', selectedZoneId);
+    safeSetItem('verde_zone_id', selectedZoneId);
   }, [selectedZoneId]);
 
   useEffect(() => {
-    localStorage.setItem('verde_active_orders', JSON.stringify(activeOrders));
+    safeSetItem('verde_active_orders', JSON.stringify(activeOrders));
   }, [activeOrders]);
 
   useEffect(() => {
-    localStorage.setItem('verde_order_history', JSON.stringify(orderHistory));
+    safeSetItem('verde_order_history', JSON.stringify(orderHistory));
   }, [orderHistory]);
 
   // Merge custom images into catalog
@@ -658,7 +681,7 @@ export default function App() {
     }
   };
 
-  const handleSaveToGarden = () => {
+  const handleSaveToGarden = async () => {
     if (!identifyResult) return;
     let name = 'Plant Specimen';
     if (identifyResult.verified_botanical_record) {
@@ -669,21 +692,40 @@ export default function App() {
       name = identifyResult.result.primary_diagnosis;
     }
 
+    const id = `g_${Date.now()}`;
+    // Photos go to IndexedDB (binary, large quota). Only the small id is kept in app state / localStorage.
+    let photoId: string | null = null;
+    let photoFailed = false;
+    if (identifyPhoto) {
+      try {
+        photoId = await putPhoto(id, identifyPhoto);
+      } catch (err) {
+        console.error('Could not store garden photo:', err);
+        photoFailed = true;
+      }
+    }
+
     const entry: GardenItem = {
-      id: `g_${Date.now()}`,
+      id,
       date: new Date().toLocaleDateString(lang === 'es' ? 'es-HN' : 'en-US'),
       mode: identifyMode,
       name,
-      photo: identifyPhoto,
+      photo: null,
+      photoId,
       data: identifyResult
     };
 
     setGarden((prev) => [entry, ...prev]);
-    showToast(t('savedToGarden'));
+    showToast(
+      photoFailed
+        ? (lang === 'es' ? 'Guardado, pero la foto no se pudo almacenar.' : 'Saved, but the photo could not be stored on this device.')
+        : t('savedToGarden')
+    );
   };
 
   const handleRemoveGardenItem = (id: string) => {
     setGarden((prev) => prev.filter((g) => g.id !== id));
+    deletePhoto(id).catch((err) => console.warn('Could not delete stored photo', err));
     showToast('Item removed from My Garden');
   };
 
@@ -1309,7 +1351,7 @@ export default function App() {
         }
       };
       setSession(newSession);
-      localStorage.setItem('verde_auth_session', JSON.stringify(newSession));
+      safeSetItem('verde_auth_session', JSON.stringify(newSession));
       showToast(lang === 'es' ? '¡Bienvenido a Verde Roatán!' : 'Welcome to Verde Roatán!');
     }
   };
@@ -1331,7 +1373,7 @@ export default function App() {
         }
       };
       setSession(newSession);
-      localStorage.setItem('verde_auth_session', JSON.stringify(newSession));
+      safeSetItem('verde_auth_session', JSON.stringify(newSession));
       showToast(
         checkAdminIdentity(data.user?.email || email)
           ? 'Administrator authenticated via Supabase!'
@@ -1478,9 +1520,9 @@ export default function App() {
       setRegisteredSuppliers(INITIAL_REGISTERED_SUPPLIERS);
       setCustomImages({});
       localStorage.removeItem('verde_custom_images');
-      localStorage.setItem('verde_catalog', JSON.stringify(INITIAL_CATALOG));
-      localStorage.setItem('verde_landscapers', JSON.stringify(INITIAL_LANDSCAPERS));
-      localStorage.setItem('verde_suppliers', JSON.stringify(INITIAL_REGISTERED_SUPPLIERS));
+      safeSetItem('verde_catalog', JSON.stringify(INITIAL_CATALOG));
+      safeSetItem('verde_landscapers', JSON.stringify(INITIAL_LANDSCAPERS));
+      safeSetItem('verde_suppliers', JSON.stringify(INITIAL_REGISTERED_SUPPLIERS));
       showToast('Nursery database reset to verified defaults.');
     }
   };

@@ -21,10 +21,11 @@ import {
 export function compressImage(file: File, maxDimension = 800, quality = 0.78): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('Could not read that photo file. Please try another photo.'));
     reader.onload = (e) => {
       const img = new Image();
-      img.onerror = reject;
+      img.onerror = () =>
+        reject(new Error('This photo format is not supported (for example HEIC). Please choose a JPG or PNG, or switch the camera to "Most Compatible".'));
       img.onload = () => {
         let width = img.width;
         let height = img.height;

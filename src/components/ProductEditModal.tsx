@@ -52,6 +52,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
     initialProduct?.tags?.join(', ') || 'soil, organic, compost'
   );
   const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   // Inline supplier registration
   const [showAddSupplierInline, setShowAddSupplierInline] = useState(false);
@@ -64,11 +65,13 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessingImg(true);
+    setImageError(null);
     try {
       const base64 = await compressImage(file, 1200, 0.85);
       setImageUrl(base64);
     } catch (err) {
       console.error('Failed to compress product image', err);
+      setImageError(err instanceof Error ? err.message : 'Could not process that photo. Please try another one.');
     } finally {
       setIsProcessingImg(false);
     }
@@ -182,6 +185,11 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
                     className="sr-only"
                   />
                 </label>
+                {imageError && (
+                  <p role="alert" className="text-[11.5px] font-semibold text-red-600">
+                    {imageError}
+                  </p>
+                )}
                 <input
                   type="url"
                   value={imageUrl}
