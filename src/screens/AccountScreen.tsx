@@ -50,6 +50,7 @@ import {
   TransactionRecord
 } from '../types';
 import { STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/initialData';
+import { usePhotoUrl } from '../lib/photoStore';
 import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
 import { BotanicalKnowledgeCenter } from '../components/botanical/BotanicalKnowledgeCenter';
@@ -95,6 +96,14 @@ interface AccountScreenProps {
   onMarkAllNotificationsRead?: () => void;
   exchangeRateHnl?: number;
   onSendOrderMessage?: (orderId: string, message: string, senderId: string, senderName: string) => void;
+}
+
+/** Garden thumbnail: reads the photo from IndexedDB, falling back to a legacy inline photo. */
+function GardenThumb({ photoId, legacyPhoto, alt }: { photoId?: string | null; legacyPhoto?: string | null; alt: string }) {
+  const stored = usePhotoUrl(photoId);
+  const src = stored || legacyPhoto || null;
+  if (!src) return null;
+  return <img src={src} alt={alt} className="w-full h-full object-cover" />;
 }
 
 export const AccountScreen: React.FC<AccountScreenProps> = ({
@@ -938,12 +947,8 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-12 h-12 rounded-xl bg-[var(--surface-2)] overflow-hidden shrink-0">
-                        {item.photo ? (
-                          <img
-                            src={item.photo}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
-                          />
+                        {item.photoId || item.photo ? (
+                          <GardenThumb photoId={item.photoId} legacyPhoto={item.photo} alt={item.name} />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-[var(--palm)]">
                             <Sprout className="w-6 h-6" />

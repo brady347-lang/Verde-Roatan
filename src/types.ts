@@ -167,7 +167,10 @@ export interface GardenItem {
   date: string;
   mode: 'plant' | 'pest';
   name: string;
+  /** Legacy: inline base64 photo from older versions. Migrated to IndexedDB on startup. */
   photo: string | null;
+  /** Key of the photo stored in IndexedDB (see src/lib/photoStore.ts). */
+  photoId?: string | null;
   data: AIAnalysisResult;
 }
 

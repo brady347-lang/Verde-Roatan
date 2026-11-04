@@ -66,6 +66,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
   const [note, setNote] = useState(initialPlant?.note || '');
   const [tagsInput, setTagsInput] = useState(initialPlant?.tags?.join(', ') || 'palm, tropical, hardy');
   const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   // AI Auto-detection states
   const [isDetectingAI, setIsDetectingAI] = useState(false);
@@ -219,6 +220,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessingImg(true);
+    setImageError(null);
     try {
       const base64 = await compressImage(file, 1200, 0.85);
       setImageUrl(base64);
@@ -226,6 +228,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
       await runAutoBotanicalDetection(base64);
     } catch (err) {
       console.error('Failed to compress plant image', err);
+      setImageError(err instanceof Error ? err.message : 'Could not process that photo. Please try another one.');
     } finally {
       setIsProcessingImg(false);
     }
@@ -423,6 +426,11 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
                     className="sr-only"
                   />
                 </label>
+                {imageError && (
+                  <p role="alert" className="text-[11.5px] font-semibold text-red-600">
+                    {imageError}
+                  </p>
+                )}
                 <div className="flex items-center gap-1.5">
                   <input
                     type="url"
