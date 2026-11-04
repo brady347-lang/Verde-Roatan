@@ -126,7 +126,7 @@ BEGIN
           'customer', NEW.customer_name);
 
   INSERT INTO public.notification_events (category, event_type, entity_name, title, description, priority)
-  VALUES ('service', 'new_landscaper_request',
+  VALUES ('customer', 'new_landscaper_request',
           COALESCE(NEW.customer_name, 'Customer'),
           'New landscaping request ' || COALESCE(NEW.request_number, ''),
           COALESCE(NEW.service_type, 'Landscaping') || COALESCE(' - ' || NEW.location, '')
@@ -321,7 +321,7 @@ BEGIN
           'customer', r.customer_name);
 
   INSERT INTO public.notification_events (category, event_type, entity_name, title, description, priority)
-  VALUES ('service', 'service_quote_response', COALESCE(r.customer_name, 'Customer'),
+  VALUES ('customer', 'service_quote_response', COALESCE(r.customer_name, 'Customer'),
           'Quote ' || CASE WHEN p_accept THEN 'accepted' ELSE 'declined' END || ' - ' || COALESCE(r.request_number, ''),
           COALESCE(r.service_type, 'Landscaping'), 'high');
 
