@@ -31,6 +31,7 @@ import {
   BchRateResponse,
   analyzeBotanicalImage,
   saveCatalogItem,
+  CatalogSaveError,
   deleteCatalogItem,
   updateCatalogStock,
   uploadCatalogPhoto,
@@ -492,6 +493,12 @@ export default function App() {
     }
     return item;
   });
+
+  // The details window must follow the live catalog so a changed photo/price shows immediately.
+  const detailItem =
+    activeModal?.type === 'item-details'
+      ? currentCatalog.find((c) => String(c.id) === String(activeModal.item.id)) || activeModal.item
+      : null;
 
   // --- Initial Data Fetching ---
   useEffect(() => {
@@ -1469,15 +1476,77 @@ export default function App() {
   // --- DATABASE MANIPULATION HANDLERS (PLANTS, PRODUCTS, LANDSCAPERS, SUPPLIERS) ---
 
   // Production catalog changes are committed to Supabase before updating the screen.
-  const handleSavePlant = async (plant: CatalogItem) => {
-    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to save catalog changes.'); return; }
-    try { const saved = await saveCatalogItem(plant, session.access_token); setCatalog(prev => { const i = prev.findIndex(x => String(x.id) === String(saved.id)); if (i < 0) return [saved, ...prev]; const next = [...prev]; next[i] = saved; return next; }); showToast('Plant saved to the production catalog.'); }
-    catch (error) { console.error('Plant save failed:', error); showToast(error instanceof Error ? error.message : 'Plant was not saved.'); }
+  const handleSavePlant = async (plant: CatalogItem): Promise<string | null> => {
+    if (!session?.access_token || !isAdmin) {
+      const msg = 'Administrator sign-in is required to save catalog changes.';
+      showToast(msg);
+      return msg;
+    }
+    const merge = (saved: CatalogItem) => {
+      setCatalog((prev) => {
+        const i = prev.findIndex((x) => String(x.id) === String(saved.id) || x.id === plant.id);
+        if (i < 0) return [saved, ...prev];
+        const next = [...prev];
+        next[i] = saved;
+        return next;
+      });
+      // A legacy locally stored image would otherwise hide the photo that was just saved to the database.
+      setCustomImages((prev) => {
+        if (!prev[saved.id] && !prev[plant.id]) return prev;
+        const next = { ...prev };
+        delete next[saved.id];
+        delete next[plant.id];
+        return next;
+      });
+    };
+    try {
+      merge(await saveCatalogItem(plant, session.access_token));
+      showToast('Plant saved to the production catalog.');
+      return null;
+    } catch (error) {
+      console.error('Plant save failed:', error);
+      // The row may have saved even though the photo step failed; keep the screen in sync with the database.
+      if (error instanceof CatalogSaveError && error.saved) merge(error.saved);
+      const msg = error instanceof Error ? error.message : 'Plant was not saved.';
+      showToast(msg);
+      return msg;
+    }
   };
-  const handleSaveProduct = async (product: CatalogItem) => {
-    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to save catalog changes.'); return; }
-    try { const saved = await saveCatalogItem(product, session.access_token); setCatalog(prev => { const i = prev.findIndex(x => String(x.id) === String(saved.id)); if (i < 0) return [saved, ...prev]; const next = [...prev]; next[i] = saved; return next; }); showToast('Product saved to the production catalog.'); }
-    catch (error) { console.error('Product save failed:', error); showToast(error instanceof Error ? error.message : 'Product was not saved.'); }
+  const handleSaveProduct = async (product: CatalogItem): Promise<string | null> => {
+    if (!session?.access_token || !isAdmin) {
+      const msg = 'Administrator sign-in is required to save catalog changes.';
+      showToast(msg);
+      return msg;
+    }
+    const merge = (saved: CatalogItem) => {
+      setCatalog((prev) => {
+        const i = prev.findIndex((x) => String(x.id) === String(saved.id) || x.id === product.id);
+        if (i < 0) return [saved, ...prev];
+        const next = [...prev];
+        next[i] = saved;
+        return next;
+      });
+      // A legacy locally stored image would otherwise hide the photo that was just saved to the database.
+      setCustomImages((prev) => {
+        if (!prev[saved.id] && !prev[product.id]) return prev;
+        const next = { ...prev };
+        delete next[saved.id];
+        delete next[product.id];
+        return next;
+      });
+    };
+    try {
+      merge(await saveCatalogItem(product, session.access_token));
+      showToast('Product saved to the production catalog.');
+      return null;
+    } catch (error) {
+      console.error('Product save failed:', error);
+      // The row may have saved even though the photo step failed; keep the screen in sync with the database.
+      if (error instanceof CatalogSaveError && error.saved) merge(error.saved);
+      const msg = error instanceof Error ? error.message : 'Product was not saved.';
+      showToast(msg);
+      return msg;
+    }
   };
   const handleDeleteCatalogItem = async (id: string, name: string) => {
     if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to delete catalog items.'); return; }
@@ -1549,9 +1618,9 @@ export default function App() {
   };
 
   return (
-    <div className="flex justify-center bg-[var(--bg)] min-h-screen text-[var(--ink)]">
+    <div className="flex justify-center bg-[var(--bg)] min-h-dvh text-[var(--ink)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
       {/* 440px Mobile Shell */}
-      <div className="w-full max-w-[440px] flex flex-col min-h-screen relative shadow-2xl bg-[var(--bg)]">
+      <div className="w-full max-w-[440px] flex flex-col min-h-dvh relative shadow-2xl bg-[var(--bg)]">
         {/* Floating Draggable Currency Widget */}
         <CurrencyWidget
           rateData={rateData}
@@ -1828,7 +1897,7 @@ export default function App() {
         </main>
 
         {/* Persistent Bottom Tab Navigation */}
-        <div className="px-3 pb-2 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
+        <div className="px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom,0px))] pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
           <Navigation
             activeTab={tab}
             onSelectTab={(nextTab) => setTab(nextTab)}
@@ -1842,7 +1911,7 @@ export default function App() {
         {toastMessage && (
           <div
             role="status"
-            className="fixed left-1/2 -translate-x-1/2 bottom-24 z-60 bg-[var(--ink)] text-[var(--bg)] px-4 py-2.5 rounded-2xl font-semibold text-[13.5px] shadow-2xl max-w-[90vw] text-center pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+            className="fixed left-1/2 -translate-x-1/2 bottom-[calc(6rem_+_env(safe-area-inset-bottom,0px))] z-60 bg-[var(--ink)] text-[var(--bg)] px-4 py-2.5 rounded-2xl font-semibold text-[13.5px] shadow-2xl max-w-[90vw] text-center pointer-events-none animate-in fade-in zoom-in-95 duration-150"
           >
             {toastMessage}
           </div>
@@ -1855,14 +1924,14 @@ export default function App() {
           isOpen={activeModal?.type === 'item-details'}
           onClose={() => setActiveModal(null)}
         >
-          {activeModal?.type === 'item-details' && (
+          {activeModal?.type === 'item-details' && detailItem && (
             <div className="flex flex-col gap-4">
               {/* Product Hero Image */}
               <div className="w-full aspect-2/1 rounded-2xl overflow-hidden bg-[var(--surface-2)] flex items-center justify-center">
-                {activeModal.item.image_url ? (
+                {detailItem.image_url ? (
                   <img
-                    src={activeModal.item.image_url}
-                    alt={activeModal.item.name}
+                    src={detailItem.image_url}
+                    alt={detailItem.name}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -1873,10 +1942,10 @@ export default function App() {
               {/* Title & Scientific Name */}
               <div className="flex flex-col gap-0.5">
                 <h2 className="text-[22px] font-extrabold text-[var(--ink)] leading-tight pr-8">
-                  {activeModal.item.name}
+                  {detailItem.name}
                 </h2>
                 <small className="text-[12.5px] text-[var(--ink-soft)] italic">
-                  {activeModal.item.sci}
+                  {detailItem.sci}
                 </small>
               </div>
 
@@ -1884,20 +1953,20 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[20px] font-extrabold text-[var(--ink)]">
-                    {formatMoney(activeModal.item.price, activeModal.item.currency)}
+                    {formatMoney(detailItem.price, detailItem.currency)}
                   </div>
                   <small className="text-[12px] text-[var(--ink-soft)]">
-                    {activeModal.item.size}
+                    {detailItem.size}
                   </small>
                 </div>
 
                 <span className="text-[12px] font-bold px-2.5 py-1 rounded-full bg-[var(--palm)]/15 text-[var(--palm)]">
-                  {activeModal.item.stock} ({activeModal.item.stock_quantity} available)
+                  {detailItem.stock} ({detailItem.stock_quantity} available)
                 </span>
               </div>
 
               {/* Botanical Specs Grid */}
-              {activeModal.item.t === 'plant' && (
+              {detailItem.t === 'plant' && (
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-[var(--surface-2)] rounded-xl p-2.5 flex flex-col gap-1">
                     <span className="text-[10.5px] font-extrabold uppercase text-[var(--ink-soft)] tracking-wider">
@@ -1908,7 +1977,7 @@ export default function App() {
                         <i
                           key={dot}
                           className={`w-2 h-2 rounded-full not-italic ${
-                            dot <= activeModal.item.salt
+                            dot <= detailItem.salt
                               ? 'bg-[var(--lagoon)]'
                               : 'bg-[var(--line)]'
                           }`}
@@ -1922,7 +1991,7 @@ export default function App() {
                       {t('sun')}
                     </span>
                     <b className="text-[12.5px] text-[var(--ink)] truncate">
-                      {activeModal.item.sun}
+                      {detailItem.sun}
                     </b>
                   </div>
 
@@ -1931,7 +2000,7 @@ export default function App() {
                       {t('water')}
                     </span>
                     <b className="text-[12.5px] text-[var(--ink)] truncate">
-                      {activeModal.item.water}
+                      {detailItem.water}
                     </b>
                   </div>
 
@@ -1940,7 +2009,7 @@ export default function App() {
                       {t('pets')}
                     </span>
                     <b className="text-[12.5px] text-[var(--ink)]">
-                      {activeModal.item.pet === 'safe' ? 'Pet Safe' : 'Check Toxicities'}
+                      {detailItem.pet === 'safe' ? 'Pet Safe' : 'Check Toxicities'}
                     </b>
                   </div>
                 </div>
@@ -1948,11 +2017,11 @@ export default function App() {
 
               {/* Note / Description */}
               <p className="text-[13px] text-[var(--ink)] leading-relaxed">
-                {activeModal.item.note}
+                {detailItem.note}
               </p>
 
               <small className="text-[11.5px] text-[var(--ink-soft)]">
-                Registered Supplier: <b className="text-[var(--ink)]">{activeModal.item.nursery}</b>. Island-wide delivery available.
+                Registered Supplier: <b className="text-[var(--ink)]">{detailItem.nursery}</b>. Island-wide delivery available.
               </small>
 
               {/* Quantity Stepper & Add to Cart Button */}
@@ -1980,7 +2049,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    handleAddToCart(activeModal.item.id, sheetQty);
+                    handleAddToCart(detailItem.id, sheetQty);
                     setActiveModal(null);
                   }}
                   className="flex-1 min-h-[48px] bg-[var(--palm)] hover:bg-[var(--palm)]/90 text-white font-extrabold text-[14.5px] rounded-2xl shadow-xs active:scale-98 transition-all flex items-center justify-center gap-2"
@@ -2001,7 +2070,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        const target = activeModal.item;
+                        const target = detailItem;
                         setActiveModal(null);
                         if (target.t === 'plant') {
                           setPlantModal({ isOpen: true, plant: target });
@@ -2018,7 +2087,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        const target = activeModal.item;
+                        const target = detailItem;
                         setActiveModal(null);
                         setConfirmDelete({
                           isOpen: true,
@@ -2050,7 +2119,7 @@ export default function App() {
                     className="sr-only"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleAdminPhotoUpdate(activeModal.item.id, file);
+                      if (file) handleAdminPhotoUpdate(detailItem.id, file);
                     }}
                   />
                 </div>

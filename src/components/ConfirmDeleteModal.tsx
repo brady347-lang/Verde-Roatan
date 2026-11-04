@@ -31,7 +31,7 @@ export const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
       <div
         role="alertdialog"
         aria-modal="true"
-        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] z-60 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-5 pt-4 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-200"
+        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] z-60 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-5 pt-4 pb-[calc(2rem_+_env(safe-area-inset-bottom,0px))] shadow-2xl animate-in slide-in-from-bottom duration-200"
       >
         <div className="w-10 h-1.5 rounded-full bg-[var(--line)] mx-auto mb-4" />
 

@@ -35,7 +35,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({ isOpen, onClose, title
         role="dialog"
         aria-modal="true"
         aria-label={title || 'Dialog'}
-        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] max-h-[90vh] overflow-y-auto z-50 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-4 pt-3 pb-8 shadow-2xl transition-transform animate-in slide-in-from-bottom duration-200"
+        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] max-h-[90dvh] overflow-y-auto z-50 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-4 pt-3 pb-[calc(2rem_+_env(safe-area-inset-bottom,0px))] shadow-2xl transition-transform animate-in slide-in-from-bottom duration-200"
       >
         {/* Grab Handle */}
         <div className="w-10 h-1.5 rounded-full bg-[var(--line)] mx-auto mb-3" />

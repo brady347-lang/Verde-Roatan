@@ -63,6 +63,27 @@ function catalogBody(item: CatalogItem) {
   return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true };
 }
 
+/** Thrown when the database row saved but a follow-up step (photo) failed, so the UI can still show what was saved. */
+export class CatalogSaveError extends Error {
+  saved?: CatalogItem;
+  constructor(message: string, saved?: CatalogItem) {
+    super(message);
+    this.name = 'CatalogSaveError';
+    this.saved = saved;
+  }
+}
+
+/** Explain a failed catalog write. RLS blocks return 200 with zero rows, which is easy to mistake for success. */
+function catalogWriteError(response: Response, rows: any, action: string): Error {
+  if (response.status === 401 || response.status === 403) {
+    return new Error('Your administrator session was rejected. Sign out, sign back in as the administrator, then try again.');
+  }
+  if (response.ok && Array.isArray(rows) && rows.length === 0) {
+    return new Error('Supabase did not ' + action + ' this record: the database blocked the change (administrator permission) or the record no longer exists. Sign out and back in as the administrator, then try again.');
+  }
+  return new Error(rows?.message || rows?.details || 'Supabase could not ' + action + ' the record (' + response.status + ').');
+}
+
 export async function saveCatalogItem(item: CatalogItem, token: string): Promise<CatalogItem> {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id);
   const id = uuid ? item.id : crypto.randomUUID();
@@ -70,7 +91,7 @@ export async function saveCatalogItem(item: CatalogItem, token: string): Promise
   const url = SUPABASE_URL + '/rest/v1/products' + (uuid ? '?id=eq.' + encodeURIComponent(id) : '');
   const response = await fetch(url, { method: uuid ? 'PATCH' : 'POST', headers: catalogHeaders(token), body: JSON.stringify(body), cache: 'no-store' });
   const rows = await response.json().catch(() => []);
-  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error(rows?.message || rows?.details || 'Supabase rejected the catalog save (' + response.status + ').');
+  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw catalogWriteError(response, rows, 'save');
   const row = rows[0];
   let saved: CatalogItem = { ...item, id: String(row.id), name: String(row.name || item.name), category: String(row.category || item.category), price: Number(row.price ?? item.price), currency: (row.currency || item.currency) as 'HNL' | 'USD', stock_quantity: Number(row.stock_quantity ?? item.stock_quantity), image_url: String(row.image_url || item.image_url || '') };
   if (item.image_url?.startsWith('data:image/')) {
@@ -80,11 +101,11 @@ export async function saveCatalogItem(item: CatalogItem, token: string): Promise
     const storage = SUPABASE_URL + '/storage/v1/object/product-images/' + path.split('/').map(encodeURIComponent).join('/');
     const upload = await fetch(storage, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
     const up = await upload.json().catch(() => ({}));
-    if (!upload.ok) throw new Error('Catalog saved, but photo upload failed: ' + (up.message || up.error || upload.status));
+    if (!upload.ok) throw new CatalogSaveError('Your changes were saved, but the photo could not be uploaded: ' + (up.message || up.error || upload.status) + (upload.status === 401 || upload.status === 403 ? ' (administrator permission). Sign out and back in as the administrator.' : ''), { ...saved, image_url: String(row.image_url || '') });
     const imageUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
     const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: imageUrl }), cache: 'no-store' });
     const patched = await patch.json().catch(() => []);
-    if (!patch.ok || !Array.isArray(patched) || patched.length !== 1) throw new Error('Catalog saved, but the image URL could not be stored.');
+    if (!patch.ok || !Array.isArray(patched) || patched.length !== 1) throw new CatalogSaveError('Your changes were saved and the photo uploaded, but its link could not be stored on the record. ' + catalogWriteError(patch, patched, 'update').message, { ...saved, image_url: String(row.image_url || '') });
     saved = { ...saved, image_url: imageUrl };
   }
   return saved;
@@ -120,7 +141,7 @@ export async function uploadCatalogPhotoDataUrl(productId: string, dataUrl: stri
   const publicUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
   const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(productId), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: publicUrl }), cache: 'no-store' });
   const rows = await patch.json().catch(() => []);
-  if (!patch.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('Photo uploaded but product image URL was not saved.');
+  if (!patch.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('Photo uploaded but its link was not saved: ' + catalogWriteError(patch, rows, 'update').message);
   return publicUrl;
 }
 export interface BchRateResponse {
