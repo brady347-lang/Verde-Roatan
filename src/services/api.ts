@@ -16,7 +16,10 @@ import {
   DeliveryZone,
   GardenAdvisorResult,
   OrderCheckoutResult,
-  IdentificationReviewRecord
+  IdentificationReviewRecord,
+  ServiceRequest,
+  ServiceRequestEvent,
+  ServiceRequestStatus
 } from '../types';
 
 export function compressImage(file: File, maxDimension = 800, quality = 0.78): Promise<string> {
@@ -811,3 +814,148 @@ export async function fetchGardenRecommendations(params: {
   };
 }
 
+
+// ---------------------------------------------------------------------------
+// Landscaping service requests (separate from product orders)
+// ---------------------------------------------------------------------------
+
+function serviceRequestError(data: any, status: number): Error {
+  const code = String(data?.code || '');
+  const msg = String(data?.message || '');
+  // Tables / functions missing => the Supabase migration has not been applied yet.
+  if (code === 'PGRST205' || code === 'PGRST202' || code === '42P01' || code === '42883' || /schema cache|does not exist/i.test(msg)) {
+    return new Error(
+      'Landscaping requests are not set up in the database yet. An administrator must run the latest Supabase migration (20261104_verde_landscaping_requests.sql).'
+    );
+  }
+  if (code === '42501' || status === 401 || status === 403 || /row-level security|permission denied|not authorized/i.test(msg)) {
+    return new Error('Your session does not have permission for this action. Please sign out and sign in again.');
+  }
+  return new Error(msg || data?.details || data?.hint || `Request failed (${status}).`);
+}
+
+async function serviceRest(path: string, token: string, init: { method?: string; body?: unknown; prefer?: string } = {}): Promise<any> {
+  const headers: Record<string, string> = {
+    apikey: SUPABASE_PUBLISHABLE_KEY,
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json'
+  };
+  if (init.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (init.prefer) headers.Prefer = init.prefer;
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: init.method || 'GET',
+    headers,
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    cache: 'no-store'
+  });
+  const data = await response.json().catch(() => (response.ok ? [] : {}));
+  if (!response.ok) throw serviceRequestError(data, response.status);
+  return data;
+}
+
+export interface NewServiceRequestInput {
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  serviceType: string;
+  description: string;
+  location: string;
+  requestedTiming?: string;
+  requestedDate?: string | null;
+  landscaperRef?: string;
+  landscaperName?: string;
+}
+
+/** Saves a landscaping request. Resolves only after the database confirms the new row. */
+export async function submitServiceRequest(token: string, input: NewServiceRequestInput): Promise<ServiceRequest> {
+  if (!token) throw new Error('Please sign in to request a landscaper.');
+  if (!input.customerId) throw new Error('Your account could not be verified. Please sign in again.');
+  const rows = await serviceRest('service_requests', token, {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: {
+      customer_id: input.customerId,
+      customer_name: input.customerName.trim(),
+      customer_phone: input.customerPhone.trim(),
+      customer_email: input.customerEmail?.trim() || null,
+      service_type: input.serviceType,
+      description: input.description.trim(),
+      location: input.location,
+      requested_timing: input.requestedTiming || null,
+      requested_date: input.requestedDate || null,
+      requested_landscaper_ref: input.landscaperRef || null,
+      requested_landscaper_name: input.landscaperName || null,
+      status: 'new_request'
+    }
+  });
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row?.id) throw new Error('The request was not saved. Please try again.');
+  return row as ServiceRequest;
+}
+
+export async function fetchMyServiceRequests(token: string): Promise<ServiceRequest[]> {
+  const rows = await serviceRest('service_requests?select=*&order=created_at.desc&limit=50', token);
+  return Array.isArray(rows) ? (rows as ServiceRequest[]) : [];
+}
+
+export async function fetchAdminServiceRequests(token: string): Promise<ServiceRequest[]> {
+  const rows = await serviceRest('service_requests?select=*&order=created_at.desc&limit=300', token);
+  return Array.isArray(rows) ? (rows as ServiceRequest[]) : [];
+}
+
+export async function fetchServiceRequestEvents(token: string, requestId: string): Promise<ServiceRequestEvent[]> {
+  const rows = await serviceRest(
+    `service_request_events?select=*&request_id=eq.${encodeURIComponent(requestId)}&order=created_at.asc&limit=500`,
+    token
+  );
+  return Array.isArray(rows) ? (rows as ServiceRequestEvent[]) : [];
+}
+
+export interface AdminServiceRequestUpdate {
+  status?: ServiceRequestStatus;
+  assignedRef?: string | null;
+  assignedName?: string | null;
+  clearAssignment?: boolean;
+  quoteAmount?: number | null;
+  quoteCurrency?: 'USD' | 'HNL' | null;
+  quoteNotes?: string | null;
+  customerResponse?: string | null;
+  note?: string | null;
+  channel?: 'whatsapp' | 'phone' | 'email' | 'in_app' | 'in_person' | null;
+  direction?: 'inbound' | 'outbound' | 'internal' | null;
+  internal?: boolean;
+  actorName?: string | null;
+}
+
+/** Administrator update through the database function, which also writes the project history. */
+export async function adminUpdateServiceRequest(token: string, requestId: string, u: AdminServiceRequestUpdate): Promise<void> {
+  const result = await serviceRest('rpc/admin_update_service_request', token, {
+    method: 'POST',
+    body: {
+      p_request_id: requestId,
+      p_status: u.status ?? null,
+      p_assigned_ref: u.assignedRef ?? null,
+      p_assigned_name: u.assignedName ?? null,
+      p_clear_assignment: u.clearAssignment ?? false,
+      p_quote_amount: u.quoteAmount ?? null,
+      p_quote_currency: u.quoteCurrency ?? null,
+      p_quote_notes: u.quoteNotes ?? null,
+      p_customer_response: u.customerResponse ?? null,
+      p_note: u.note ?? null,
+      p_channel: u.channel ?? null,
+      p_direction: u.direction ?? null,
+      p_internal: u.internal ?? false,
+      p_actor_name: u.actorName ?? null
+    }
+  });
+  if (!result || result.success !== true) throw new Error('The update was not confirmed by the database.');
+}
+
+export async function respondToServiceQuote(token: string, requestId: string, accept: boolean, message?: string): Promise<void> {
+  const result = await serviceRest('rpc/customer_respond_to_service_quote', token, {
+    method: 'POST',
+    body: { p_request_id: requestId, p_accept: accept, p_message: message?.trim() || null }
+  });
+  if (!result || result.success !== true) throw new Error('Your response was not confirmed. Please try again.');
+}

@@ -1,3 +1,4 @@
+import { LandscaperQuoteForm } from './components/LandscaperQuoteForm';
 import React, { useEffect, useRef, useState } from 'react';
 import { putPhoto, deletePhoto, migrateGardenPhotos, requestPersistentStorage, safeSetItem } from './lib/photoStore';
 import {
@@ -2219,79 +2220,25 @@ export default function App() {
           onClose={() => setActiveModal(null)}
         >
           {activeModal?.type === 'quote-request' && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
+            <LandscaperQuoteForm
+              crew={activeModal.crew}
+              zones={zones}
+              defaultZoneName={currentZone?.name}
+              session={session}
+              lang={lang}
+              title={t('quoteTitle')}
+              submitLabel={t('sendRequest')}
+              onRequireSignIn={() => {
+                setActiveModal(null);
+                setTab('account');
+              }}
+              onSubmitted={(num) => {
                 setActiveModal(null);
                 showToast(
-                  `Quote request sent to ${activeModal.crew.name}! They will reply via WhatsApp.`
+                  `Request ${num || ''} saved. ${activeModal.crew.name} will be contacted by Verde Roatán.`.replace('  ', ' ')
                 );
               }}
-              className="flex flex-col gap-3.5"
-            >
-              <div className="flex flex-col gap-0.5 pr-8">
-                <h2 className="text-[20px] font-extrabold text-[var(--ink)]">
-                  {t('quoteTitle')}
-                </h2>
-                <small className="text-[12px] text-[var(--ink-soft)]">
-                  Direct inquiry to {activeModal.crew.name}
-                </small>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">Service Needed</label>
-                <select className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]">
-                  {activeModal.crew.svc.map((s, idx) => (
-                    <option key={idx} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">Neighborhood / Area</label>
-                <select
-                  defaultValue={currentZone?.name}
-                  className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]"
-                >
-                  {zones.map((z) => (
-                    <option key={z.id} value={z.name}>
-                      {z.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">Desired Timing</label>
-                <select className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]">
-                  <option>As soon as possible</option>
-                  <option>This month</option>
-                  <option>Flexible / Site Consultation</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">
-                  Project Details
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  placeholder="Lot size, desired trees, hedge length, or current issues…"
-                  className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full min-h-[48px] bg-[var(--palm)] text-white font-extrabold text-[14.5px] rounded-2xl shadow-xs active:scale-98 transition-all flex items-center justify-center gap-2 mt-1"
-              >
-                <Send className="w-4 h-4" />
-                {t('sendRequest')}
-              </button>
-            </form>
+            />
           )}
         </BottomSheet>
 

@@ -395,3 +395,69 @@ export interface IdentificationReviewRecord {
   reviewed_at?: string | null;
   created_at: string;
 }
+
+// --- Landscaping service requests (kept separate from product orders) ---
+export type ServiceRequestStatus =
+  | 'new_request'
+  | 'pending_review'
+  | 'quote_preparation'
+  | 'quote_sent'
+  | 'awaiting_response'
+  | 'accepted'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+
+export interface ServiceRequest {
+  id: string;
+  request_number: string | null;
+  customer_id: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  service_type: string;
+  description: string | null;
+  location: string | null;
+  requested_date: string | null;
+  requested_timing: string | null;
+  requested_landscaper_ref: string | null;
+  requested_landscaper_name: string | null;
+  assigned_landscaper_ref: string | null;
+  assigned_landscaper_name: string | null;
+  budget: number | null;
+  currency: 'USD' | 'HNL';
+  status: ServiceRequestStatus;
+  quote_amount: number | null;
+  quote_currency: 'USD' | 'HNL' | null;
+  quote_notes: string | null;
+  quote_sent_at: string | null;
+  customer_response: string | null;
+  customer_response_at: string | null;
+  status_updated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceRequestEvent {
+  id: string;
+  request_id: string;
+  event_type:
+    | 'created'
+    | 'status_change'
+    | 'assignment'
+    | 'quote'
+    | 'communication'
+    | 'note'
+    | 'customer_response'
+    | 'cancellation'
+    | 'delay';
+  from_status: ServiceRequestStatus | null;
+  to_status: ServiceRequestStatus | null;
+  channel: 'whatsapp' | 'phone' | 'email' | 'in_app' | 'in_person' | 'system' | null;
+  direction: 'inbound' | 'outbound' | 'internal' | null;
+  message: string | null;
+  actor_role: 'customer' | 'admin' | 'landscaper' | 'system';
+  actor_name: string | null;
+  is_internal: boolean;
+  created_at: string;
+}

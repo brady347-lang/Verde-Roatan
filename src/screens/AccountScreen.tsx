@@ -55,6 +55,8 @@ import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
 import { BotanicalKnowledgeCenter } from '../components/botanical/BotanicalKnowledgeCenter';
 import { IdentificationReviewCenter } from '../components/IdentificationReviewCenter';
+import { LandscapingRequestsCenter } from '../components/LandscapingRequestsCenter';
+import { MyServiceRequests } from '../components/MyServiceRequests';
 
 interface AccountScreenProps {
   lang: Language;
@@ -152,8 +154,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [adminTab, setAdminTab] = useState<
-    'command_center' | 'botanical_center' | 'identification_reviews' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
+    'command_center' | 'botanical_center' | 'identification_reviews' | 'landscaping_requests' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
+  const [newServiceCount, setNewServiceCount] = useState(0);
   const [activeSupplierId, setActiveSupplierId] = useState<string>(() => registeredSuppliers[0]?.id || 'sup-1');
   const [catalogFilter, setCatalogFilter] = useState<'all' | 'plants' | 'products'>('all');
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -336,6 +339,18 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setAdminTab('landscaping_requests')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                    adminTab === 'landscaping_requests' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Landscaping
+                  {newServiceCount > 0 && (
+                    <span className="bg-red-600 text-white rounded-full px-1.5 text-[10px] leading-4">{newServiceCount}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
                   onClick={() => setAdminTab('supplier_portal')}
                   className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
                     adminTab === 'supplier_portal' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
@@ -428,6 +443,16 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                   <IdentificationReviewCenter
                     lang={lang}
                     accessToken={session?.access_token}
+                  />
+                )}
+
+                {adminTab === 'landscaping_requests' && (
+                  <LandscapingRequestsCenter
+                    lang={lang}
+                    accessToken={session?.access_token}
+                    landscapers={landscapers}
+                    adminName={session?.user.full_name || 'Administrator'}
+                    onNewCount={setNewServiceCount}
                   />
                 )}
 
@@ -922,6 +947,10 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 )}
               </div>
             </div>
+          )}
+
+          {session?.access_token && !isAdmin && (
+            <MyServiceRequests lang={lang} accessToken={session.access_token} />
           )}
 
           {/* My Garden Section */}
