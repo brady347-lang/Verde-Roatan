@@ -105,9 +105,7 @@ export async function uploadCatalogPhoto(productId: string, file: File, token: s
   if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
   if (file.size > 15 * 1024 * 1024) throw new Error('Image must be smaller than 15 MB.');
   const compressed = await compressImage(file, 1400, 0.84);
-  const blob = await (await fetch(compressed)).blob();
-  const dataUrl = 'data:' + (blob.type || 'image/jpeg') + ';base64,' + await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(blob); });
-  return saveCatalogItem({ id: productId, t: 'product', name: '', sci: '', kind: 'shrub', salt: 2, sun: '', water: '', price: 0, currency: 'HNL', size: '', stock: 'Out of stock', stock_quantity: 0, nursery: '', pet: 'check', tags: [], note: '', category: 'Outdoor', image_url: dataUrl }, token).then(x => x.image_url || '');
+  return uploadCatalogPhotoDataUrl(productId, compressed, token);
 }
 
 export async function uploadCatalogPhotoDataUrl(productId: string, dataUrl: string, token: string): Promise<string> {
