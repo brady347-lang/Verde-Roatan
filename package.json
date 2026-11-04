@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test:worker": "node workers/verde-roatan-gemini-worker.test.mjs",
     "db:update": "tsx scripts/update-supabase.ts",
     "db:migrate": "tsx scripts/update-supabase.ts",
     "android:sync": "npm run build && cap sync android"

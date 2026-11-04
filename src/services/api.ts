@@ -275,6 +275,19 @@ export async function submitOrderCheckout(
   }
 }
 
+/**
+ * The relative /api/* routes only exist when the Express dev/web server is serving the app.
+ * Inside the Android (Capacitor) app they point at nothing, so skip them and go straight to the
+ * Cloudflare worker instead of burning seconds on a request that cannot succeed.
+ */
+function hasLocalApi(): boolean {
+  try {
+    return !(typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.());
+  } catch {
+    return true;
+  }
+}
+
 export async function analyzeBotanicalImage(
   mode: 'plant' | 'pest',
   base64Image: string,
@@ -282,7 +295,7 @@ export async function analyzeBotanicalImage(
   token?: string
 ): Promise<AIAnalysisResult> {
   const payloadBody = JSON.stringify({ mode, image: base64Image, lang });
-  const endpoints = ['/api/analyze', AI_WORKER_URL];
+  const endpoints = hasLocalApi() ? ['/api/analyze', AI_WORKER_URL] : [AI_WORKER_URL];
   let lastError: Error | null = null;
 
   for (const endpoint of endpoints) {
@@ -321,7 +334,9 @@ export async function refineBotanicalIdentification(
   token?: string
 ): Promise<AIAnalysisResult> {
   const body = JSON.stringify({ mode, image: base64Image, initialResult, lang });
-  const endpoints = ['/api/refine-identification', `${AI_WORKER_URL}/refine`];
+  const endpoints = hasLocalApi()
+    ? ['/api/refine-identification', `${AI_WORKER_URL}/refine`]
+    : [`${AI_WORKER_URL}/refine`];
   let lastError: Error | null = null;
 
   for (const endpoint of endpoints) {
@@ -553,7 +568,7 @@ export async function fetchGardenRecommendations(params: {
   catalogItems: CatalogItem[];
   lang: 'en' | 'es';
 }): Promise<GardenAdvisorResult> {
-  try {
+  if (hasLocalApi()) try {
     const res = await fetch('/api/garden-advisor', {
       method: 'POST',
       headers: {

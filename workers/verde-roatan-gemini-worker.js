@@ -62,6 +62,77 @@ function resolvePhotos(common = '', sci = '') {
   return BOTANICAL_SPECIMEN_IMAGE_BANK.default;
 }
 
+
+/**
+ * Call Gemini with a model fallback list and a hard per-call timeout.
+ * Order: GEMINI_MODEL (optional env override), then the models below. A missing/retired model
+ * returns 404 quickly, so falling through is cheap. The whole call stays inside the app's own
+ * client timeouts (20s identify, 18s refine).
+ */
+const GEMINI_MODELS = [
+  'gemini-3.8-flash',
+  'gemini-3-flash-preview',
+  'gemini-2.5-flash',
+  'gemini-flash-latest',
+  'gemini-2.0-flash'
+];
+
+function parseModelJson(raw) {
+  let text = String(raw || '').trim();
+  text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) return JSON.parse(text.slice(start, end + 1));
+    throw new Error('The AI model returned a response that was not valid JSON.');
+  }
+}
+
+async function callGemini(env, apiKey, parts, { totalMs = 16000, perCallMs = 12000 } = {}) {
+  const models = [...new Set([env?.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean))];
+  const deadline = Date.now() + totalMs;
+  let lastError = 'No Gemini model responded.';
+
+  for (const model of models) {
+    const remaining = deadline - Date.now();
+    if (remaining < 1500) break;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(perCallMs, remaining));
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts }],
+            generationConfig: { response_mime_type: 'application/json', temperature: 0.2 }
+          })
+        }
+      );
+      if (!res.ok) {
+        lastError = `Gemini ${model} error ${res.status}`;
+        continue;
+      }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) {
+        lastError = `Gemini ${model} returned an empty response.`;
+        continue;
+      }
+      return { parsed: parseModelJson(text), model };
+    } catch (err) {
+      lastError = err?.name === 'AbortError' ? `Gemini ${model} timed out.` : (err?.message || lastError);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(lastError);
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -78,7 +149,7 @@ export default {
           status: 'ok',
           worker: 'Verde Roatán Gemini Worker',
           version: '3.0.0',
-          model: 'models/gemini-3.8-flash',
+          model: GEMINI_MODELS[0],
           time: new Date().toISOString()
         }),
         { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
@@ -108,20 +179,20 @@ export default {
 
       // Route 1: Refine Identification (Continuous Accuracy Pass)
       if (pathname === '/refine' || pathname === '/api/refine') {
-        return await handleRefine(body, apiKey);
+        return await handleRefine(body, apiKey, env);
       }
 
       // Route 2: Garden Advisor
       if (pathname === '/garden-advisor' || pathname === '/api/garden-advisor') {
-        return await handleGardenAdvisor(body, apiKey);
+        return await handleGardenAdvisor(body, apiKey, env);
       }
 
       // Route 3: Initial Identification / Pest Diagnosis
-      return await handleAnalyze(body, apiKey);
+      return await handleAnalyze(body, apiKey, env);
     } catch (err) {
       return new Response(
         JSON.stringify({ status: 'error', error: err.message || 'Worker processing failed' }),
-        { status: 500, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
+        { status: 502, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } }
       );
     }
   }
@@ -130,7 +201,7 @@ export default {
 /**
  * Handle initial Plant / Pest Identification with Gemini 3.8 Flash
  */
-async function handleAnalyze(body, apiKey) {
+async function handleAnalyze(body, apiKey, env) {
   const { mode = 'plant', image, lang = 'en' } = body;
   if (!image) {
     return new Response(JSON.stringify({ status: 'error', error: 'Missing image payload' }), {
@@ -208,41 +279,12 @@ Respond ONLY with a valid JSON object matching:
 }
 Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
 
-  const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
-
-  const geminiReq = fetch(geminiEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            { inline_data: { mime_type: mimeType, data: base64Data } },
-            { text: prompt }
-          ]
-        }
-      ],
-      generationConfig: {
-        response_mime_type: 'application/json'
-      }
-    })
-  });
-
-  // 8-second search window
-  const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('Search window timeout (8000ms)')), 8000)
-  );
-
-  const res = await Promise.race([geminiReq, timeoutPromise]);
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${errText}`);
-  }
-
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-  const parsed = JSON.parse(rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim());
+  const { parsed, model } = await callGemini(env, apiKey, [
+    { inline_data: { mime_type: mimeType, data: base64Data } },
+    { text: prompt }
+  ]);
+  parsed.status = 'success';
+  parsed.model_used = model;
 
   if (parsed.verified_botanical_record) {
     parsed.verified_botanical_record.verified_images = resolvePhotos(
@@ -259,7 +301,7 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
 /**
  * Handle Continuous Accuracy Refinement (/refine)
  */
-async function handleRefine(body, apiKey) {
+async function handleRefine(body, apiKey, env) {
   const { mode = 'plant', image, initialResult, lang = 'en' } = body;
   const tentativeCommon =
     initialResult?.verified_botanical_record?.common_name ||
@@ -323,36 +365,12 @@ Respond ONLY with a valid JSON object matching:
 }
 Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
 
-  const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
-
-  const geminiReq = fetch(geminiEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [
-        {
-          role: 'user',
-          parts: [
-            ...(base64Data ? [{ inline_data: { mime_type: mimeType, data: base64Data } }] : []),
-            { text: prompt }
-          ]
-        }
-      ],
-      generationConfig: {
-        response_mime_type: 'application/json'
-      }
-    })
-  });
-
-  const res = await geminiReq;
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${errText}`);
-  }
-
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-  const parsed = JSON.parse(rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim());
+  const { parsed, model } = await callGemini(env, apiKey, [
+    ...(base64Data ? [{ inline_data: { mime_type: mimeType, data: base64Data } }] : []),
+    { text: prompt }
+  ]);
+  parsed.status = 'success';
+  parsed.model_used = model;
   parsed.is_refined = true;
   parsed.refinement_stage = 'verified';
 
@@ -371,7 +389,7 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
 /**
  * Handle Garden Advisor Recommendations
  */
-async function handleGardenAdvisor(body, apiKey) {
+async function handleGardenAdvisor(body, apiKey, env) {
   const { conditions = '', goals = '', catalogItems = [], lang = 'en' } = body;
   const prompt = `You are an expert tropical horticulturalist and landscape architect specializing in the island of Roatán, Honduras.
 A shopper wants personalized recommendations from our nursery catalog based on their garden conditions and goals.
@@ -402,24 +420,9 @@ Respond ONLY with a valid JSON object matching:
 }
 Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
 
-  const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
-  const res = await fetch(geminiEndpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { response_mime_type: 'application/json' }
-    })
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Gemini API error ${res.status}: ${errText}`);
-  }
-
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
-  const parsed = JSON.parse(rawText.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim());
+  const { parsed, model } = await callGemini(env, apiKey, [{ text: prompt }]);
+  parsed.status = 'success';
+  parsed.model_used = model;
 
   return new Response(JSON.stringify(parsed), {
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
