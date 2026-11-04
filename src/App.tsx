@@ -32,6 +32,7 @@ import {
   saveCatalogItem,
   deleteCatalogItem,
   updateCatalogStock,
+  uploadCatalogPhoto,
   fetchBchRate,
   fetchCatalog,
   fetchAdminOrders,
