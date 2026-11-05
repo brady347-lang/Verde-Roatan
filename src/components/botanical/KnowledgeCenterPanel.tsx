@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileText, Loader2, RefreshCw, Search, Upload } from 'lucide-react';
 import {
   KnowledgeDocument, KnowledgeEntity, KnowledgeSource, askKnowledge, extractKnowledgeEntities, getKnowledgeDocument,
-  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf
+  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf
 } from '../../services/api';
 import { extractPdfPages } from '../../lib/pdfText';
 import { Language } from '../../types';
@@ -167,6 +167,7 @@ const ReviewPane: React.FC<{ d: KnowledgeDocument; es: boolean; accessToken?: st
   const [data, setData] = useState<Awaited<ReturnType<typeof getKnowledgeDocument>> | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [promoted, setPromoted] = useState('');
   const [decisions, setDecisions] = useState<Record<string, { status: string; value?: string }>>({});
   const [visibility, setVisibility] = useState<'private' | 'public'>(d.visibility);
   const [citation, setCitation] = useState(d.citation || '');
@@ -266,7 +267,21 @@ const ReviewPane: React.FC<{ d: KnowledgeDocument; es: boolean; accessToken?: st
         <div className="flex gap-2 items-center">
           <small className="text-[12px] text-emerald-700">{es ? 'Aprobado' : 'Approved'} {when(d.reviewed_at)}</small>
           <button type="button" className={ghostCls} disabled={busy} onClick={() => submit('reject')}>{es ? 'Retirar de RAG' : 'Withdraw from RAG'}</button>
+          <button type="button" className={ghostCls} disabled={busy} onClick={async () => {
+            if (!accessToken) return;
+            setBusy(true); setError(''); setPromoted('');
+            try {
+              const r = await promoteKnowledgeDocument(accessToken, d.id);
+              setPromoted(r.created > 0
+                ? (es ? `${r.created} borradores creados (sin verificar). Revísalos en Botánica.` : `${r.created} draft records created (unverified).`)
+                : (es ? 'No se crearon borradores (ya existen o no hay plantas con nombre).' : 'No drafts created (already exist or no named plants).'));
+            } catch (e) { setError(e instanceof Error ? e.message : 'Could not create drafts.'); }
+            finally { setBusy(false); }
+          }}>{es ? 'Crear borradores botánicos' : 'Create draft botanical records'}</button>
         </div>
+      )}
+      {d.status === 'approved' && promoted && (
+        <small className="text-[12px] text-emerald-700">{promoted}</small>
       )}
     </div>
   );

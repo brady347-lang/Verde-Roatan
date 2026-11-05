@@ -1367,6 +1367,60 @@ Respond ONLY with JSON: {"answer": "...", "used": [1]}`;
   }
 }
 
+// Turns the approved facts of an APPROVED document into DRAFT botanical records. Drafts are never
+// published or verified automatically; existing records are never overwritten.
+async function knowledgePromote(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.document_id)) return jsonResponse(400, { status: 'error', error: 'Missing document.' });
+  const tv = reviewDatabaseConfig(env);
+  const doc = await getKnowledgeDoc(tv, body.document_id);
+  if (!doc) return jsonResponse(404, { status: 'error', error: 'Document not found.' });
+  if (doc.status !== 'approved') return jsonResponse(409, { status: 'error', error: 'Approve the document first.' });
+  const res = await tvJson(await fetch(
+    `${tv.url}/rest/v1/knowledge_entities?document_id=eq.${doc.id}&approval_status=in.(approved,modified)&select=field_name,scientific_name,extracted_value,edited_value&limit=1000`,
+    { headers: tvHeaders(tv.key) }
+  ));
+  if (!res.ok || !Array.isArray(res.data)) return jsonResponse(502, { status: 'error', error: 'The approved facts could not be read.' });
+
+  const text = (v, max = 4000) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
+  const groups = new Map();
+  for (const e of res.data) {
+    const sci = text(e.scientific_name, 200);
+    const key = importNameKey(sci);
+    if (!sci || !key.includes(' ') || !/^[a-z×]/i.test(sci)) continue;
+    if (!groups.has(key)) groups.set(key, { sci, facts: {} });
+    const value = text(e.edited_value?.value ?? e.extracted_value?.value, 1500);
+    if (!value) continue;
+    const g = groups.get(key);
+    (g.facts[e.field_name] ||= []).push(value);
+  }
+  const splitList = (arr) => (arr || []).flatMap((v) => v.split(/[;,]/)).map((v) => v.trim()).filter(Boolean).slice(0, 20);
+  const source = text(doc.citation || doc.original_name, 300);
+  const email = String(auth.user.email || 'unknown');
+  const prepared = [];
+  for (const [key, g] of groups) {
+    const f = g.facts;
+    const names = splitList(f.common_names);
+    const rec = {
+      scientific_name: g.sci, name_key: key, common_name: names[0] || g.sci,
+      synonyms: splitList(f.synonyms),
+      scientific_references: [...new Set([...(f.reference || []).map((v) => v.slice(0, 300)), source].filter(Boolean))].slice(0, 10),
+      native_to_bay_islands: null, reference_photo_url: null, taxonomy_check: null,
+      record_status: 'draft', source_type: 'document_extraction', verification_status: 'unverified', created_by_email: email
+    };
+    for (const field of IMPORT_TEXT_FIELDS) rec[field] = f[field] ? text(f[field].join(' '), 1500) : null;
+    prepared.push(rec);
+  }
+  if (!prepared.length) return jsonResponse(200, { status: 'success', created: 0, skipped: 0, message: 'No approved facts name a plant (genus + species).' });
+  const ins = await fetch(`${tv.url}/rest/v1/botanical_taxa?on_conflict=name_key`, {
+    method: 'POST', headers: tvHeaders(tv.key, { Prefer: 'resolution=ignore-duplicates,return=representation' }), body: JSON.stringify(prepared)
+  });
+  const inserted = await ins.json().catch(() => null);
+  if (!ins.ok || !Array.isArray(inserted)) return jsonResponse(502, { status: 'error', error: 'The draft records could not be saved.' });
+  return jsonResponse(200, { status: 'success', created: inserted.length, skipped: prepared.length - inserted.length });
+}
+
 const KNOWLEDGE_ROUTES = {
   ingest: knowledgeIngest,
   extract: knowledgeExtract,
@@ -1375,7 +1429,8 @@ const KNOWLEDGE_ROUTES = {
   review: knowledgeReview,
   retry: knowledgeRetry,
   'mark-failed': knowledgeMarkFailed,
-  ask: knowledgeAsk
+  ask: knowledgeAsk,
+  promote: knowledgePromote
 };
 
 // ---------------------------------------------------------------------------------------------

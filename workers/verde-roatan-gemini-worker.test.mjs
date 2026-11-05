@@ -207,6 +207,31 @@ await t('knowledge: ask answers only from retrieved sources and cites them; no h
   assert.equal(j.answered, true); assert.equal(j.sources.length, 1); assert.equal(j.sources[0].used, true); assert.equal(j.sources[0].page, 3); assert.equal(st.rpcBody.query_embedding.split(',').length, 768);
   assert.equal(st.rpcBody.include_private, true);
 });
+await t('knowledge: promote makes DRAFT unverified records from approved facts only, never overwrites', async () => {
+  let posted = null;
+  const st = kMock({ docs: { [DOC]: { id: DOC, status: 'approved', original_name: 'Palms.pdf', citation: 'Smith 2020' } } });
+  const base = globalThis.fetch;
+  globalThis.fetch = async (url, init = {}) => {
+    url = String(url);
+    if (url.includes('/rest/v1/knowledge_entities') && !init.method) {
+      assert.match(url, /approval_status=in\.\(approved,modified\)/);
+      return new Response(JSON.stringify([
+        { field_name: 'common_names', scientific_name: 'Cocos nucifera', extracted_value: { value: 'Coconut palm' } },
+        { field_name: 'sunlight', scientific_name: 'Cocos nucifera', extracted_value: { value: 'Full sun' }, edited_value: { value: 'Full sun to light shade' } },
+        { field_name: 'family', scientific_name: 'Cocos nucifera', extracted_value: { value: 'Arecaceae' } },
+        { field_name: 'water', scientific_name: 'Palms', extracted_value: { value: 'x' } }
+      ]), { status: 200 });
+    }
+    if (url.includes('/rest/v1/botanical_taxa')) { posted = JSON.parse(init.body); assert.match(init.headers.Prefer, /ignore-duplicates/); return new Response(JSON.stringify(posted), { status: 201 }); }
+    return base(url, init);
+  };
+  const j = await (await authed('/knowledge/promote', { document_id: DOC })).json();
+  assert.equal(j.created, 1); assert.equal(posted.length, 1);
+  assert.equal(posted[0].record_status, 'draft'); assert.equal(posted[0].verification_status, 'unverified'); assert.equal(posted[0].source_type, 'document_extraction');
+  assert.equal(posted[0].common_name, 'Coconut palm'); assert.equal(posted[0].sunlight, 'Full sun to light shade'); assert.deepEqual(posted[0].scientific_references, ['Smith 2020']);
+  kMock({ docs: { [DOC]: { id: DOC, status: 'awaiting_review' } } });
+  assert.equal((await authed('/knowledge/promote', { document_id: DOC })).status, 409);
+});
 await t('knowledge: all knowledge routes reject non-admins', async () => {
   kMock({ docs: { [DOC]: { id: DOC } } });
   for (const r of ['list', 'document', 'review', 'retry', 'ingest', 'extract', 'ask', 'mark-failed']) assert.equal((await authed('/knowledge/' + r, { document_id: DOC, question: 'abc' }, 'bad')).status, 401, r);
