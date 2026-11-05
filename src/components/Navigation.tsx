@@ -71,8 +71,8 @@ export const Navigation: React.FC<NavigationProps> = ({
             <motion.button
               key={tab.id}
               type="button"
-              type="button"
-            role="tab"
+
+              role="tab"
               aria-selected={isSelected}
               onClick={() => onSelectTab(tab.id)}
               whileTap={{ scale: 0.90 }}
