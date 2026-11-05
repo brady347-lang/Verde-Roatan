@@ -1,0 +1,7 @@
+# Deploys workers/verde-roatan-gemini-worker.js to the EXISTING Cloudflare worker of the same name.
+# keep_vars = true keeps the variables you already set in the Cloudflare dashboard
+# (PRIMARY_SUPABASE_URL, REVIEW_SUPABASE_URL, VERDE_ADMIN_EMAILS, ...). Secrets are never touched.
+name = "verde-roatan-gemini-worker"
+main = "verde-roatan-gemini-worker.js"
+compatibility_date = "2025-01-01"
+keep_vars = true
