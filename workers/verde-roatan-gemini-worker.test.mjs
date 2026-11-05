@@ -16,7 +16,7 @@ await t('health', async () => { const r = await worker.fetch(new Request('https:
 await t('analyze falls back past 404 model and forces status=success (model omitted it)', async () => {
   mock((m) => m === 'gemini-3.8-flash' ? new Response('nf', { status: 404 }) : ok(plant));
   const r = await post('/', { mode: 'plant', image: IMG }); const j = await r.json();
-  assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.equal(j.model_used, 'gemini-3-flash-preview');
+  assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.equal(j.model_used, 'gemini-3.6-flash');
   assert.equal(calls.length, 2); assert.ok(Array.isArray(j.verified_botanical_record.verified_images));
 });
 await t('analyze accepts fenced JSON', async () => { mock(() => ok(plant, true)); const j = await (await post('/', { image: IMG })).json(); assert.equal(j.status, 'success'); });

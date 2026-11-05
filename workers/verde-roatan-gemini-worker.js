@@ -71,10 +71,9 @@ function resolvePhotos(common = '', sci = '') {
  */
 const GEMINI_MODELS = [
   'gemini-3.8-flash',
-  'gemini-3-flash-preview',
-  'gemini-2.5-flash',
-  'gemini-flash-latest',
-  'gemini-2.0-flash'
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-flash-latest'
 ];
 
 function parseModelJson(raw) {
