@@ -158,3 +158,20 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   .hummingbird-scan { animation: none; }
 }
+
+/* Subtle holographic scan rings positioned over the live specimen photo */
+.scan-orbit-ring {
+  box-shadow: 0 0 10px color-mix(in srgb, var(--lagoon) 28%, transparent), inset 0 0 10px color-mix(in srgb, var(--lagoon) 12%, transparent);
+  animation: scan-orbit-pulse 3.2s ease-in-out infinite;
+}
+.scan-orbit-ring-delayed {
+  animation-delay: -1.6s;
+  border-style: dashed;
+}
+@keyframes scan-orbit-pulse {
+  0%, 100% { opacity: .25; transform: translate(-50%, -50%) scale(.88) rotate(0deg); }
+  50% { opacity: .78; transform: translate(-50%, -50%) scale(1.06) rotate(18deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scan-orbit-ring { animation: none; opacity: .45; }
+}
