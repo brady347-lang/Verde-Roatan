@@ -54,7 +54,7 @@ export const TransportFeeModal: React.FC<TransportFeeModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
     >
       <div className="bg-[var(--surface)] text-[var(--ink)] border border-[var(--line)] rounded-3xl w-full max-w-lg p-5 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto no-scrollbar">
         {/* Header */}

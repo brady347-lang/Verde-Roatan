@@ -115,8 +115,8 @@ html, body {
 .app-shell {
   height: 100%;
   min-height: 0;
+  /* Top inset is applied here once; the bottom inset is applied by .app-bottom-nav so it is not doubled. */
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .app-main {

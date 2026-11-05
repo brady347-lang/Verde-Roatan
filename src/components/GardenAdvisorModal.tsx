@@ -150,7 +150,7 @@ Location: Roatán Island, Bay Islands, Honduras
     <div
       role="dialog"
       aria-modal="true"
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/65 backdrop-blur-xs animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] bg-black/65 backdrop-blur-xs animate-in fade-in duration-150"
     >
       <div className="bg-[var(--surface)] text-[var(--ink)] border border-[var(--line)] rounded-3xl w-full max-w-2xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden">
         {/* Header */}

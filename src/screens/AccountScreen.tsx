@@ -50,9 +50,16 @@ import {
   TransactionRecord
 } from '../types';
 import { STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/initialData';
+import { usePhotoUrl } from '../lib/photoStore';
 import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
 import { BotanicalKnowledgeCenter } from '../components/botanical/BotanicalKnowledgeCenter';
+import { IdentificationReviewCenter } from '../components/IdentificationReviewCenter';
+import { LandscapingRequestsCenter } from '../components/LandscapingRequestsCenter';
+import { MyServiceRequests } from '../components/MyServiceRequests';
+import { BotanicalImportPanel } from '../components/botanical/BotanicalImportPanel';
+import { matchesQuery } from '../lib/botanicalRules';
+import { KnowledgeCenterPanel } from '../components/botanical/KnowledgeCenterPanel';
 
 interface AccountScreenProps {
   lang: Language;
@@ -94,6 +101,14 @@ interface AccountScreenProps {
   onMarkAllNotificationsRead?: () => void;
   exchangeRateHnl?: number;
   onSendOrderMessage?: (orderId: string, message: string, senderId: string, senderName: string) => void;
+}
+
+/** Garden thumbnail: reads the photo from IndexedDB, falling back to a legacy inline photo. */
+function GardenThumb({ photoId, legacyPhoto, alt }: { photoId?: string | null; legacyPhoto?: string | null; alt: string }) {
+  const stored = usePhotoUrl(photoId);
+  const src = stored || legacyPhoto || null;
+  if (!src) return null;
+  return <img src={src} alt={alt} className="w-full h-full object-cover" />;
 }
 
 export const AccountScreen: React.FC<AccountScreenProps> = ({
@@ -142,8 +157,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [adminTab, setAdminTab] = useState<
-    'command_center' | 'botanical_center' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
+    'command_center' | 'botanical_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
+  const [newServiceCount, setNewServiceCount] = useState(0);
   const [activeSupplierId, setActiveSupplierId] = useState<string>(() => registeredSuppliers[0]?.id || 'sup-1');
   const [catalogFilter, setCatalogFilter] = useState<'all' | 'plants' | 'products'>('all');
   const [catalogSearch, setCatalogSearch] = useState('');
@@ -211,13 +227,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const filteredCatalog = catalog.filter((item) => {
     if (catalogFilter === 'plants' && item.t !== 'plant') return false;
     if (catalogFilter === 'products' && item.t !== 'product') return false;
-    if (catalogSearch.trim()) {
-      const q = catalogSearch.toLowerCase();
-      const matchName = item.name.toLowerCase().includes(q);
-      const matchSci = item.sci.toLowerCase().includes(q);
-      const matchCat = item.category.toLowerCase().includes(q);
-      return matchName || matchSci || matchCat;
-    }
+    if (catalogSearch.trim()) return matchesQuery(item, catalogSearch);
     return true;
   });
 
@@ -312,7 +322,47 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                   }`}
                 >
                   <Compass className="w-3.5 h-3.5" />
-                  Botanical Knowledge
+                  Knowledge (sample data)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('identification_reviews')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                    adminTab === 'identification_reviews' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  ID Reviews
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('landscaping_requests')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                    adminTab === 'landscaping_requests' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Landscaping
+                  {newServiceCount > 0 && (
+                    <span className="bg-red-600 text-white rounded-full px-1.5 text-[10px] leading-4">{newServiceCount}</span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('botanical_import')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                    adminTab === 'botanical_import' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Bulk Import
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('knowledge_docs')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                    adminTab === 'knowledge_docs' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Knowledge Docs
                 </button>
                 <button
                   type="button"
@@ -402,6 +452,31 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                     isAdmin={isAdmin}
                     onOpenStoreItem={onEditItem}
                   />
+                )}
+
+                {adminTab === 'identification_reviews' && (
+                  <IdentificationReviewCenter
+                    lang={lang}
+                    accessToken={session?.access_token}
+                  />
+                )}
+
+                {adminTab === 'landscaping_requests' && (
+                  <LandscapingRequestsCenter
+                    lang={lang}
+                    accessToken={session?.access_token}
+                    landscapers={landscapers}
+                    adminName={session?.user.full_name || 'Administrator'}
+                    onNewCount={setNewServiceCount}
+                  />
+                )}
+
+                {adminTab === 'botanical_import' && (
+                  <BotanicalImportPanel lang={lang} accessToken={session?.access_token} catalog={catalog} />
+                )}
+
+                {adminTab === 'knowledge_docs' && (
+                  <KnowledgeCenterPanel lang={lang} accessToken={session?.access_token} />
                 )}
 
                 {/* 0.1 Dedicated Supplier Interaction Portal */}
@@ -897,6 +972,10 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
             </div>
           )}
 
+          {session?.access_token && !isAdmin && (
+            <MyServiceRequests lang={lang} accessToken={session.access_token} />
+          )}
+
           {/* My Garden Section */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between px-1">
@@ -920,12 +999,8 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-12 h-12 rounded-xl bg-[var(--surface-2)] overflow-hidden shrink-0">
-                        {item.photo ? (
-                          <img
-                            src={item.photo}
-                            alt={item.name}
-                            className="w-full h-full object-cover"
-                          />
+                        {item.photoId || item.photo ? (
+                          <GardenThumb photoId={item.photoId} legacyPhoto={item.photo} alt={item.name} />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center text-[var(--palm)]">
                             <Sprout className="w-6 h-6" />

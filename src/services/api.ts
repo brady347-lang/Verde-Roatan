@@ -1,3 +1,4 @@
+import { buildRuleBasedAdvice } from '../lib/botanicalRules';
 import {
   AI_WORKER_URL,
   API_URL,
@@ -15,16 +16,21 @@ import {
   CatalogItem,
   DeliveryZone,
   GardenAdvisorResult,
-  OrderCheckoutResult
+  OrderCheckoutResult,
+  IdentificationReviewRecord,
+  ServiceRequest,
+  ServiceRequestEvent,
+  ServiceRequestStatus
 } from '../types';
 
 export function compressImage(file: File, maxDimension = 800, quality = 0.78): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = reject;
+    reader.onerror = () => reject(new Error('Could not read that photo file. Please try another photo.'));
     reader.onload = (e) => {
       const img = new Image();
-      img.onerror = reject;
+      img.onerror = () =>
+        reject(new Error('This photo format is not supported (for example HEIC). Please choose a JPG or PNG, or switch the camera to "Most Compatible".'));
       img.onload = () => {
         let width = img.width;
         let height = img.height;
@@ -52,82 +58,96 @@ export function compressImage(file: File, maxDimension = 800, quality = 0.78): P
   });
 }
 
-export async function uploadCatalogPhoto(
-  productId: string,
-  file: File,
-  accessToken: string
-): Promise<string> {
-  if (!productId || !accessToken) throw new Error('A valid product and signed-in admin session are required.');
-  if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
-  if (file.size > 15 * 1024 * 1024) throw new Error('Image must be smaller than 15 MB.');
-
-  const compressedDataUrl = await compressImage(file, 1400, 0.84);
-  const imageBlob = await (await fetch(compressedDataUrl)).blob();
-  const extension = imageBlob.type === 'image/webp' ? 'webp' : 'jpg';
-  const safeProductId = productId.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const objectPath = `${safeProductId}/${Date.now()}-${crypto.randomUUID()}.${extension}`;
-  const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
-  const storageUrl = `${SUPABASE_URL}/storage/v1/object/product-images/${encodedPath}`;
-
-  const uploadResponse = await fetch(storageUrl, {
-    method: 'POST',
-    headers: {
-      apikey: SUPABASE_PUBLISHABLE_KEY,
-      Authorization: `Bearer ${accessToken}`,
-      'Content-Type': imageBlob.type || 'image/jpeg',
-      'Cache-Control': 'public, max-age=31536000, immutable',
-      'x-upsert': 'false'
-    },
-    body: imageBlob
-  });
-  const uploadPayload = await uploadResponse.json().catch(() => ({}));
-  if (!uploadResponse.ok) {
-    const message = uploadPayload.message || uploadPayload.error || uploadPayload.statusCode;
-    if (uploadResponse.status === 403 || uploadResponse.status === 401) {
-      throw new Error('Supabase rejected this upload. Confirm the admin app_metadata role and run the photo-upload SQL migration.');
-    }
-    throw new Error(String(message || `Photo upload failed (${uploadResponse.status}).`));
-  }
-
-  const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${encodedPath}`;
-  const headers = {
-    apikey: SUPABASE_PUBLISHABLE_KEY,
-    Authorization: `Bearer ${accessToken}`,
-    'Content-Type': 'application/json',
-    Prefer: 'return=representation'
-  };
-  const patchBody = JSON.stringify({ image_url: publicUrl, updated_at: new Date().toISOString() });
-  const filter = encodeURIComponent(`eq.${productId}`);
-  let productUpdated = false;
-  let lastError = '';
-  try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/products?id=${filter}`, {
-      method: 'PATCH', headers, body: patchBody
-    });
-    const rows = await response.json().catch(() => []);
-    productUpdated = response.ok && Array.isArray(rows) && rows.length > 0;
-    if (!response.ok) lastError = rows.message || rows.details || 'Could not update the products catalog.';
-  } catch (error) {
-    lastError = error instanceof Error ? error.message : 'Catalog update failed.';
-  }
-
-  if (!productUpdated) {
-    // Remove the newly uploaded object so failed catalog writes do not leave orphaned files.
-    await fetch(storageUrl, {
-      method: 'DELETE',
-      headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` }
-    }).catch(() => undefined);
-    throw new Error(lastError || 'The image uploaded, but no matching products catalog record could be updated.');
-  }
-
-  // Keep the secondary catalog table in sync when a matching row exists.
-  await fetch(`${SUPABASE_URL}/rest/v1/catalog_items?id=${filter}`, {
-    method: 'PATCH', headers, body: patchBody
-  }).catch((error) => console.warn('Secondary catalog_items image sync skipped:', error));
-
-  return publicUrl;
+function catalogHeaders(token: string) {
+  if (!token) throw new Error('Administrator sign-in is required.');
+  return { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json', Prefer: 'return=representation' };
 }
 
+function catalogBody(item: CatalogItem) {
+  return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true };
+}
+
+/** Thrown when the database row saved but a follow-up step (photo) failed, so the UI can still show what was saved. */
+export class CatalogSaveError extends Error {
+  saved?: CatalogItem;
+  constructor(message: string, saved?: CatalogItem) {
+    super(message);
+    this.name = 'CatalogSaveError';
+    this.saved = saved;
+  }
+}
+
+/** Explain a failed catalog write. RLS blocks return 200 with zero rows, which is easy to mistake for success. */
+function catalogWriteError(response: Response, rows: any, action: string): Error {
+  if (response.status === 401 || response.status === 403) {
+    return new Error('Your administrator session was rejected. Sign out, sign back in as the administrator, then try again.');
+  }
+  if (response.ok && Array.isArray(rows) && rows.length === 0) {
+    return new Error('Supabase did not ' + action + ' this record: the database blocked the change (administrator permission) or the record no longer exists. Sign out and back in as the administrator, then try again.');
+  }
+  return new Error(rows?.message || rows?.details || 'Supabase could not ' + action + ' the record (' + response.status + ').');
+}
+
+export async function saveCatalogItem(item: CatalogItem, token: string): Promise<CatalogItem> {
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id);
+  const id = uuid ? item.id : crypto.randomUUID();
+  const body = { ...catalogBody(item), ...(uuid ? {} : { id }) };
+  const url = SUPABASE_URL + '/rest/v1/products' + (uuid ? '?id=eq.' + encodeURIComponent(id) : '');
+  const response = await fetch(url, { method: uuid ? 'PATCH' : 'POST', headers: catalogHeaders(token), body: JSON.stringify(body), cache: 'no-store' });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw catalogWriteError(response, rows, 'save');
+  const row = rows[0];
+  let saved: CatalogItem = { ...item, id: String(row.id), name: String(row.name || item.name), category: String(row.category || item.category), price: Number(row.price ?? item.price), currency: (row.currency || item.currency) as 'HNL' | 'USD', stock_quantity: Number(row.stock_quantity ?? item.stock_quantity), image_url: String(row.image_url || item.image_url || '') };
+  if (item.image_url?.startsWith('data:image/')) {
+    const blob = await (await fetch(item.image_url)).blob();
+    const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
+    const path = id + '/' + Date.now() + '-' + crypto.randomUUID() + '.' + ext;
+    const storage = SUPABASE_URL + '/storage/v1/object/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+    const upload = await fetch(storage, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+    const up = await upload.json().catch(() => ({}));
+    if (!upload.ok) throw new CatalogSaveError('Your changes were saved, but the photo could not be uploaded: ' + (up.message || up.error || upload.status) + (upload.status === 401 || upload.status === 403 ? ' (administrator permission). Sign out and back in as the administrator.' : ''), { ...saved, image_url: String(row.image_url || '') });
+    const imageUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+    const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: imageUrl }), cache: 'no-store' });
+    const patched = await patch.json().catch(() => []);
+    if (!patch.ok || !Array.isArray(patched) || patched.length !== 1) throw new CatalogSaveError('Your changes were saved and the photo uploaded, but its link could not be stored on the record. ' + catalogWriteError(patch, patched, 'update').message, { ...saved, image_url: String(row.image_url || '') });
+    saved = { ...saved, image_url: imageUrl };
+  }
+  return saved;
+}
+
+export async function deleteCatalogItem(id: string, token: string): Promise<void> {
+  const response = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: catalogHeaders(token), cache: 'no-store' });
+  if (!response.ok) { const d = await response.json().catch(() => ({})); throw new Error(d.message || d.details || 'Supabase rejected catalog deletion (' + response.status + ').'); }
+}
+
+export async function updateCatalogStock(id: string, quantity: number, token: string): Promise<number> {
+  const response = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ stock_quantity: Math.max(0, Math.floor(quantity)) }), cache: 'no-store' });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error(rows?.message || rows?.details || 'Supabase rejected stock update (' + response.status + ').');
+  return Number(rows[0].stock_quantity);
+}
+
+export async function uploadCatalogPhoto(productId: string, file: File, token: string): Promise<string> {
+  if (!file.type.startsWith('image/')) throw new Error('Please choose an image file.');
+  if (file.size > 15 * 1024 * 1024) throw new Error('Image must be smaller than 15 MB.');
+  const compressed = await compressImage(file, 1400, 0.84);
+  return uploadCatalogPhotoDataUrl(productId, compressed, token);
+}
+
+export async function uploadCatalogPhotoDataUrl(productId: string, dataUrl: string, token: string): Promise<string> {
+  if (!dataUrl.startsWith('data:image/')) throw new Error('A compressed catalog image is required.');
+  const blob = await (await fetch(dataUrl)).blob();
+  const path = productId + '/' + Date.now() + '-' + crypto.randomUUID() + '.jpg';
+  const storage = SUPABASE_URL + '/storage/v1/object/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+  const upload = await fetch(storage, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+  const d = await upload.json().catch(() => ({}));
+  if (!upload.ok) throw new Error(d.message || d.error || 'Photo upload failed (' + upload.status + ').');
+  const publicUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
+  const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(productId), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: publicUrl }), cache: 'no-store' });
+  const rows = await patch.json().catch(() => []);
+  if (!patch.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('Photo uploaded but its link was not saved: ' + catalogWriteError(patch, rows, 'update').message);
+  return publicUrl;
+}
 export interface BchRateResponse {
   hnlPerUsd: number;
   rateDate: string;
@@ -274,6 +294,19 @@ export async function submitOrderCheckout(
   }
 }
 
+/**
+ * The relative /api/* routes only exist when the Express dev/web server is serving the app.
+ * Inside the Android (Capacitor) app they point at nothing, so skip them and go straight to the
+ * Cloudflare worker instead of burning seconds on a request that cannot succeed.
+ */
+function hasLocalApi(): boolean {
+  try {
+    return !(typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.());
+  } catch {
+    return true;
+  }
+}
+
 export async function analyzeBotanicalImage(
   mode: 'plant' | 'pest',
   base64Image: string,
@@ -281,7 +314,7 @@ export async function analyzeBotanicalImage(
   token?: string
 ): Promise<AIAnalysisResult> {
   const payloadBody = JSON.stringify({ mode, image: base64Image, lang });
-  const endpoints = ['/api/analyze', AI_WORKER_URL];
+  const endpoints = hasLocalApi() ? ['/api/analyze', AI_WORKER_URL] : [AI_WORKER_URL];
   let lastError: Error | null = null;
 
   for (const endpoint of endpoints) {
@@ -320,7 +353,9 @@ export async function refineBotanicalIdentification(
   token?: string
 ): Promise<AIAnalysisResult> {
   const body = JSON.stringify({ mode, image: base64Image, initialResult, lang });
-  const endpoints = ['/api/refine-identification', `${AI_WORKER_URL}/refine`];
+  const endpoints = hasLocalApi()
+    ? ['/api/refine-identification', `${AI_WORKER_URL}/refine`]
+    : [`${AI_WORKER_URL}/refine`];
   let lastError: Error | null = null;
 
   for (const endpoint of endpoints) {
@@ -347,6 +382,105 @@ export async function refineBotanicalIdentification(
   }
 
   throw new Error(lastError?.message || 'The refinement service is unavailable. Your original identification has been kept unchanged.');
+}
+
+export async function submitIdentificationFeedback(
+  mode: 'plant' | 'pest',
+  image: string,
+  result: AIAnalysisResult,
+  decision: 'confirmed' | 'almost' | 'not_my_plant',
+  correctedCommonName: string,
+  correctedScientificName: string,
+  accessToken: string,
+  notes = '',
+  language = 'en'
+): Promise<{ review_id: string; review_status: string; verification_level?: string; message: string }> {
+  if (!accessToken) throw new Error('Please sign in before confirming an identification.');
+  if (!image?.startsWith('data:image/')) throw new Error('The original specimen photo is missing.');
+  if (mode !== 'plant') throw new Error('Plant identification feedback is currently available for plant specimens.');
+
+  const record = result.verified_botanical_record;
+  const candidate = result.candidates?.[0];
+  const payload = {
+    image,
+    identification: {
+      candidate: {
+        common_name: record?.common_name || candidate?.common_name || '',
+        scientific_name: record?.scientific_name || candidate?.scientific_name || '',
+        confidence_score: candidate?.confidence_score
+      },
+      family: record?.plant_family || '',
+      model_used: result.model_used || ''
+    },
+    decision,
+    corrected_common_name: correctedCommonName.trim(),
+    corrected_scientific_name: correctedScientificName.trim(),
+    notes: notes.trim(),
+    source: { app: 'verde-roatan', platform: 'android', language }
+  };
+
+  const response = await fetch(`${AI_WORKER_URL}/identification-review`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status !== 'success') {
+    throw new Error(data.error || data.message || 'Your identification feedback could not be saved.');
+  }
+  return data;
+}
+
+async function callIdentificationReviewAdmin(
+  route: 'admin/list' | 'admin/review',
+  payload: Record<string, unknown>,
+  accessToken: string
+): Promise<any> {
+  if (!accessToken) throw new Error('Administrator sign-in is required.');
+  const response = await fetch(`${AI_WORKER_URL}/identification-review/${route}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      apikey: SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${accessToken}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status !== 'success') {
+    throw new Error(data.error || data.message || 'The identification review service is unavailable.');
+  }
+  return data;
+}
+
+export async function fetchIdentificationReviewQueue(
+  accessToken: string,
+  status: 'pending' | 'approved' | 'rejected' = 'pending'
+): Promise<IdentificationReviewRecord[]> {
+  const data = await callIdentificationReviewAdmin('admin/list', { status }, accessToken);
+  return Array.isArray(data.reviews) ? data.reviews as IdentificationReviewRecord[] : [];
+}
+
+export async function reviewIdentificationRecord(
+  accessToken: string,
+  reviewId: string,
+  status: 'approved' | 'rejected',
+  adminNotes = '',
+  verificationBasis = ''
+): Promise<void> {
+  // Approving never verifies. Scientific verification is only sent with a written basis.
+  await callIdentificationReviewAdmin('admin/review', {
+    review_id: reviewId,
+    status,
+    admin_notes: adminNotes,
+    ...(verificationBasis ? { verify: { basis: verificationBasis } } : {})
+  }, accessToken);
 }
 
 export async function supabaseAuthRequest(path: string, payload: any, token?: string): Promise<any> {
@@ -552,7 +686,7 @@ export async function fetchGardenRecommendations(params: {
   catalogItems: CatalogItem[];
   lang: 'en' | 'es';
 }): Promise<GardenAdvisorResult> {
-  try {
+  if (hasLocalApi()) try {
     const res = await fetch('/api/garden-advisor', {
       method: 'POST',
       headers: {
@@ -627,66 +761,258 @@ export async function fetchGardenRecommendations(params: {
     console.warn('Gemini garden-advisor worker unavailable; using offline recommendations.', error);
   }
 
-  // Local fallback heuristic if both server routes are unavailable
-  const catalog = params.catalogItems.length > 0 ? params.catalogItems : INITIAL_CATALOG;
-  const isEs = params.lang === 'es';
-  const query = `${params.conditions} ${params.goals}`.toLowerCase();
-
-  const scored = catalog
-    .filter((c) => c.stock !== 'Out of stock')
-    .map((item) => {
-      let score = 70;
-      const text = `${item.name} ${item.category} ${item.note} ${(item.tags || []).join(' ')}`.toLowerCase();
-      if (query.includes('sun') || query.includes('sol')) {
-        if (text.includes('sun') || text.includes('sol') || text.includes('full') || text.includes('palm')) score += 15;
-      }
-      if (query.includes('shade') || query.includes('sombra')) {
-        if (text.includes('shade') || text.includes('sombra') || text.includes('monstera') || text.includes('indoor')) score += 20;
-      }
-      if (query.includes('salt') || query.includes('coastal') || query.includes('playa') || query.includes('mar')) {
-        if (text.includes('salt') || text.includes('coastal') || text.includes('coconut') || text.includes('palm')) score += 20;
-      }
-      if (query.includes('flower') || query.includes('flor') || query.includes('color')) {
-        if (text.includes('bloom') || text.includes('flower') || text.includes('hibiscus') || text.includes('ixora') || text.includes('bougainvillea')) score += 18;
-      }
-      if (query.includes('soil') || query.includes('tierra') || query.includes('fertilizer') || query.includes('abono')) {
-        if (item.category === 'Soils & Substrates' || item.category === 'Nutrients & Care') score += 15;
-      }
-      return { item, score: Math.min(score, 98) };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4);
-
-  return {
-    status: 'success',
-    summary: isEs
-      ? 'Basado en las condiciones del microclima de Roatán, hemos seleccionado plantas y sustratos adaptados a suelos arenosos, brisa marina y sol tropical.'
-      : 'Based on your Roatán microclimate conditions, we selected hardy tropical specimens and soil amendments tailored to island salinity, moisture, and sun exposure.',
-    conditions_assessment: {
-      sun_and_microclimate: isEs ? 'Exposición adecuada con resistencia a radiación UV costera.' : 'Balanced sun exposure with coastal UV resistance.',
-      soil_and_drainage: isEs ? 'Requiere sustrato aireado con buen drenaje de arena o gravilla de coral.' : 'Requires high-aeration substrate with rapid coral gravel drainage.',
-      wind_and_salt_tolerance: isEs ? 'Variedades con cutícula cerosa o tolerancia al viento alisio del mar Caribe.' : 'Foliage with wax cuticle or trade wind salt spray tolerance.'
-    },
-    island_pro_tips: [
-      isEs
-        ? 'En Roatán, mezcle tierra negra de cerro con bonote de coco o gravilla de río para evitar la compactación por lluvias torrenciales.'
-        : 'In Roatán, blend rich volcanic highland soil with coconut coir or river pea gravel to prevent compaction during heavy tropical downpours.',
-      isEs
-        ? 'Riegue temprano en la mañana para evitar hongos foliares causados por la humedad nocturna de la isla.'
-        : 'Water early in the morning to allow foliage to dry before dusk, curbing nocturnal island fungal growth.'
-    ],
-    recommendations: scored.map(({ item, score }) => ({
-      product_id: item.id,
-      product_name: item.name,
-      match_score: score,
-      why_it_fits: isEs
-        ? `Excelente tolerancia para las condiciones descritas (${item.category}). Prospera con vigor en las islas de la Bahía.`
-        : `Outstanding resilience for these specific conditions (${item.category}). Proven vigor across the Bay Islands.`,
-      care_and_placement_tip: isEs
-        ? 'Ubicar con drenaje adecuado y abonar cada 4 meses al inicio de temporadas de lluvia.'
-        : 'Ensure free-draining roots and topdress organic fertilizer at the onset of island rainy seasons.',
-      catalog_item: item
-    }))
-  };
+  // Deterministic, rule-based advice from the structured plant data. Needs no network and no AI.
+  return buildRuleBasedAdvice({
+    conditions: params.conditions,
+    goals: params.goals,
+    catalog: params.catalogItems.length > 0 ? params.catalogItems : INITIAL_CATALOG,
+    lang: params.lang
+  });
 }
 
+
+// ---------------------------------------------------------------------------
+// Landscaping service requests (separate from product orders)
+// ---------------------------------------------------------------------------
+
+function serviceRequestError(data: any, status: number): Error {
+  const code = String(data?.code || '');
+  const msg = String(data?.message || '');
+  // Tables / functions missing => the Supabase migration has not been applied yet.
+  if (code === 'PGRST205' || code === 'PGRST202' || code === '42P01' || code === '42883' || /schema cache|does not exist/i.test(msg)) {
+    return new Error(
+      'Landscaping requests are not set up in the database yet. An administrator must run the latest Supabase migration (20261104_verde_landscaping_requests.sql).'
+    );
+  }
+  if (code === '42501' || status === 401 || status === 403 || /row-level security|permission denied|not authorized/i.test(msg)) {
+    return new Error('Your session does not have permission for this action. Please sign out and sign in again.');
+  }
+  return new Error(msg || data?.details || data?.hint || `Request failed (${status}).`);
+}
+
+async function serviceRest(path: string, token: string, init: { method?: string; body?: unknown; prefer?: string } = {}): Promise<any> {
+  const headers: Record<string, string> = {
+    apikey: SUPABASE_PUBLISHABLE_KEY,
+    Authorization: `Bearer ${token}`,
+    Accept: 'application/json'
+  };
+  if (init.body !== undefined) headers['Content-Type'] = 'application/json';
+  if (init.prefer) headers.Prefer = init.prefer;
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method: init.method || 'GET',
+    headers,
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    cache: 'no-store'
+  });
+  const data = await response.json().catch(() => (response.ok ? [] : {}));
+  if (!response.ok) throw serviceRequestError(data, response.status);
+  return data;
+}
+
+export interface NewServiceRequestInput {
+  customerId: string;
+  customerName: string;
+  customerPhone: string;
+  customerEmail?: string;
+  serviceType: string;
+  description: string;
+  location: string;
+  requestedTiming?: string;
+  requestedDate?: string | null;
+  landscaperRef?: string;
+  landscaperName?: string;
+}
+
+/** Saves a landscaping request. Resolves only after the database confirms the new row. */
+export async function submitServiceRequest(token: string, input: NewServiceRequestInput): Promise<ServiceRequest> {
+  if (!token) throw new Error('Please sign in to request a landscaper.');
+  if (!input.customerId) throw new Error('Your account could not be verified. Please sign in again.');
+  const rows = await serviceRest('service_requests', token, {
+    method: 'POST',
+    prefer: 'return=representation',
+    body: {
+      customer_id: input.customerId,
+      customer_name: input.customerName.trim(),
+      customer_phone: input.customerPhone.trim(),
+      customer_email: input.customerEmail?.trim() || null,
+      service_type: input.serviceType,
+      description: input.description.trim(),
+      location: input.location,
+      requested_timing: input.requestedTiming || null,
+      requested_date: input.requestedDate || null,
+      requested_landscaper_ref: input.landscaperRef || null,
+      requested_landscaper_name: input.landscaperName || null,
+      status: 'new_request'
+    }
+  });
+  const row = Array.isArray(rows) ? rows[0] : null;
+  if (!row?.id) throw new Error('The request was not saved. Please try again.');
+  return row as ServiceRequest;
+}
+
+export async function fetchMyServiceRequests(token: string): Promise<ServiceRequest[]> {
+  const rows = await serviceRest('service_requests?select=*&order=created_at.desc&limit=50', token);
+  return Array.isArray(rows) ? (rows as ServiceRequest[]) : [];
+}
+
+export async function fetchAdminServiceRequests(token: string): Promise<ServiceRequest[]> {
+  const rows = await serviceRest('service_requests?select=*&order=created_at.desc&limit=300', token);
+  return Array.isArray(rows) ? (rows as ServiceRequest[]) : [];
+}
+
+export async function fetchServiceRequestEvents(token: string, requestId: string): Promise<ServiceRequestEvent[]> {
+  const rows = await serviceRest(
+    `service_request_events?select=*&request_id=eq.${encodeURIComponent(requestId)}&order=created_at.asc&limit=500`,
+    token
+  );
+  return Array.isArray(rows) ? (rows as ServiceRequestEvent[]) : [];
+}
+
+export interface AdminServiceRequestUpdate {
+  status?: ServiceRequestStatus;
+  assignedRef?: string | null;
+  assignedName?: string | null;
+  clearAssignment?: boolean;
+  quoteAmount?: number | null;
+  quoteCurrency?: 'USD' | 'HNL' | null;
+  quoteNotes?: string | null;
+  customerResponse?: string | null;
+  note?: string | null;
+  channel?: 'whatsapp' | 'phone' | 'email' | 'in_app' | 'in_person' | null;
+  direction?: 'inbound' | 'outbound' | 'internal' | null;
+  internal?: boolean;
+  actorName?: string | null;
+}
+
+/** Administrator update through the database function, which also writes the project history. */
+export async function adminUpdateServiceRequest(token: string, requestId: string, u: AdminServiceRequestUpdate): Promise<void> {
+  const result = await serviceRest('rpc/admin_update_service_request', token, {
+    method: 'POST',
+    body: {
+      p_request_id: requestId,
+      p_status: u.status ?? null,
+      p_assigned_ref: u.assignedRef ?? null,
+      p_assigned_name: u.assignedName ?? null,
+      p_clear_assignment: u.clearAssignment ?? false,
+      p_quote_amount: u.quoteAmount ?? null,
+      p_quote_currency: u.quoteCurrency ?? null,
+      p_quote_notes: u.quoteNotes ?? null,
+      p_customer_response: u.customerResponse ?? null,
+      p_note: u.note ?? null,
+      p_channel: u.channel ?? null,
+      p_direction: u.direction ?? null,
+      p_internal: u.internal ?? false,
+      p_actor_name: u.actorName ?? null
+    }
+  });
+  if (!result || result.success !== true) throw new Error('The update was not confirmed by the database.');
+}
+
+export async function respondToServiceQuote(token: string, requestId: string, accept: boolean, message?: string): Promise<void> {
+  const result = await serviceRest('rpc/customer_respond_to_service_quote', token, {
+    method: 'POST',
+    body: { p_request_id: requestId, p_accept: accept, p_message: message?.trim() || null }
+  });
+  if (!result || result.success !== true) throw new Error('Your response was not confirmed. Please try again.');
+}
+
+
+// ---------------------------------------------------------------------------
+// Bulk botanical import (administrators only; served by the Cloudflare worker)
+// ---------------------------------------------------------------------------
+async function botanicalImportCall(route: string, payload: Record<string, unknown>, accessToken: string): Promise<any> {
+  if (!accessToken) throw new Error('Administrator sign-in is required.');
+  let response: Response;
+  try {
+    response = await fetch(`${AI_WORKER_URL}/botanical-import/${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${accessToken}` },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    throw new Error('Could not reach the Verde Roatán service. Check your connection and try again.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 || (response.status === 405)) {
+    throw new Error('The import service is not deployed yet. Deploy the latest Cloudflare worker, then try again.');
+  }
+  if (!response.ok || data.status !== 'success') throw new Error(data.error || 'The import service returned an error (' + response.status + ').');
+  return data;
+}
+
+export interface TaxonomyCheck { name: string; match: string; status?: string | null; canonical?: string | null; family?: string | null; kingdom?: string | null }
+
+export async function fetchExistingBotanicalRecords(token: string): Promise<Array<{ scientific_name: string; common_name?: string }>> {
+  return (await botanicalImportCall('existing', {}, token)).records || [];
+}
+export async function validateBotanicalNames(token: string, names: string[]): Promise<TaxonomyCheck[]> {
+  return (await botanicalImportCall('validate', { names }, token)).results || [];
+}
+export async function suggestImportColumnMapping(token: string, headers: string[], sample: string[][]): Promise<Record<string, string | null>> {
+  return (await botanicalImportCall('map-columns', { headers, sample }, token)).mapping || {};
+}
+export interface BotanicalImportResult { batch_id: string; inserted: number; skipped: number; rejected: Array<{ name: string; reason: string }> }
+export async function commitBotanicalImport(token: string, filename: string, rows: unknown[]): Promise<BotanicalImportResult> {
+  return await botanicalImportCall('commit', { filename, rows }, token);
+}
+
+
+// ---------------------------------------------------------------------------
+// Botanical Knowledge Center (administrators only; served by the Cloudflare worker)
+// ---------------------------------------------------------------------------
+async function knowledgeCall(route: string, payload: Record<string, unknown>, token: string): Promise<any> {
+  if (!token) throw new Error('Administrator sign-in is required.');
+  let response: Response;
+  try {
+    response = await fetch(`${AI_WORKER_URL}/knowledge/${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    throw new Error('Could not reach the Verde Roatán service. Check your connection and try again.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 || response.status === 405) throw new Error('The Knowledge Center service is not deployed yet. Deploy the latest Cloudflare worker, then try again.');
+  if (!response.ok || data.status !== 'success') throw new Error(data.error || 'The Knowledge Center service returned an error (' + response.status + ').');
+  return data;
+}
+
+export type KnowledgeStatus = 'uploaded' | 'processing' | 'awaiting_review' | 'approved' | 'rejected' | 'failed';
+export interface KnowledgeDocument {
+  id: string; original_name: string; file_size_bytes: number; status: KnowledgeStatus; stage: string;
+  error_message?: string | null; visibility: 'private' | 'public'; citation?: string | null; source_institution?: string | null;
+  page_count?: number | null; chunks_count: number; rag_indexed: boolean; uploaded_by_email?: string; created_at: string; reviewed_at?: string | null;
+}
+export interface KnowledgeEntity {
+  id: string; category: string; field_name: string; scientific_name?: string | null; extracted_value: { value?: string };
+  confidence: number; source_page?: number | null; source_snippet?: string | null;
+  approval_status: 'pending' | 'approved' | 'rejected' | 'modified'; edited_value?: { value?: string } | null;
+}
+export interface KnowledgeSource { n: number; document_id: string; document: string; citation?: string | null; page?: number | null; similarity: number; snippet: string; used: boolean }
+
+export async function uploadKnowledgePdf(token: string, file: File): Promise<{ duplicate: boolean; document: { id: string; original_name: string; status: string } }> {
+  let response: Response;
+  try {
+    response = await fetch(`${AI_WORKER_URL}/knowledge/upload?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/pdf', apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+      body: file
+    });
+  } catch {
+    throw new Error('Could not reach the Verde Roatán service. Check your connection and try again.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 || response.status === 405) throw new Error('The Knowledge Center service is not deployed yet. Deploy the latest Cloudflare worker, then try again.');
+  if (!response.ok || data.status !== 'success') throw new Error(data.error || 'The PDF upload failed (' + response.status + ').');
+  return data;
+}
+export const listKnowledgeDocuments = async (token: string): Promise<KnowledgeDocument[]> => (await knowledgeCall('list', {}, token)).documents || [];
+export const getKnowledgeDocument = async (token: string, id: string): Promise<{ document: KnowledgeDocument; entities: KnowledgeEntity[]; chunks: Array<{ chunk_index: number; page_number?: number | null; content: string }>; pdf_url: string | null }> => knowledgeCall('document', { document_id: id }, token);
+export const ingestKnowledgePages = async (token: string, id: string, pages: Array<{ page: number; text: string }>, final: boolean, pageCount: number) => knowledgeCall('ingest', { document_id: id, pages, final, page_count: pageCount }, token);
+export const extractKnowledgeEntities = async (token: string, id: string): Promise<{ entities: number; warning?: string | null }> => knowledgeCall('extract', { document_id: id }, token);
+export const reviewKnowledgeDocument = async (token: string, payload: { document_id: string; action: 'approve' | 'reject'; visibility?: 'private' | 'public'; citation?: string; source_institution?: string; entity_decisions?: Array<{ id: string; status: string; edited_value?: { value: string } }> }) => knowledgeCall('review', payload, token);
+export const retryKnowledgeDocument = async (token: string, id: string): Promise<{ pdf_url: string | null }> => knowledgeCall('retry', { document_id: id }, token);
+export const promoteKnowledgeDocument = async (token: string, id: string): Promise<{ created: number; skipped: number; message?: string }> => knowledgeCall('promote', { document_id: id }, token);
+export const markKnowledgeFailed = async (token: string, id: string, message: string) => knowledgeCall('mark-failed', { document_id: id, message }, token);
+export const askKnowledge = async (token: string, question: string, opts: { includePrivate: boolean; minSimilarity: number }): Promise<{ answered: boolean; answer: string; sources: KnowledgeSource[] }> => knowledgeCall('ask', { question, include_private: opts.includePrivate, min_similarity: opts.minSimilarity }, token);

@@ -5,7 +5,9 @@ export const API_WORKER_VERSION = '2.2.0';
 export const API_URL = 'https://verde-roatan-api.brady347.workers.dev';
 export const AI_WORKER_URL = 'https://verde-roatan-gemini-worker.brady347.workers.dev';
 export const CURRENCY_WORKER_URL = 'https://verde-roatan-currency-worker.brady347.workers.dev';
+// Keep the established production Supabase project as the app's primary database.
 export const SUPABASE_URL = 'https://tjzqxsyxvfdabfguezmu.supabase.co';
+// Public publishable key for the established production project; never use a service-role key here.
 export const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_vj7nV0g2fbPF11TfKtalKQ_BMUbQ8RD';
 
 // Masked Admin Verification (Never expose in plain text)

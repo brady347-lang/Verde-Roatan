@@ -1,0 +1,28 @@
+name: Verde Roatan - Validate
+on:
+  push:
+    branches:
+      - safety/supabase-target-hardening
+  pull_request:
+    branches:
+      - main
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Cloudflare Worker syntax check
+        run: node --input-type=module --check < workers/verde-roatan-gemini-worker.js
+      - name: TypeScript check
+        run: npm run lint
+      - name: Production web build
+        run: npm run build

@@ -19,7 +19,7 @@ interface PlantEditModalProps {
   lang: Language;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (plant: CatalogItem) => void;
+  onSave: (plant: CatalogItem) => Promise<string | null> | void;
   initialPlant?: CatalogItem | null;
   registeredSuppliers?: RegisteredSupplier[];
   onQuickAddSupplier?: (supplier: RegisteredSupplier) => void;
@@ -66,6 +66,9 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
   const [note, setNote] = useState(initialPlant?.note || '');
   const [tagsInput, setTagsInput] = useState(initialPlant?.tags?.join(', ') || 'palm, tropical, hardy');
   const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   // AI Auto-detection states
   const [isDetectingAI, setIsDetectingAI] = useState(false);
@@ -219,6 +222,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessingImg(true);
+    setImageError(null);
     try {
       const base64 = await compressImage(file, 1200, 0.85);
       setImageUrl(base64);
@@ -226,6 +230,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
       await runAutoBotanicalDetection(base64);
     } catch (err) {
       console.error('Failed to compress plant image', err);
+      setImageError(err instanceof Error ? err.message : 'Could not process that photo. Please try another one.');
     } finally {
       setIsProcessingImg(false);
     }
@@ -270,7 +275,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
     setShowAddSupplierInline(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
@@ -302,7 +307,20 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
       tags: parsedTags.length > 0 ? parsedTags : [kind, 'plant']
     };
 
-    onSave(plantRecord);
+    // Keep the form open until the database and storage steps finish, so a failure never loses the edits or photo.
+    setSaving(true);
+    setSaveError(null);
+    let failure: string | null | void = null;
+    try {
+      failure = await onSave(plantRecord);
+    } catch (err) {
+      failure = err instanceof Error ? err.message : 'The change could not be saved.';
+    }
+    setSaving(false);
+    if (failure) {
+      setSaveError(failure);
+      return;
+    }
     onClose();
   };
 
@@ -317,7 +335,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] max-h-[92vh] overflow-y-auto z-50 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-4 pt-3 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-200"
+        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] max-h-[92dvh] overflow-y-auto z-50 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-4 pt-3 pb-[calc(2rem_+_env(safe-area-inset-bottom,0px))] shadow-2xl animate-in slide-in-from-bottom duration-200"
       >
         <div className="w-10 h-1.5 rounded-full bg-[var(--line)] mx-auto mb-3" />
 
@@ -423,6 +441,11 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
                     className="sr-only"
                   />
                 </label>
+                {imageError && (
+                  <p role="alert" className="text-[11.5px] font-semibold text-red-600">
+                    {imageError}
+                  </p>
+                )}
                 <div className="flex items-center gap-1.5">
                   <input
                     type="url"
@@ -761,6 +784,11 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
             />
           </div>
 
+          {saveError && (
+            <p role="alert" className="text-[12.5px] font-semibold text-red-600 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+              {saveError}
+            </p>
+          )}
           <div className="flex items-center gap-2 pt-2">
             <button
               type="button"
@@ -771,9 +799,10 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 rounded-2xl bg-[var(--palm)] hover:bg-[var(--palm)]/90 text-white font-extrabold text-[14px] shadow-xs active:scale-98 transition-all"
+              disabled={saving || isProcessingImg}
+              className="flex-1 py-3 rounded-2xl bg-[var(--palm)] hover:bg-[var(--palm)]/90 text-white font-extrabold text-[14px] shadow-xs active:scale-98 transition-all disabled:opacity-60 disabled:cursor-wait"
             >
-              {isEditing ? 'Save Changes' : 'Catalog Plant Specimen'}
+              {saving ? 'Saving…' : isEditing ? 'Save Changes' : 'Catalog Plant Specimen'}
             </button>
           </div>
         </form>

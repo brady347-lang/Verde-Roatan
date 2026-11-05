@@ -1,4 +1,6 @@
+import { LandscaperQuoteForm } from './components/LandscaperQuoteForm';
 import React, { useEffect, useRef, useState } from 'react';
+import { putPhoto, deletePhoto, migrateGardenPhotos, requestPersistentStorage, safeSetItem } from './lib/photoStore';
 import {
   AIAnalysisResult,
   ActiveOrder,
@@ -29,6 +31,10 @@ import {
 import {
   BchRateResponse,
   analyzeBotanicalImage,
+  saveCatalogItem,
+  CatalogSaveError,
+  deleteCatalogItem,
+  updateCatalogStock,
   uploadCatalogPhoto,
   fetchBchRate,
   fetchCatalog,
@@ -37,6 +43,7 @@ import {
   fetchDeliveryZones,
   refineBotanicalIdentification,
   submitOrderCheckout,
+  submitIdentificationFeedback,
   supabaseAuthRequest,
   supabaseRpcRequest,
   refreshSupabaseSession,
@@ -267,7 +274,7 @@ export default function App() {
           }
         };
         setSession(verifiedSession);
-        localStorage.setItem('verde_auth_session', JSON.stringify(verifiedSession));
+        safeSetItem('verde_auth_session', JSON.stringify(verifiedSession));
       } catch (error) {
         if (cancelled) return;
         setSession(null);
@@ -417,45 +424,67 @@ export default function App() {
   const toggleLanguage = () => {
     const next = lang === 'en' ? 'es' : 'en';
     setLang(next);
-    localStorage.setItem('verde_lang', next);
+    safeSetItem('verde_lang', next);
     showToast(next === 'es' ? 'Idioma: Español' : 'Language: English');
   };
 
+  // --- One-time migration: move legacy base64 garden photos out of localStorage into IndexedDB ---
+  useEffect(() => {
+    requestPersistentStorage();
+    let cancelled = false;
+    (async () => {
+      if (!garden.some((g) => typeof g.photo === 'string' && g.photo.startsWith('data:image/'))) return;
+      const migrated = await migrateGardenPhotos(garden);
+      if (cancelled) return;
+      // Merge by id so anything saved while migrating is not lost.
+      setGarden((current) =>
+        current.map((g) => {
+          const m = migrated.find((x) => x.id === g.id);
+          return m && m.photoId ? { ...g, photo: null, photoId: m.photoId } : g;
+        })
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // --- Save persistent effects ---
   useEffect(() => {
-    localStorage.setItem('verde_cart', JSON.stringify(cart));
+    safeSetItem('verde_cart', JSON.stringify(cart));
   }, [cart]);
 
   useEffect(() => {
-    localStorage.setItem('verde_garden', JSON.stringify(garden));
+    safeSetItem('verde_garden', JSON.stringify(garden));
   }, [garden]);
 
   useEffect(() => {
-    localStorage.setItem('verde_catalog', JSON.stringify(catalog));
+    safeSetItem('verde_catalog', JSON.stringify(catalog));
   }, [catalog]);
 
   useEffect(() => {
-    localStorage.setItem('verde_landscapers', JSON.stringify(landscapers));
+    safeSetItem('verde_landscapers', JSON.stringify(landscapers));
   }, [landscapers]);
 
   useEffect(() => {
-    localStorage.setItem('verde_suppliers', JSON.stringify(registeredSuppliers));
+    safeSetItem('verde_suppliers', JSON.stringify(registeredSuppliers));
   }, [registeredSuppliers]);
 
   useEffect(() => {
-    localStorage.setItem('verde_custom_images', JSON.stringify(customImages));
+    safeSetItem('verde_custom_images', JSON.stringify(customImages));
   }, [customImages]);
 
   useEffect(() => {
-    localStorage.setItem('verde_zone_id', selectedZoneId);
+    safeSetItem('verde_zone_id', selectedZoneId);
   }, [selectedZoneId]);
 
   useEffect(() => {
-    localStorage.setItem('verde_active_orders', JSON.stringify(activeOrders));
+    safeSetItem('verde_active_orders', JSON.stringify(activeOrders));
   }, [activeOrders]);
 
   useEffect(() => {
-    localStorage.setItem('verde_order_history', JSON.stringify(orderHistory));
+    safeSetItem('verde_order_history', JSON.stringify(orderHistory));
   }, [orderHistory]);
 
   // Merge custom images into catalog
@@ -466,6 +495,12 @@ export default function App() {
     return item;
   });
 
+  // The details window must follow the live catalog so a changed photo/price shows immediately.
+  const detailItem =
+    activeModal?.type === 'item-details'
+      ? currentCatalog.find((c) => String(c.id) === String(activeModal.item.id)) || activeModal.item
+      : null;
+
   // --- Initial Data Fetching ---
   useEffect(() => {
     fetchBchRate().then((res) => setRateData(res));
@@ -475,7 +510,27 @@ export default function App() {
 
     // Refresh the catalog from the existing API worker on every app launch.
     fetchCatalog().then((res) => {
-      if (Array.isArray(res)) setCatalog(res);
+      if (Array.isArray(res)) {
+        // Keep locally cached photos for matching records when the API response omits image_url.
+        // Also retain locally created draft items; these are not yet synced to the catalog API.
+        setCatalog((previousCatalog) => {
+          const previousById = new Map(previousCatalog.map((item) => [String(item.id), item]));
+          const remoteIds = new Set(res.map((item) => String(item.id)));
+          const mergedRemote = res.map((remoteItem) => {
+            const previousItem = previousById.get(String(remoteItem.id));
+            return {
+              ...previousItem,
+              ...remoteItem,
+              image_url: remoteItem.image_url || previousItem?.image_url || ''
+            };
+          });
+          const localDrafts = previousCatalog.filter((item) =>
+            !remoteIds.has(String(item.id)) &&
+            (String(item.id).startsWith('p-') || String(item.id).startsWith('prd-'))
+          );
+          return [...localDrafts, ...mergedRemote];
+        });
+      }
     }).catch((error) => {
       console.warn('Live catalog refresh skipped; keeping the last saved catalog.', error);
     });
@@ -632,6 +687,36 @@ export default function App() {
     }
   };
 
+  const handleSubmitIdentificationFeedback = async (
+    decision: 'confirmed' | 'almost' | 'not_my_plant',
+    correctedCommonName = '',
+    correctedScientificName = '',
+    notes = ''
+  ) => {
+    if (!identifyPhoto || !identifyResult) {
+      throw new Error('Analyze a plant photo before submitting feedback.');
+    }
+    if (!session?.access_token) {
+      throw new Error('Please sign in to confirm or correct plant identifications.');
+    }
+    await submitIdentificationFeedback(
+      identifyMode,
+      identifyPhoto,
+      identifyResult,
+      decision,
+      correctedCommonName,
+      correctedScientificName,
+      session.access_token,
+      notes,
+      lang
+    );
+    showToast(
+      lang === 'es'
+        ? '¡Gracias! Tu confirmación se guardó para revisión botánica.'
+        : 'Thank you! Your feedback was saved for botanical review.'
+    );
+  };
+
   const handleDeepRefreshSpecimen = async () => {
     if (!identifyPhoto || !identifyResult) return;
     setIsRefiningSpecimen(true);
@@ -658,7 +743,7 @@ export default function App() {
     }
   };
 
-  const handleSaveToGarden = () => {
+  const handleSaveToGarden = async () => {
     if (!identifyResult) return;
     let name = 'Plant Specimen';
     if (identifyResult.verified_botanical_record) {
@@ -669,21 +754,40 @@ export default function App() {
       name = identifyResult.result.primary_diagnosis;
     }
 
+    const id = `g_${Date.now()}`;
+    // Photos go to IndexedDB (binary, large quota). Only the small id is kept in app state / localStorage.
+    let photoId: string | null = null;
+    let photoFailed = false;
+    if (identifyPhoto) {
+      try {
+        photoId = await putPhoto(id, identifyPhoto);
+      } catch (err) {
+        console.error('Could not store garden photo:', err);
+        photoFailed = true;
+      }
+    }
+
     const entry: GardenItem = {
-      id: `g_${Date.now()}`,
+      id,
       date: new Date().toLocaleDateString(lang === 'es' ? 'es-HN' : 'en-US'),
       mode: identifyMode,
       name,
-      photo: identifyPhoto,
+      photo: null,
+      photoId,
       data: identifyResult
     };
 
     setGarden((prev) => [entry, ...prev]);
-    showToast(t('savedToGarden'));
+    showToast(
+      photoFailed
+        ? (lang === 'es' ? 'Guardado, pero la foto no se pudo almacenar.' : 'Saved, but the photo could not be stored on this device.')
+        : t('savedToGarden')
+    );
   };
 
   const handleRemoveGardenItem = (id: string) => {
     setGarden((prev) => prev.filter((g) => g.id !== id));
+    deletePhoto(id).catch((err) => console.warn('Could not delete stored photo', err));
     showToast('Item removed from My Garden');
   };
 
@@ -1309,7 +1413,7 @@ export default function App() {
         }
       };
       setSession(newSession);
-      localStorage.setItem('verde_auth_session', JSON.stringify(newSession));
+      safeSetItem('verde_auth_session', JSON.stringify(newSession));
       showToast(lang === 'es' ? '¡Bienvenido a Verde Roatán!' : 'Welcome to Verde Roatán!');
     }
   };
@@ -1331,7 +1435,7 @@ export default function App() {
         }
       };
       setSession(newSession);
-      localStorage.setItem('verde_auth_session', JSON.stringify(newSession));
+      safeSetItem('verde_auth_session', JSON.stringify(newSession));
       showToast(
         checkAdminIdentity(data.user?.email || email)
           ? 'Administrator authenticated via Supabase!'
@@ -1375,58 +1479,90 @@ export default function App() {
 
   // --- DATABASE MANIPULATION HANDLERS (PLANTS, PRODUCTS, LANDSCAPERS, SUPPLIERS) ---
 
-  // 1. Plant Add / Edit
-  const handleSavePlant = (plant: CatalogItem) => {
-    setCatalog((prev) => {
-      const idx = prev.findIndex((p) => p.id === plant.id);
-      if (idx >= 0) {
+  // Production catalog changes are committed to Supabase before updating the screen.
+  const handleSavePlant = async (plant: CatalogItem): Promise<string | null> => {
+    if (!session?.access_token || !isAdmin) {
+      const msg = 'Administrator sign-in is required to save catalog changes.';
+      showToast(msg);
+      return msg;
+    }
+    const merge = (saved: CatalogItem) => {
+      setCatalog((prev) => {
+        const i = prev.findIndex((x) => String(x.id) === String(saved.id) || x.id === plant.id);
+        if (i < 0) return [saved, ...prev];
         const next = [...prev];
-        next[idx] = plant;
+        next[i] = saved;
         return next;
-      }
-      return [plant, ...prev];
-    });
-    showToast(`Plant specimen "${plant.name}" saved!`);
+      });
+      // A legacy locally stored image would otherwise hide the photo that was just saved to the database.
+      setCustomImages((prev) => {
+        if (!prev[saved.id] && !prev[plant.id]) return prev;
+        const next = { ...prev };
+        delete next[saved.id];
+        delete next[plant.id];
+        return next;
+      });
+    };
+    try {
+      merge(await saveCatalogItem(plant, session.access_token));
+      showToast('Plant saved to the production catalog.');
+      return null;
+    } catch (error) {
+      console.error('Plant save failed:', error);
+      // The row may have saved even though the photo step failed; keep the screen in sync with the database.
+      if (error instanceof CatalogSaveError && error.saved) merge(error.saved);
+      const msg = error instanceof Error ? error.message : 'Plant was not saved.';
+      showToast(msg);
+      return msg;
+    }
   };
-
-  // 2. Product Add / Edit
-  const handleSaveProduct = (product: CatalogItem) => {
-    setCatalog((prev) => {
-      const idx = prev.findIndex((p) => p.id === product.id);
-      if (idx >= 0) {
+  const handleSaveProduct = async (product: CatalogItem): Promise<string | null> => {
+    if (!session?.access_token || !isAdmin) {
+      const msg = 'Administrator sign-in is required to save catalog changes.';
+      showToast(msg);
+      return msg;
+    }
+    const merge = (saved: CatalogItem) => {
+      setCatalog((prev) => {
+        const i = prev.findIndex((x) => String(x.id) === String(saved.id) || x.id === product.id);
+        if (i < 0) return [saved, ...prev];
         const next = [...prev];
-        next[idx] = product;
+        next[i] = saved;
         return next;
-      }
-      return [product, ...prev];
-    });
-    showToast(`Product "${product.name}" saved!`);
+      });
+      // A legacy locally stored image would otherwise hide the photo that was just saved to the database.
+      setCustomImages((prev) => {
+        if (!prev[saved.id] && !prev[product.id]) return prev;
+        const next = { ...prev };
+        delete next[saved.id];
+        delete next[product.id];
+        return next;
+      });
+    };
+    try {
+      merge(await saveCatalogItem(product, session.access_token));
+      showToast('Product saved to the production catalog.');
+      return null;
+    } catch (error) {
+      console.error('Product save failed:', error);
+      // The row may have saved even though the photo step failed; keep the screen in sync with the database.
+      if (error instanceof CatalogSaveError && error.saved) merge(error.saved);
+      const msg = error instanceof Error ? error.message : 'Product was not saved.';
+      showToast(msg);
+      return msg;
+    }
   };
-
-  // 3. Delete Item from Catalog
-  const handleDeleteCatalogItem = (id: string, name: string) => {
-    setCatalog((prev) => prev.filter((p) => p.id !== id));
-    setCart((prev) => prev.filter((c) => c.id !== id));
-    showToast(`"${name}" removed from database.`);
+  const handleDeleteCatalogItem = async (id: string, name: string) => {
+    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to delete catalog items.'); return; }
+    try { await deleteCatalogItem(id, session.access_token); setCatalog(prev => prev.filter(x => String(x.id) !== String(id))); setCart(prev => prev.filter(x => String(x.id) !== String(id))); showToast('"' + name + '" deleted from the production catalog.'); }
+    catch (error) { console.error('Catalog deletion failed:', error); showToast(error instanceof Error ? error.message : 'Item was not deleted.'); }
   };
-
-  // 4. Update Stock Quantity in Database
-  const handleUpdateItemStock = (id: string, delta: number) => {
-    setCatalog((prev) =>
-      prev.map((item) => {
-        if (item.id === id) {
-          const newQty = Math.max(0, item.stock_quantity + delta);
-          let newStock = item.stock;
-          if (newQty <= 0) newStock = 'Out of stock';
-          else if (newQty <= 5) newStock = 'Low stock';
-          else newStock = 'In stock';
-          return { ...item, stock_quantity: newQty, stock: newStock };
-        }
-        return item;
-      })
-    );
+  const handleUpdateItemStock = async (id: string, delta: number) => {
+    if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to change stock.'); return; }
+    const current = catalog.find(x => String(x.id) === String(id)); if (!current) return;
+    try { const qty = await updateCatalogStock(id, current.stock_quantity + delta, session.access_token); setCatalog(prev => prev.map(x => String(x.id) !== String(id) ? x : { ...x, stock_quantity: qty, stock: qty <= 0 ? 'Out of stock' : qty <= 5 ? 'Low stock' : 'In stock' })); showToast('Stock saved: ' + qty + ' units.'); }
+    catch (error) { console.error('Stock update failed:', error); showToast(error instanceof Error ? error.message : 'Stock was not changed.'); }
   };
-
   // 5. Landscaper Add / Edit
   const handleSaveLandscaper = (crew: Landscaper) => {
     setLandscapers((prev) => {
@@ -1478,15 +1614,15 @@ export default function App() {
       setRegisteredSuppliers(INITIAL_REGISTERED_SUPPLIERS);
       setCustomImages({});
       localStorage.removeItem('verde_custom_images');
-      localStorage.setItem('verde_catalog', JSON.stringify(INITIAL_CATALOG));
-      localStorage.setItem('verde_landscapers', JSON.stringify(INITIAL_LANDSCAPERS));
-      localStorage.setItem('verde_suppliers', JSON.stringify(INITIAL_REGISTERED_SUPPLIERS));
+      safeSetItem('verde_catalog', JSON.stringify(INITIAL_CATALOG));
+      safeSetItem('verde_landscapers', JSON.stringify(INITIAL_LANDSCAPERS));
+      safeSetItem('verde_suppliers', JSON.stringify(INITIAL_REGISTERED_SUPPLIERS));
       showToast('Nursery database reset to verified defaults.');
     }
   };
 
   return (
-    <div className="app-viewport flex justify-center bg-[var(--bg)] text-[var(--ink)]">
+    <div className="app-viewport flex justify-center bg-[var(--bg)] text-[var(--ink)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
       {/* 440px Mobile Shell */}
       <div className="app-shell w-full max-w-[440px] flex flex-col relative shadow-2xl bg-[var(--bg)]">
         {/* Floating Draggable Currency Widget */}
@@ -1628,6 +1764,7 @@ export default function App() {
                 setIdentifyError(null);
               }}
               onSaveToGarden={handleSaveToGarden}
+              onSubmitFeedback={handleSubmitIdentificationFeedback}
               onAddToCart={(storeId, qty) => handleAddToCart(storeId, qty)}
               formatMoney={formatMoney}
               catalog={currentCatalog}
@@ -1778,7 +1915,7 @@ export default function App() {
         {toastMessage && (
           <div
             role="status"
-            className="fixed left-1/2 -translate-x-1/2 bottom-24 z-60 bg-[var(--ink)] text-[var(--bg)] px-4 py-2.5 rounded-2xl font-semibold text-[13.5px] shadow-2xl max-w-[90vw] text-center pointer-events-none animate-in fade-in zoom-in-95 duration-150"
+            className="fixed left-1/2 -translate-x-1/2 bottom-[calc(6rem_+_env(safe-area-inset-bottom,0px))] z-60 bg-[var(--ink)] text-[var(--bg)] px-4 py-2.5 rounded-2xl font-semibold text-[13.5px] shadow-2xl max-w-[90vw] text-center pointer-events-none animate-in fade-in zoom-in-95 duration-150"
           >
             {toastMessage}
           </div>
@@ -1791,14 +1928,14 @@ export default function App() {
           isOpen={activeModal?.type === 'item-details'}
           onClose={() => setActiveModal(null)}
         >
-          {activeModal?.type === 'item-details' && (
+          {activeModal?.type === 'item-details' && detailItem && (
             <div className="flex flex-col gap-4">
               {/* Product Hero Image */}
               <div className="w-full aspect-2/1 rounded-2xl overflow-hidden bg-[var(--surface-2)] flex items-center justify-center">
-                {activeModal.item.image_url ? (
+                {detailItem.image_url ? (
                   <img
-                    src={activeModal.item.image_url}
-                    alt={activeModal.item.name}
+                    src={detailItem.image_url}
+                    alt={detailItem.name}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -1809,10 +1946,10 @@ export default function App() {
               {/* Title & Scientific Name */}
               <div className="flex flex-col gap-0.5">
                 <h2 className="text-[22px] font-extrabold text-[var(--ink)] leading-tight pr-8">
-                  {activeModal.item.name}
+                  {detailItem.name}
                 </h2>
                 <small className="text-[12.5px] text-[var(--ink-soft)] italic">
-                  {activeModal.item.sci}
+                  {detailItem.sci}
                 </small>
               </div>
 
@@ -1820,20 +1957,20 @@ export default function App() {
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-[20px] font-extrabold text-[var(--ink)]">
-                    {formatMoney(activeModal.item.price, activeModal.item.currency)}
+                    {formatMoney(detailItem.price, detailItem.currency)}
                   </div>
                   <small className="text-[12px] text-[var(--ink-soft)]">
-                    {activeModal.item.size}
+                    {detailItem.size}
                   </small>
                 </div>
 
                 <span className="text-[12px] font-bold px-2.5 py-1 rounded-full bg-[var(--palm)]/15 text-[var(--palm)]">
-                  {activeModal.item.stock} ({activeModal.item.stock_quantity} available)
+                  {detailItem.stock} ({detailItem.stock_quantity} available)
                 </span>
               </div>
 
               {/* Botanical Specs Grid */}
-              {activeModal.item.t === 'plant' && (
+              {detailItem.t === 'plant' && (
                 <div className="grid grid-cols-2 gap-2">
                   <div className="bg-[var(--surface-2)] rounded-xl p-2.5 flex flex-col gap-1">
                     <span className="text-[10.5px] font-extrabold uppercase text-[var(--ink-soft)] tracking-wider">
@@ -1844,7 +1981,7 @@ export default function App() {
                         <i
                           key={dot}
                           className={`w-2 h-2 rounded-full not-italic ${
-                            dot <= activeModal.item.salt
+                            dot <= detailItem.salt
                               ? 'bg-[var(--lagoon)]'
                               : 'bg-[var(--line)]'
                           }`}
@@ -1858,7 +1995,7 @@ export default function App() {
                       {t('sun')}
                     </span>
                     <b className="text-[12.5px] text-[var(--ink)] truncate">
-                      {activeModal.item.sun}
+                      {detailItem.sun}
                     </b>
                   </div>
 
@@ -1867,7 +2004,7 @@ export default function App() {
                       {t('water')}
                     </span>
                     <b className="text-[12.5px] text-[var(--ink)] truncate">
-                      {activeModal.item.water}
+                      {detailItem.water}
                     </b>
                   </div>
 
@@ -1876,7 +2013,7 @@ export default function App() {
                       {t('pets')}
                     </span>
                     <b className="text-[12.5px] text-[var(--ink)]">
-                      {activeModal.item.pet === 'safe' ? 'Pet Safe' : 'Check Toxicities'}
+                      {detailItem.pet === 'safe' ? 'Pet Safe' : 'Check Toxicities'}
                     </b>
                   </div>
                 </div>
@@ -1884,11 +2021,11 @@ export default function App() {
 
               {/* Note / Description */}
               <p className="text-[13px] text-[var(--ink)] leading-relaxed">
-                {activeModal.item.note}
+                {detailItem.note}
               </p>
 
               <small className="text-[11.5px] text-[var(--ink-soft)]">
-                Registered Supplier: <b className="text-[var(--ink)]">{activeModal.item.nursery}</b>. Island-wide delivery available.
+                Registered Supplier: <b className="text-[var(--ink)]">{detailItem.nursery}</b>. Island-wide delivery available.
               </small>
 
               {/* Quantity Stepper & Add to Cart Button */}
@@ -1916,7 +2053,7 @@ export default function App() {
                 <button
                   type="button"
                   onClick={() => {
-                    handleAddToCart(activeModal.item.id, sheetQty);
+                    handleAddToCart(detailItem.id, sheetQty);
                     setActiveModal(null);
                   }}
                   className="flex-1 min-h-[48px] bg-[var(--palm)] hover:bg-[var(--palm)]/90 text-white font-extrabold text-[14.5px] rounded-2xl shadow-xs active:scale-98 transition-all flex items-center justify-center gap-2"
@@ -1937,7 +2074,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        const target = activeModal.item;
+                        const target = detailItem;
                         setActiveModal(null);
                         if (target.t === 'plant') {
                           setPlantModal({ isOpen: true, plant: target });
@@ -1954,7 +2091,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => {
-                        const target = activeModal.item;
+                        const target = detailItem;
                         setActiveModal(null);
                         setConfirmDelete({
                           isOpen: true,
@@ -1986,7 +2123,7 @@ export default function App() {
                     className="sr-only"
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      if (file) handleAdminPhotoUpdate(activeModal.item.id, file);
+                      if (file) handleAdminPhotoUpdate(detailItem.id, file);
                     }}
                   />
                 </div>
@@ -2086,79 +2223,25 @@ export default function App() {
           onClose={() => setActiveModal(null)}
         >
           {activeModal?.type === 'quote-request' && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
+            <LandscaperQuoteForm
+              crew={activeModal.crew}
+              zones={zones}
+              defaultZoneName={currentZone?.name}
+              session={session}
+              lang={lang}
+              title={t('quoteTitle')}
+              submitLabel={t('sendRequest')}
+              onRequireSignIn={() => {
+                setActiveModal(null);
+                setTab('account');
+              }}
+              onSubmitted={(num) => {
                 setActiveModal(null);
                 showToast(
-                  `Quote request sent to ${activeModal.crew.name}! They will reply via WhatsApp.`
+                  `Request ${num || ''} saved. ${activeModal.crew.name} will be contacted by Verde Roatán.`.replace('  ', ' ')
                 );
               }}
-              className="flex flex-col gap-3.5"
-            >
-              <div className="flex flex-col gap-0.5 pr-8">
-                <h2 className="text-[20px] font-extrabold text-[var(--ink)]">
-                  {t('quoteTitle')}
-                </h2>
-                <small className="text-[12px] text-[var(--ink-soft)]">
-                  Direct inquiry to {activeModal.crew.name}
-                </small>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">Service Needed</label>
-                <select className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]">
-                  {activeModal.crew.svc.map((s, idx) => (
-                    <option key={idx} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">Neighborhood / Area</label>
-                <select
-                  defaultValue={currentZone?.name}
-                  className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]"
-                >
-                  {zones.map((z) => (
-                    <option key={z.id} value={z.name}>
-                      {z.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">Desired Timing</label>
-                <select className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]">
-                  <option>As soon as possible</option>
-                  <option>This month</option>
-                  <option>Flexible / Site Consultation</option>
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <label className="text-[12px] font-bold text-[var(--ink)]">
-                  Project Details
-                </label>
-                <textarea
-                  rows={3}
-                  required
-                  placeholder="Lot size, desired trees, hedge length, or current issues…"
-                  className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[14px]"
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="w-full min-h-[48px] bg-[var(--palm)] text-white font-extrabold text-[14.5px] rounded-2xl shadow-xs active:scale-98 transition-all flex items-center justify-center gap-2 mt-1"
-              >
-                <Send className="w-4 h-4" />
-                {t('sendRequest')}
-              </button>
-            </form>
+            />
           )}
         </BottomSheet>
 

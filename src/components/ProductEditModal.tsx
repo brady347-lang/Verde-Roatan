@@ -7,7 +7,7 @@ interface ProductEditModalProps {
   lang: Language;
   isOpen: boolean;
   onClose: () => void;
-  onSave: (product: CatalogItem) => void;
+  onSave: (product: CatalogItem) => Promise<string | null> | void;
   initialProduct?: CatalogItem | null;
   registeredSuppliers?: RegisteredSupplier[];
   onQuickAddSupplier?: (supplier: RegisteredSupplier) => void;
@@ -52,6 +52,9 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
     initialProduct?.tags?.join(', ') || 'soil, organic, compost'
   );
   const [isProcessingImg, setIsProcessingImg] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   // Inline supplier registration
   const [showAddSupplierInline, setShowAddSupplierInline] = useState(false);
@@ -64,11 +67,13 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     setIsProcessingImg(true);
+    setImageError(null);
     try {
       const base64 = await compressImage(file, 1200, 0.85);
       setImageUrl(base64);
     } catch (err) {
       console.error('Failed to compress product image', err);
+      setImageError(err instanceof Error ? err.message : 'Could not process that photo. Please try another one.');
     } finally {
       setIsProcessingImg(false);
     }
@@ -90,7 +95,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
     setShowAddSupplierInline(false);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
@@ -122,7 +127,20 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
       tags: parsedTags.length > 0 ? parsedTags : [kind, 'product', category.toLowerCase()]
     };
 
-    onSave(productRecord);
+    // Keep the form open until the database and storage steps finish, so a failure never loses the edits or photo.
+    setSaving(true);
+    setSaveError(null);
+    let failure: string | null | void = null;
+    try {
+      failure = await onSave(productRecord);
+    } catch (err) {
+      failure = err instanceof Error ? err.message : 'The change could not be saved.';
+    }
+    setSaving(false);
+    if (failure) {
+      setSaveError(failure);
+      return;
+    }
     onClose();
   };
 
@@ -137,7 +155,7 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
       <div
         role="dialog"
         aria-modal="true"
-        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] max-h-[92vh] overflow-y-auto z-50 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-4 pt-3 pb-8 shadow-2xl animate-in slide-in-from-bottom duration-200"
+        className="fixed left-0 right-0 bottom-0 mx-auto max-w-[440px] max-h-[92dvh] overflow-y-auto z-50 bg-[var(--surface)] text-[var(--ink)] rounded-t-3xl border border-[var(--line)] border-b-0 px-4 pt-3 pb-[calc(2rem_+_env(safe-area-inset-bottom,0px))] shadow-2xl animate-in slide-in-from-bottom duration-200"
       >
         <div className="w-10 h-1.5 rounded-full bg-[var(--line)] mx-auto mb-3" />
 
@@ -182,6 +200,11 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
                     className="sr-only"
                   />
                 </label>
+                {imageError && (
+                  <p role="alert" className="text-[11.5px] font-semibold text-red-600">
+                    {imageError}
+                  </p>
+                )}
                 <input
                   type="url"
                   value={imageUrl}
@@ -444,6 +467,11 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
             />
           </div>
 
+          {saveError && (
+            <p role="alert" className="text-[12.5px] font-semibold text-red-600 bg-red-500/10 border border-red-500/30 rounded-xl px-3 py-2">
+              {saveError}
+            </p>
+          )}
           <div className="flex items-center gap-2 pt-2">
             <button
               type="button"
@@ -454,9 +482,10 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
             </button>
             <button
               type="submit"
-              className="flex-1 py-3 rounded-2xl bg-[var(--palm)] hover:bg-[var(--palm)]/90 text-white font-extrabold text-[14px] shadow-xs active:scale-98 transition-all"
+              disabled={saving || isProcessingImg}
+              className="flex-1 py-3 rounded-2xl bg-[var(--palm)] hover:bg-[var(--palm)]/90 text-white font-extrabold text-[14px] shadow-xs active:scale-98 transition-all disabled:opacity-60 disabled:cursor-wait"
             >
-              {isEditing ? 'Save Product' : 'Add to Nursery Store'}
+              {saving ? 'Saving…' : isEditing ? 'Save Product' : 'Add to Nursery Store'}
             </button>
           </div>
         </form>

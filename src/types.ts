@@ -167,7 +167,10 @@ export interface GardenItem {
   date: string;
   mode: 'plant' | 'pest';
   name: string;
+  /** Legacy: inline base64 photo from older versions. Migrated to IndexedDB on startup. */
   photo: string | null;
+  /** Key of the photo stored in IndexedDB (see src/lib/photoStore.ts). */
+  photoId?: string | null;
   data: AIAnalysisResult;
 }
 
@@ -372,3 +375,101 @@ export interface ActiveOrder {
   messages?: OrderMessage[];
 }
 
+
+
+export interface IdentificationReviewRecord {
+  id: string;
+  submitted_by: string;
+  image_path: string;
+  image_url?: string | null;
+  identification_mode: 'plant' | 'pest';
+  ai_common_name?: string | null;
+  ai_scientific_name?: string | null;
+  ai_confidence?: number | null;
+  proposed_common_name?: string | null;
+  proposed_scientific_name?: string | null;
+  submitter_notes?: string | null;
+  status: 'pending' | 'approved' | 'rejected';
+  admin_notes?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  ai_family?: string | null;
+  ai_genus?: string | null;
+  ai_species?: string | null;
+  ai_model?: string | null;
+  user_decision?: 'confirmed' | 'almost' | 'not_my_plant' | null;
+  source_app?: string | null;
+  source_platform?: string | null;
+  source_language?: string | null;
+  verification_level?: IdentificationVerificationLevel;
+  verified_at?: string | null;
+  verification_basis?: string | null;
+}
+export type IdentificationVerificationLevel = 'ai_identified' | 'user_confirmed' | 'scientifically_verified';
+
+// --- Landscaping service requests (kept separate from product orders) ---
+export type ServiceRequestStatus =
+  | 'new_request'
+  | 'pending_review'
+  | 'quote_preparation'
+  | 'quote_sent'
+  | 'awaiting_response'
+  | 'accepted'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
+
+export interface ServiceRequest {
+  id: string;
+  request_number: string | null;
+  customer_id: string;
+  customer_name: string | null;
+  customer_phone: string | null;
+  customer_email: string | null;
+  service_type: string;
+  description: string | null;
+  location: string | null;
+  requested_date: string | null;
+  requested_timing: string | null;
+  requested_landscaper_ref: string | null;
+  requested_landscaper_name: string | null;
+  assigned_landscaper_ref: string | null;
+  assigned_landscaper_name: string | null;
+  budget: number | null;
+  currency: 'USD' | 'HNL';
+  status: ServiceRequestStatus;
+  quote_amount: number | null;
+  quote_currency: 'USD' | 'HNL' | null;
+  quote_notes: string | null;
+  quote_sent_at: string | null;
+  customer_response: string | null;
+  customer_response_at: string | null;
+  status_updated_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceRequestEvent {
+  id: string;
+  request_id: string;
+  event_type:
+    | 'created'
+    | 'status_change'
+    | 'assignment'
+    | 'quote'
+    | 'communication'
+    | 'note'
+    | 'customer_response'
+    | 'cancellation'
+    | 'delay';
+  from_status: ServiceRequestStatus | null;
+  to_status: ServiceRequestStatus | null;
+  channel: 'whatsapp' | 'phone' | 'email' | 'in_app' | 'in_person' | 'system' | null;
+  direction: 'inbound' | 'outbound' | 'internal' | null;
+  message: string | null;
+  actor_role: 'customer' | 'admin' | 'landscaper' | 'system';
+  actor_name: string | null;
+  is_internal: boolean;
+  created_at: string;
+}
