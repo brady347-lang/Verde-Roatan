@@ -124,6 +124,7 @@ export const Navigation: React.FC<NavigationProps> = ({
         return (
           <motion.button
             key={tab.id}
+            type="button"
             role="tab"
             aria-selected={isSelected}
             onClick={() => onSelectTab(tab.id)}
