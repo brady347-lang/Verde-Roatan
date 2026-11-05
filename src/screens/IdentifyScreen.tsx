@@ -338,7 +338,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             <img
               src="/hummingbird-scan.gif"
               alt={lang === 'es' ? 'Colibrí explorando el espécimen durante el escaneo' : 'Hummingbird exploring the specimen during scan'}
-              className="w-[220px] max-w-full h-auto object-contain"
+              className="hummingbird-scan w-[96px] h-[96px] max-w-full object-contain"
               loading="eager"
               decoding="async"
             />
