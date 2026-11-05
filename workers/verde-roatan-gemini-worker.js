@@ -1224,10 +1224,23 @@ async function knowledgeReview(request, body, env) {
   if (!doc) return jsonResponse(404, { status: 'error', error: 'Document not found.' });
   const email = String(auth.user.email || 'unknown');
 
-  for (const d of Array.isArray(body.entity_decisions) ? body.entity_decisions.slice(0, 400) : []) {
-    if (!isUuid(d?.id) || !['approved', 'rejected', 'modified', 'pending'].includes(d.status)) continue;
-    const patch = { approval_status: d.status, updated_at: new Date().toISOString() };
-    if (d.status === 'modified' && d.edited_value && typeof d.edited_value === 'object') patch.edited_value = d.edited_value;
+  // Free Cloudflare plans allow only 50 outgoing requests per call, so decisions are grouped:
+  // one request per status (approved / rejected / pending) plus at most 30 individual edits.
+  const decisions = (Array.isArray(body.entity_decisions) ? body.entity_decisions.slice(0, 400) : [])
+    .filter((d) => isUuid(d?.id) && ['approved', 'rejected', 'modified', 'pending'].includes(d.status));
+  const now = new Date().toISOString();
+  for (const status of ['approved', 'rejected', 'pending']) {
+    const ids = decisions.filter((d) => d.status === status).map((d) => d.id);
+    if (ids.length === 0) continue;
+    await fetch(`${tv.url}/rest/v1/knowledge_entities?document_id=eq.${doc.id}&id=in.(${ids.join(',')})`, {
+      method: 'PATCH', headers: tvHeaders(tv.key), body: JSON.stringify({ approval_status: status, updated_at: now })
+    });
+  }
+  const edits = decisions.filter((x) => x.status === 'modified');
+  if (edits.length > 30) return jsonResponse(400, { status: 'error', error: 'Edit at most 30 facts per review. Approve them first, then continue.' });
+  for (const d of edits) {
+    const patch = { approval_status: 'modified', updated_at: now };
+    if (d.edited_value && typeof d.edited_value === 'object') patch.edited_value = d.edited_value;
     await fetch(`${tv.url}/rest/v1/knowledge_entities?id=eq.${d.id}&document_id=eq.${doc.id}`, { method: 'PATCH', headers: tvHeaders(tv.key), body: JSON.stringify(patch) });
   }
 
