@@ -360,6 +360,17 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                 alt="Specimen preview"
                 className="w-full h-full object-cover"
               />
+              <div className="absolute inset-0 pointer-events-none">
+                <div className="scan-orbit-ring absolute left-[62%] top-[42%] w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--lagoon)]/60" />
+                <div className="scan-orbit-ring scan-orbit-ring-delayed absolute left-[62%] top-[42%] w-32 h-32 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--palm)]/35" />
+                <img
+                  src="/hummingbird-scan.gif"
+                  alt={lang === 'es' ? 'Colibrí explorando la planta durante el escaneo' : 'Hummingbird inspecting the plant during scan'}
+                  className="hummingbird-scan absolute left-[62%] top-[42%] w-[76px] h-[72px] -translate-x-1/2 -translate-y-1/2 object-contain"
+                  loading="eager"
+                  decoding="async"
+                />
+              </div>
               <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent flex items-end justify-center pb-2">
                 <span className="text-[11px] font-bold text-white bg-black/50 backdrop-blur-xs px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-[var(--sun)] animate-ping" />
@@ -368,6 +379,12 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
               </div>
             </div>
           )}
+
+          <div className="flex flex-col items-center gap-1.5 w-full" aria-live="polite">
+            <span className="text-[11px] font-semibold tracking-wide text-[var(--palm)]">
+              {lang === 'es' ? 'Escaneo botánico en progreso' : 'Botanical scan in progress'}
+            </span>
+          </div>
 
           {/* Progress Bar & Countdown (5s - 8s Deep Search) */}
           <div className="w-full flex flex-col gap-2">

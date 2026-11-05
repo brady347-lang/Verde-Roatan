@@ -26,7 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.3 }}
       className="sticky top-0 z-40 flex items-center justify-between gap-1.5 pb-2.5 px-3 bg-[var(--surface)]/95 backdrop-blur-md border-b border-[var(--line)] flex-none shadow-xs"
-      style={{ paddingTop: 'calc(0.625rem + env(safe-area-inset-top, 0px))' }}
+      style={{ paddingTop: '0.625rem' }}
     >
       {/* Brand */}
       <motion.div

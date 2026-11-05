@@ -1622,9 +1622,9 @@ export default function App() {
   };
 
   return (
-    <div className="flex justify-center bg-[var(--bg)] min-h-dvh text-[var(--ink)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
+    <div className="app-viewport flex justify-center bg-[var(--bg)] text-[var(--ink)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
       {/* 440px Mobile Shell */}
-      <div className="w-full max-w-[440px] flex flex-col min-h-dvh relative shadow-2xl bg-[var(--bg)]">
+      <div className="app-shell w-full max-w-[440px] flex flex-col relative shadow-2xl bg-[var(--bg)]">
         {/* Floating Draggable Currency Widget */}
         <CurrencyWidget
           rateData={rateData}
@@ -1646,7 +1646,7 @@ export default function App() {
         />
 
         {/* Scrollable Screens Viewport with Ultra-Smooth Slide Motion Transitions */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden no-scrollbar px-4 pt-4 pb-2 relative">
+        <main className="app-main flex-1 min-h-0 overflow-y-auto overflow-x-hidden no-scrollbar px-4 pt-4 pb-4 relative">
           <AnimatePresence mode="wait" custom={slideDirection} initial={false}>
             <motion.div
               key={tab}
@@ -1901,7 +1901,7 @@ export default function App() {
         </main>
 
         {/* Persistent Bottom Tab Navigation */}
-        <div className="px-3 pb-[calc(0.5rem_+_env(safe-area-inset-bottom,0px))] pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
+        <div className="app-bottom-nav shrink-0 px-3 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
           <Navigation
             activeTab={tab}
             onSelectTab={(nextTab) => setTab(nextTab)}
