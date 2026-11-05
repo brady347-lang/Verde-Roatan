@@ -140,3 +140,21 @@ html, body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Compact, gentle motion for the botanical scan companion */
+.hummingbird-scan {
+  display: block;
+  object-fit: contain;
+  transform-origin: 50% 55%;
+  animation: hummingbird-hover 2.8s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes hummingbird-hover {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-1deg); }
+  50% { transform: translate3d(0, -5px, 0) rotate(1deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hummingbird-scan { animation: none; }
+}
