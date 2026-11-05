@@ -46,7 +46,7 @@ interface IdentifyScreenProps {
   currentPhoto: string | null;
   onReset: () => void;
   onSaveToGarden: () => void;
-  onSubmitFeedback: (decision: 'confirmed' | 'corrected', correctedCommonName?: string, correctedScientificName?: string) => Promise<void>;
+  onSubmitFeedback: (decision: 'confirmed' | 'almost' | 'not_my_plant', correctedCommonName?: string, correctedScientificName?: string, notes?: string) => Promise<void>;
   onAddToCart: (storeProductId: string, qty: number) => void;
   formatMoney: (val: number, cur: string) => React.ReactNode;
   catalog: CatalogItem[];
@@ -89,6 +89,9 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [correctedCommonName, setCorrectedCommonName] = useState('');
   const [correctedScientificName, setCorrectedScientificName] = useState('');
+  const [feedbackNotes, setFeedbackNotes] = useState('');
+  const [feedbackChoice, setFeedbackChoice] = useState<'almost' | 'not_my_plant' | null>(null);
+  const [feedbackOutcome, setFeedbackOutcome] = useState<'confirmed' | 'almost' | 'not_my_plant' | null>(null);
 
   useEffect(() => {
     let interval: any;
@@ -111,13 +114,17 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
     setFeedbackError(null);
     setCorrectedCommonName('');
     setCorrectedScientificName('');
+    setFeedbackNotes('');
+    setFeedbackChoice(null);
+    setFeedbackOutcome(null);
   }, [currentPhoto]);
 
-  const submitFeedback = async (decision: 'confirmed' | 'corrected') => {
+  const submitFeedback = async (decision: 'confirmed' | 'almost' | 'not_my_plant') => {
     setFeedbackBusy(true);
     setFeedbackError(null);
     try {
-      await onSubmitFeedback(decision, correctedCommonName, correctedScientificName);
+      await onSubmitFeedback(decision, correctedCommonName, correctedScientificName, feedbackNotes);
+      setFeedbackOutcome(decision);
       setFeedbackSaved(true);
     } catch (error) {
       setFeedbackError(error instanceof Error ? error.message : 'Feedback could not be saved.');
@@ -1026,19 +1033,27 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             <section className="flex flex-col gap-3 rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-xs">
               <div>
                 <h3 className="text-[15px] font-extrabold text-[var(--ink)]">
-                  {lang === 'es' ? '¿Es correcta esta identificación?' : 'Is this identification correct?'}
+                  {lang === 'es' ? '¿Identificamos tu planta correctamente?' : 'Did we identify your plant correctly?'}
                 </h3>
                 <p className="mt-1 text-[12px] leading-relaxed text-[var(--ink-soft)]">
                   {lang === 'es'
-                    ? 'Tu confirmación ayuda a mejorar la inteligencia botánica de Verde Roatán. Las correcciones quedan pendientes de revisión.'
-                    : 'Your confirmation helps improve Verde Roatán botanical intelligence. Corrections are queued for review.'}
+                    ? 'Tu respuesta se guarda para revisión botánica. Una confirmación tuya no equivale a una verificación científica.'
+                    : 'Your answer is saved for botanical review. Your confirmation is not the same as scientific verification.'}
                 </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-[var(--ink-soft)]">AI IDENTIFIED</span>
+                  {feedbackOutcome === 'confirmed' && (
+                    <span className="rounded-full bg-[var(--palm)]/15 px-2 py-0.5 text-[10px] font-extrabold tracking-wide text-[var(--palm)]">USER CONFIRMED</span>
+                  )}
+                </div>
               </div>
 
               {feedbackSaved ? (
                 <div className="flex items-center gap-2 rounded-xl bg-[var(--palm)]/10 p-3 text-[13px] font-bold text-[var(--palm)]">
                   <CheckCircle2 className="h-5 w-5 shrink-0" />
-                  {lang === 'es' ? 'Comentario enviado para revisión' : 'Feedback submitted for review'}
+                  {feedbackOutcome === 'confirmed'
+                    ? (lang === 'es' ? 'Gracias. Marcado como confirmado por el usuario; aún no verificado científicamente.' : 'Thanks. Marked user-confirmed; not yet scientifically verified.')
+                    : (lang === 'es' ? 'Gracias. Tu comentario quedó pendiente de revisión.' : 'Thanks. Your feedback is waiting for review.')}
                 </div>
               ) : (
                 <>
@@ -1048,34 +1063,63 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                     onClick={() => submitFeedback('confirmed')}
                     className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 text-[13px] font-bold text-white disabled:opacity-60"
                   >
-                    {feedbackBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                    {lang === 'es' ? 'Confirmar identificación' : 'Confirm identification'}
+                    {feedbackBusy && feedbackChoice === null ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    {lang === 'es' ? '¡Sí, es correcto!' : "Yes, that's correct!"}
                   </button>
-                  <div className="border-t border-[var(--line)] pt-3">
-                    <p className="mb-2 text-[12px] font-bold text-[var(--ink)]">
-                      {lang === 'es' ? '¿Identificó otra planta?' : 'Think it is a different plant?'}
-                    </p>
-                    <input
-                      value={correctedCommonName}
-                      onChange={(event) => setCorrectedCommonName(event.target.value)}
-                      placeholder={lang === 'es' ? 'Nombre común correcto' : 'Correct common name'}
-                      className="mb-2 min-h-[42px] w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--palm)]"
-                    />
-                    <input
-                      value={correctedScientificName}
-                      onChange={(event) => setCorrectedScientificName(event.target.value)}
-                      placeholder={lang === 'es' ? 'Nombre científico (opcional)' : 'Scientific name (optional)'}
-                      className="mb-2 min-h-[42px] w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--palm)]"
-                    />
-                    <button
-                      type="button"
-                      disabled={feedbackBusy || (!correctedCommonName.trim() && !correctedScientificName.trim())}
-                      onClick={() => submitFeedback('corrected')}
-                      className="flex min-h-[42px] w-full items-center justify-center rounded-xl border border-[var(--palm)] px-3 text-[13px] font-bold text-[var(--palm)] disabled:opacity-50"
-                    >
-                      {lang === 'es' ? 'Enviar corrección' : 'Submit correction'}
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={feedbackBusy}
+                    onClick={() => setFeedbackChoice(feedbackChoice === 'almost' ? null : 'almost')}
+                    className={`min-h-[44px] rounded-xl border px-3 text-[13px] font-bold ${feedbackChoice === 'almost' ? 'border-[var(--palm)] bg-[var(--palm)]/10 text-[var(--palm)]' : 'border-[var(--line)] text-[var(--ink)]'}`}
+                  >
+                    {lang === 'es' ? 'Casi, pero algo está mal.' : 'Almost, but something is wrong.'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={feedbackBusy}
+                    onClick={() => setFeedbackChoice(feedbackChoice === 'not_my_plant' ? null : 'not_my_plant')}
+                    className={`min-h-[44px] rounded-xl border px-3 text-[13px] font-bold ${feedbackChoice === 'not_my_plant' ? 'border-[var(--palm)] bg-[var(--palm)]/10 text-[var(--palm)]' : 'border-[var(--line)] text-[var(--ink)]'}`}
+                  >
+                    {lang === 'es' ? 'No, esa no es mi planta.' : "No, that's not my plant."}
+                  </button>
+                  {feedbackChoice && (
+                    <div className="border-t border-[var(--line)] pt-3">
+                      <p className="mb-2 text-[12px] font-bold text-[var(--ink)]">
+                        {feedbackChoice === 'almost'
+                          ? (lang === 'es' ? '¿Qué está mal? Dinos la planta correcta si la conoces.' : 'What is wrong? Tell us the right plant if you know it.')
+                          : (lang === 'es' ? 'Si sabes qué planta es, cuéntanos (opcional).' : 'If you know what plant it is, tell us (optional).')}
+                      </p>
+                      <input
+                        value={correctedCommonName}
+                        onChange={(event) => setCorrectedCommonName(event.target.value)}
+                        placeholder={lang === 'es' ? 'Nombre común correcto' : 'Correct common name'}
+                        className="mb-2 min-h-[42px] w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--palm)]"
+                      />
+                      <input
+                        value={correctedScientificName}
+                        onChange={(event) => setCorrectedScientificName(event.target.value)}
+                        placeholder={lang === 'es' ? 'Nombre científico (opcional)' : 'Scientific name (optional)'}
+                        className="mb-2 min-h-[42px] w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--palm)]"
+                      />
+                      <textarea
+                        value={feedbackNotes}
+                        onChange={(event) => setFeedbackNotes(event.target.value)}
+                        rows={2}
+                        maxLength={1000}
+                        placeholder={lang === 'es' ? 'Notas (opcional)' : 'Notes (optional)'}
+                        className="mb-2 w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-[13px] text-[var(--ink)] outline-none focus:border-[var(--palm)]"
+                      />
+                      <button
+                        type="button"
+                        disabled={feedbackBusy || (feedbackChoice === 'almost' && !correctedCommonName.trim() && !correctedScientificName.trim() && feedbackNotes.trim().length < 3)}
+                        onClick={() => submitFeedback(feedbackChoice)}
+                        className="flex min-h-[42px] w-full items-center justify-center gap-2 rounded-xl border border-[var(--palm)] px-3 text-[13px] font-bold text-[var(--palm)] disabled:opacity-50"
+                      >
+                        {feedbackBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+                        {lang === 'es' ? 'Enviar' : 'Submit'}
+                      </button>
+                    </div>
+                  )}
                   {feedbackError && (
                     <p role="alert" className="text-[12px] font-semibold text-red-600">{feedbackError}</p>
                   )}

@@ -394,7 +394,19 @@ export interface IdentificationReviewRecord {
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   created_at: string;
+  ai_family?: string | null;
+  ai_genus?: string | null;
+  ai_species?: string | null;
+  ai_model?: string | null;
+  user_decision?: 'confirmed' | 'almost' | 'not_my_plant' | null;
+  source_app?: string | null;
+  source_platform?: string | null;
+  source_language?: string | null;
+  verification_level?: IdentificationVerificationLevel;
+  verified_at?: string | null;
+  verification_basis?: string | null;
 }
+export type IdentificationVerificationLevel = 'ai_identified' | 'user_confirmed' | 'scientifically_verified';
 
 // --- Landscaping service requests (kept separate from product orders) ---
 export type ServiceRequestStatus =

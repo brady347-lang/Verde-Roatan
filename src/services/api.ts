@@ -388,11 +388,13 @@ export async function submitIdentificationFeedback(
   mode: 'plant' | 'pest',
   image: string,
   result: AIAnalysisResult,
-  decision: 'confirmed' | 'corrected',
+  decision: 'confirmed' | 'almost' | 'not_my_plant',
   correctedCommonName: string,
   correctedScientificName: string,
-  accessToken: string
-): Promise<{ review_id: string; review_status: string; message: string }> {
+  accessToken: string,
+  notes = '',
+  language = 'en'
+): Promise<{ review_id: string; review_status: string; verification_level?: string; message: string }> {
   if (!accessToken) throw new Error('Please sign in before confirming an identification.');
   if (!image?.startsWith('data:image/')) throw new Error('The original specimen photo is missing.');
   if (mode !== 'plant') throw new Error('Plant identification feedback is currently available for plant specimens.');
@@ -406,11 +408,15 @@ export async function submitIdentificationFeedback(
         common_name: record?.common_name || candidate?.common_name || '',
         scientific_name: record?.scientific_name || candidate?.scientific_name || '',
         confidence_score: candidate?.confidence_score
-      }
+      },
+      family: record?.plant_family || '',
+      model_used: result.model_used || ''
     },
     decision,
     corrected_common_name: correctedCommonName.trim(),
-    corrected_scientific_name: correctedScientificName.trim()
+    corrected_scientific_name: correctedScientificName.trim(),
+    notes: notes.trim(),
+    source: { app: 'verde-roatan', platform: 'android', language }
   };
 
   const response = await fetch(`${AI_WORKER_URL}/identification-review`, {
@@ -465,12 +471,15 @@ export async function reviewIdentificationRecord(
   accessToken: string,
   reviewId: string,
   status: 'approved' | 'rejected',
-  adminNotes = ''
+  adminNotes = '',
+  verificationBasis = ''
 ): Promise<void> {
+  // Approving never verifies. Scientific verification is only sent with a written basis.
   await callIdentificationReviewAdmin('admin/review', {
     review_id: reviewId,
     status,
-    admin_notes: adminNotes
+    admin_notes: adminNotes,
+    ...(verificationBasis ? { verify: { basis: verificationBasis } } : {})
   }, accessToken);
 }
 

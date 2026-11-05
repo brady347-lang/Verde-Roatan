@@ -228,4 +228,62 @@ await t('botanical search/care: public, no AI key needed, validated inputs, Post
   assert.equal((await post('/botanical/care', { id: 'x' }, noAi)).status, 400);
   assert.equal((await post('/botanical/search', { q: 'a' }, {})).status, 503);
 });
+
+// ---- Community identification verification ----
+function idMock({ migrated = true, reviewRow = {} } = {}) {
+  const log = [];
+  globalThis.fetch = async (url, init = {}) => {
+    url = String(url); log.push({ url, init });
+    if (url.startsWith('https://main.test/auth/v1/user')) return new Response(JSON.stringify({ id: 'u1', email: 'boss@x.com' }), { status: 200 });
+    if (url.includes('/storage/v1/object/identification-review-images/') && init.method === 'POST') return new Response('{}', { status: 200 });
+    if (url.startsWith('https://tv.test/rest/v1/identification_reviews') && init.method === 'POST') {
+      const row = JSON.parse(init.body);
+      if (!migrated && 'verification_level' in row) return new Response(JSON.stringify({ code: 'PGRST204' }), { status: 400 });
+      return new Response(JSON.stringify([row]), { status: 201 });
+    }
+    if (url.startsWith('https://tv.test/rest/v1/identification_confirmations')) {
+      const row = JSON.parse(init.body);
+      if (!migrated && !['confirmed', 'corrected'].includes(row.decision)) return new Response('{}', { status: 400 });
+      return new Response(null, { status: 201 });
+    }
+    if (url.startsWith('https://tv.test/rest/v1/identification_reviews') && init.method === 'PATCH') return new Response(JSON.stringify([{ id: 'r1', ...JSON.parse(init.body), ...reviewRow }]), { status: 200 });
+    throw new Error('unexpected fetch ' + url);
+  };
+  return log;
+}
+const idBody = (extra = {}) => ({ image: IMG, identification: { candidate: { common_name: 'Monstera', scientific_name: 'Monstera deliciosa', confidence_score: 0.9 }, family: 'Araceae', model_used: 'gemini-x' }, decision: 'confirmed', source: { app: 'verde', platform: 'android', language: 'en' }, ...extra });
+await t('identification: "Yes" is only user_confirmed, never scientifically_verified; saves taxonomy and source', async () => {
+  const log = idMock(); const r = await authed('/identification-review', idBody()); const j = await r.json();
+  assert.equal(r.status, 200); assert.equal(j.verification_level, 'user_confirmed');
+  const row = JSON.parse(log.find((c) => c.url.includes('/rest/v1/identification_reviews')).init.body);
+  assert.equal(row.verification_level, 'user_confirmed'); assert.equal(row.ai_family, 'Araceae'); assert.equal(row.ai_genus, 'Monstera'); assert.equal(row.ai_species, 'deliciosa');
+  assert.equal(row.source_platform, 'android'); assert.equal(row.status, 'pending'); assert.equal(row.verified_by, undefined);
+  assert.ok(!log.some((c) => /knowledge_|botanical_taxa/.test(c.url)), 'community submissions never touch knowledge/RAG tables');
+});
+await t('identification: "Almost" needs a correction or note and stays ai_identified; "No" accepted without details', async () => {
+  idMock();
+  assert.equal((await authed('/identification-review', idBody({ decision: 'almost' }))).status, 400);
+  const a = await (await authed('/identification-review', idBody({ decision: 'almost', corrected_common_name: 'Swiss cheese plant' }))).json(); assert.equal(a.verification_level, 'ai_identified');
+  const n = await authed('/identification-review', idBody({ decision: 'not_my_plant' })); assert.equal(n.status, 200);
+  assert.equal((await authed('/identification-review', idBody({ decision: 'verified' }))).status, 400);
+});
+await t('identification: legacy decision "corrected" maps to almost; works before the migration is applied', async () => {
+  const log = idMock({ migrated: false });
+  const r = await authed('/identification-review', idBody({ decision: 'corrected', corrected_scientific_name: 'Monstera adansonii' })); assert.equal(r.status, 200);
+  const conf = log.filter((c) => c.url.includes('identification_confirmations')).map((c) => JSON.parse(c.init.body).decision);
+  assert.ok(conf.includes('corrected'));
+  const legacy = JSON.parse(log.filter((c) => c.url.includes('/rest/v1/identification_reviews') && c.init.method === 'POST').pop().init.body);
+  assert.equal(legacy.verification_level, undefined);
+});
+await t('identification admin: approve does NOT verify; verify needs approved + written basis; reject clears verification', async () => {
+  const log = idMock(); const id = '11111111-1111-4111-8111-111111111111';
+  const ap = await (await authed('/identification-review/admin/review', { review_id: id, status: 'approved' })).json();
+  assert.equal(ap.review.verification_level, undefined);
+  assert.equal((await authed('/identification-review/admin/review', { review_id: id, status: 'rejected', verify: { basis: 'long enough basis' } })).status, 400);
+  assert.equal((await authed('/identification-review/admin/review', { review_id: id, status: 'approved', verify: { basis: 'short' } })).status, 400);
+  const v = await (await authed('/identification-review/admin/review', { review_id: id, status: 'approved', verify: { basis: 'Matched to herbarium specimen' } })).json();
+  assert.equal(v.review.verification_level, 'scientifically_verified'); assert.equal(v.review.verified_by, 'u1');
+  const rj = await (await authed('/identification-review/admin/review', { review_id: id, status: 'rejected' })).json(); assert.equal(rj.review.verified_by, null);
+});
+
 console.log('ALL', n, 'PASSED');

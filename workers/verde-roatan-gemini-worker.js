@@ -537,15 +537,21 @@ async function handleIdentificationReview(request, body, env) {
   }
 
   const ai = body.identification || {};
-  const decision = body.decision === 'corrected' ? 'corrected' : 'confirmed';
-  const correctedCommon = String(body.corrected_common_name || '').trim().slice(0, 160);
-  const correctedScientific = String(body.corrected_scientific_name || '').trim().slice(0, 160);
-  if (decision === 'corrected' && !correctedCommon && !correctedScientific) {
-    return new Response(JSON.stringify({ status: 'error', error: 'Please enter the corrected plant name or scientific name.' }), {
+  // 'corrected' is the older name for "Almost, but something is wrong".
+  const decision = body.decision === 'corrected' ? 'almost' : String(body.decision || 'confirmed');
+  if (!['confirmed', 'almost', 'not_my_plant'].includes(decision)) {
+    return new Response(JSON.stringify({ status: 'error', error: 'Choose one of the three answers.' }), {
       status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
     });
   }
-
+  const correctedCommon = String(body.corrected_common_name || '').trim().slice(0, 160);
+  const correctedScientific = String(body.corrected_scientific_name || '').trim().slice(0, 160);
+  const noteText = String(body.notes || '').trim();
+  if (decision === 'almost' && !correctedCommon && !correctedScientific && noteText.length < 3) {
+    return new Response(JSON.stringify({ status: 'error', error: 'Please tell us what is wrong or enter the correct plant name.' }), {
+      status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
   const extension = mimeType === 'image/png' ? 'png' : mimeType === 'image/webp' ? 'webp' : 'jpg';
   const reviewId = crypto.randomUUID();
   const objectPath = `${user.id}/${reviewId}.${extension}`;
@@ -566,57 +572,74 @@ async function handleIdentificationReview(request, body, env) {
   }
 
   const candidate = ai.candidate || {};
-  const record = {
+  const sciName = String(candidate.scientific_name || '').trim();
+  const sciParts = sciName.split(/\s+/);
+  const source = body.source && typeof body.source === 'object' ? body.source : {};
+  const cut = (v, n) => (String(v || '').trim().slice(0, n) || null);
+  const keepsSuggestion = decision !== 'confirmed';
+  const baseRecord = {
     id: reviewId,
     submitted_by: user.id,
     image_path: objectPath,
     identification_mode: 'plant',
-    ai_common_name: String(candidate.common_name || '').slice(0, 160) || null,
-    ai_scientific_name: String(candidate.scientific_name || '').slice(0, 160) || null,
+    ai_common_name: cut(candidate.common_name, 160),
+    ai_scientific_name: cut(sciName, 160),
     ai_confidence: Number.isFinite(Number(candidate.confidence_score))
       ? Math.max(0, Math.min(1, Number(candidate.confidence_score)))
       : null,
-    proposed_common_name: decision === 'corrected' ? correctedCommon || null : null,
-    proposed_scientific_name: decision === 'corrected' ? correctedScientific || null : null,
-    submitter_notes: String(body.notes || '').slice(0, 1000) || null,
+    proposed_common_name: keepsSuggestion ? correctedCommon || null : null,
+    proposed_scientific_name: keepsSuggestion ? correctedScientific || null : null,
+    submitter_notes: noteText.slice(0, 1000) || null,
     status: 'pending'
   };
-
-  const insert = await fetch(`${url}/rest/v1/identification_reviews`, {
+  // Added by the identification_verification migration. A user's "Yes" only reaches user_confirmed;
+  // scientific verification is an administrator action and is never set here.
+  const richRecord = {
+    ...baseRecord,
+    ai_family: cut(ai.family || candidate.family, 120),
+    ai_genus: cut(ai.genus || (sciParts.length >= 1 ? sciParts[0] : ''), 80),
+    ai_species: cut(ai.species || (sciParts.length >= 2 ? sciParts[1] : ''), 80),
+    ai_model: cut(ai.model_used, 80),
+    user_decision: decision,
+    source_app: cut(source.app, 40),
+    source_platform: cut(source.platform, 40),
+    source_language: cut(source.language, 10),
+    verification_level: decision === 'confirmed' ? 'user_confirmed' : 'ai_identified'
+  };
+  const postReview = (record) => fetch(`${url}/rest/v1/identification_reviews`, {
     method: 'POST',
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation'
-    },
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
     body: JSON.stringify(record)
   });
-  const inserted = await insert.json().catch(() => []);
+  let insert = await postReview(richRecord);
+  let inserted = await insert.json().catch(() => []);
+  let migrated = true;
+  if (!insert.ok && ['PGRST204', '42703', '23514'].includes(String(inserted?.code))) {
+    // The verification migration has not been applied yet: save with the original columns so users are never blocked.
+    migrated = false;
+    insert = await postReview(baseRecord);
+    inserted = await insert.json().catch(() => []);
+  }
   if (!insert.ok || !Array.isArray(inserted) || !inserted[0]) {
     await fetch(`${url}/storage/v1/object/identification-review-images/${objectPath}`, {
       method: 'DELETE', headers: { apikey: key, Authorization: `Bearer ${key}` }
     }).catch(() => undefined);
     throw new Error('The identification review could not be saved to the review database.');
   }
-
-  const confirmation = await fetch(`${url}/rest/v1/identification_confirmations`, {
+  const postConfirmation = (decisionValue) => fetch(`${url}/rest/v1/identification_confirmations`, {
     method: 'POST',
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=minimal'
-    },
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
     body: JSON.stringify({
       review_id: reviewId,
       user_id: user.id,
-      decision,
-      corrected_common_name: decision === 'corrected' ? correctedCommon || null : null,
-      corrected_scientific_name: decision === 'corrected' ? correctedScientific || null : null,
-      notes: String(body.notes || '').slice(0, 1000) || null
+      decision: decisionValue,
+      corrected_common_name: keepsSuggestion ? correctedCommon || null : null,
+      corrected_scientific_name: keepsSuggestion ? correctedScientific || null : null,
+      notes: noteText.slice(0, 1000) || null
     })
   });
+  let confirmation = await postConfirmation(decision);
+  if (!confirmation.ok && !migrated) confirmation = await postConfirmation(decision === 'confirmed' ? 'confirmed' : 'corrected');
   if (!confirmation.ok) {
     // Roll back the pending review and private photo so the user is not left
     // with a review record that has no matching confirmation evidence.
@@ -635,6 +658,7 @@ async function handleIdentificationReview(request, body, env) {
     status: 'success',
     review_id: reviewId,
     review_status: 'pending',
+    verification_level: migrated ? richRecord.verification_level : 'ai_identified',
     message: 'Thank you. Your feedback has been saved for botanical review.'
   }), { headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' } });
 }
@@ -699,28 +723,40 @@ async function handleIdentificationReviewAdmin(request, body, env) {
       status: 400, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
     });
   }
+  const patch = {
+    status,
+    admin_notes: String(body.admin_notes || '').slice(0, 1000) || null,
+    reviewed_by: user.id,
+    reviewed_at: new Date().toISOString()
+  };
+  // Approving a submission accepts it into the community dataset. It does NOT make it scientifically
+  // verified. Verification is a separate, explicit act that needs a written basis.
+  if (body.verify) {
+    const basis = String(body.verify.basis || '').trim();
+    if (status !== 'approved') return jsonResponse(400, { status: 'error', error: 'Only an approved submission can be scientifically verified.' });
+    if (basis.length < 10) return jsonResponse(400, { status: 'error', error: 'Describe the scientific basis (reference, herbarium, expert) in at least 10 characters.' });
+    patch.verification_level = 'scientifically_verified';
+    patch.verified_by = user.id;
+    patch.verified_at = patch.reviewed_at;
+    patch.verification_basis = basis.slice(0, 1000);
+  } else if (status === 'rejected') {
+    // A rejected submission cannot keep a scientific verification.
+    patch.verified_by = null; patch.verified_at = null; patch.verification_basis = null;
+  }
   const response = await fetch(`${url}/rest/v1/identification_reviews?id=eq.${reviewId}`, {
     method: 'PATCH',
-    headers: {
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-      Prefer: 'return=representation'
-    },
-    body: JSON.stringify({
-      status,
-      admin_notes: String(body.admin_notes || '').slice(0, 1000) || null,
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString()
-    })
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+    body: JSON.stringify(patch)
   });
   const rows = await response.json().catch(() => []);
   if (!response.ok || !Array.isArray(rows) || !rows.length) {
+    if (['PGRST204', '42703'].includes(String(rows?.code)) && (body.verify || status === 'rejected')) {
+      return jsonResponse(409, { status: 'error', error: 'Scientific verification is not set up yet. Apply the identification_verification migration.' });
+    }
+    if (String(rows?.code) === '23514') return jsonResponse(409, { status: 'error', error: 'That change is not allowed for this record.' });
     throw new Error('The review could not be updated.');
   }
-  return new Response(JSON.stringify({ status: 'success', review: rows[0] }), {
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-  });
+  return jsonResponse(200, { status: 'success', review: rows[0] });
 }
 
 // ---------------------------------------------------------------------------------------------

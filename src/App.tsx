@@ -688,9 +688,10 @@ export default function App() {
   };
 
   const handleSubmitIdentificationFeedback = async (
-    decision: 'confirmed' | 'corrected',
+    decision: 'confirmed' | 'almost' | 'not_my_plant',
     correctedCommonName = '',
-    correctedScientificName = ''
+    correctedScientificName = '',
+    notes = ''
   ) => {
     if (!identifyPhoto || !identifyResult) {
       throw new Error('Analyze a plant photo before submitting feedback.');
@@ -705,7 +706,9 @@ export default function App() {
       decision,
       correctedCommonName,
       correctedScientificName,
-      session.access_token
+      session.access_token,
+      notes,
+      lang
     );
     showToast(
       lang === 'es'
