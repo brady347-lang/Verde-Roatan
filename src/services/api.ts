@@ -999,3 +999,63 @@ export interface BotanicalImportResult { batch_id: string; inserted: number; ski
 export async function commitBotanicalImport(token: string, filename: string, rows: unknown[]): Promise<BotanicalImportResult> {
   return await botanicalImportCall('commit', { filename, rows }, token);
 }
+
+
+// ---------------------------------------------------------------------------
+// Botanical Knowledge Center (administrators only; served by the Cloudflare worker)
+// ---------------------------------------------------------------------------
+async function knowledgeCall(route: string, payload: Record<string, unknown>, token: string): Promise<any> {
+  if (!token) throw new Error('Administrator sign-in is required.');
+  let response: Response;
+  try {
+    response = await fetch(`${AI_WORKER_URL}/knowledge/${route}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    throw new Error('Could not reach the Verde Roatán service. Check your connection and try again.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 || response.status === 405) throw new Error('The Knowledge Center service is not deployed yet. Deploy the latest Cloudflare worker, then try again.');
+  if (!response.ok || data.status !== 'success') throw new Error(data.error || 'The Knowledge Center service returned an error (' + response.status + ').');
+  return data;
+}
+
+export type KnowledgeStatus = 'uploaded' | 'processing' | 'awaiting_review' | 'approved' | 'rejected' | 'failed';
+export interface KnowledgeDocument {
+  id: string; original_name: string; file_size_bytes: number; status: KnowledgeStatus; stage: string;
+  error_message?: string | null; visibility: 'private' | 'public'; citation?: string | null; source_institution?: string | null;
+  page_count?: number | null; chunks_count: number; rag_indexed: boolean; uploaded_by_email?: string; created_at: string; reviewed_at?: string | null;
+}
+export interface KnowledgeEntity {
+  id: string; category: string; field_name: string; scientific_name?: string | null; extracted_value: { value?: string };
+  confidence: number; source_page?: number | null; source_snippet?: string | null;
+  approval_status: 'pending' | 'approved' | 'rejected' | 'modified'; edited_value?: { value?: string } | null;
+}
+export interface KnowledgeSource { n: number; document_id: string; document: string; citation?: string | null; page?: number | null; similarity: number; snippet: string; used: boolean }
+
+export async function uploadKnowledgePdf(token: string, file: File): Promise<{ duplicate: boolean; document: { id: string; original_name: string; status: string } }> {
+  let response: Response;
+  try {
+    response = await fetch(`${AI_WORKER_URL}/knowledge/upload?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/pdf', apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` },
+      body: file
+    });
+  } catch {
+    throw new Error('Could not reach the Verde Roatán service. Check your connection and try again.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 || response.status === 405) throw new Error('The Knowledge Center service is not deployed yet. Deploy the latest Cloudflare worker, then try again.');
+  if (!response.ok || data.status !== 'success') throw new Error(data.error || 'The PDF upload failed (' + response.status + ').');
+  return data;
+}
+export const listKnowledgeDocuments = async (token: string): Promise<KnowledgeDocument[]> => (await knowledgeCall('list', {}, token)).documents || [];
+export const getKnowledgeDocument = async (token: string, id: string): Promise<{ document: KnowledgeDocument; entities: KnowledgeEntity[]; chunks: Array<{ chunk_index: number; page_number?: number | null; content: string }>; pdf_url: string | null }> => knowledgeCall('document', { document_id: id }, token);
+export const ingestKnowledgePages = async (token: string, id: string, pages: Array<{ page: number; text: string }>, final: boolean, pageCount: number) => knowledgeCall('ingest', { document_id: id, pages, final, page_count: pageCount }, token);
+export const extractKnowledgeEntities = async (token: string, id: string): Promise<{ entities: number; warning?: string | null }> => knowledgeCall('extract', { document_id: id }, token);
+export const reviewKnowledgeDocument = async (token: string, payload: { document_id: string; action: 'approve' | 'reject'; visibility?: 'private' | 'public'; citation?: string; source_institution?: string; entity_decisions?: Array<{ id: string; status: string; edited_value?: { value: string } }> }) => knowledgeCall('review', payload, token);
+export const retryKnowledgeDocument = async (token: string, id: string): Promise<{ pdf_url: string | null }> => knowledgeCall('retry', { document_id: id }, token);
+export const markKnowledgeFailed = async (token: string, id: string, message: string) => knowledgeCall('mark-failed', { document_id: id, message }, token);
+export const askKnowledge = async (token: string, question: string, opts: { includePrivate: boolean; minSimilarity: number }): Promise<{ answered: boolean; answer: string; sources: KnowledgeSource[] }> => knowledgeCall('ask', { question, include_private: opts.includePrivate, min_similarity: opts.minSimilarity }, token);
