@@ -166,6 +166,9 @@ export default {
     const apiKey = env.GEMINI_API_KEY;
 
     try {
+      // The PDF upload sends raw bytes, so it must be handled before the JSON body is parsed.
+      if (pathname === '/knowledge/upload') return await handleKnowledgeUpload(request, url, env);
+
       const body = await request.json().catch(() => ({}));
 
       // Authenticated review submission uses the primary app session and writes
@@ -184,6 +187,12 @@ export default {
       if (pathname === '/botanical-import/existing') return await handleBotanicalImportExisting(request, env);
       if (pathname === '/botanical-import/validate') return await handleBotanicalImportValidate(request, body, env);
       if (pathname === '/botanical-import/commit') return await handleBotanicalImportCommit(request, body, env);
+
+      // Botanical Knowledge Center (administrators only) - documents, review, RAG.
+      if (pathname.startsWith('/knowledge/')) {
+        const handler = KNOWLEDGE_ROUTES[pathname.slice('/knowledge/'.length)];
+        if (handler) return await handler(request, body, env);
+      }
 
       // Review endpoints do not call Gemini and must remain available even if
       // the Gemini secret is temporarily missing or being rotated.
@@ -910,3 +919,408 @@ Respond ONLY with JSON: {"mapping": {"<exact header>": "<field or null>"}}`;
     return jsonResponse(502, { status: 'error', error: e.message || 'AI column mapping is unavailable. Use the automatic mapping instead.' });
   }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Botanical Knowledge Center. Everything below is administrator-only and uses the TV project
+// with the server-side service-role key. Only APPROVED documents are ever retrievable by RAG.
+// ---------------------------------------------------------------------------------------------
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
+const EMBED_MODEL = 'gemini-embedding-001';
+const EMBED_DIMS = 768;
+const CHUNK_CHARS = 1200;
+const CHUNK_OVERLAP = 150;
+const MAX_PAGES_PER_INGEST = 25;
+
+const ENTITY_FIELDS = {
+  scientific_name: 'taxonomy', family: 'taxonomy', genus: 'taxonomy', species: 'taxonomy',
+  synonyms: 'taxonomy', common_names: 'taxonomy',
+  growth_habit: 'identification', description: 'identification',
+  sunlight: 'horticulture', water: 'horticulture', soil: 'horticulture', propagation: 'horticulture',
+  habitat: 'regional', distribution: 'regional', climate: 'regional', salt_tolerance: 'regional', native_status: 'regional',
+  toxicity: 'health', pests_diseases: 'health',
+  reference: 'source'
+};
+
+function tvHeaders(key, extra = {}) {
+  return { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', ...extra };
+}
+
+async function tvJson(res) {
+  const data = await res.json().catch(() => null);
+  return { ok: res.ok, status: res.status, data };
+}
+
+async function sha256Hex(buffer) {
+  const digest = await crypto.subtle.digest('SHA-256', buffer);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+function chunkText(text) {
+  const clean = String(text || '').replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  if (!clean) return [];
+  const chunks = [];
+  let start = 0;
+  while (start < clean.length) {
+    let end = Math.min(start + CHUNK_CHARS, clean.length);
+    if (end < clean.length) {
+      const window = clean.slice(start, end);
+      const cut = Math.max(window.lastIndexOf('\n\n'), window.lastIndexOf('. '), window.lastIndexOf('\n'));
+      if (cut > CHUNK_CHARS * 0.5) end = start + cut + 1;
+    }
+    const piece = clean.slice(start, end).trim();
+    if (piece.length >= 20) chunks.push(piece);
+    if (end >= clean.length) break;
+    start = Math.max(end - CHUNK_OVERLAP, start + 1);
+  }
+  return chunks;
+}
+
+async function embedTexts(apiKey, texts, taskType) {
+  const out = [];
+  for (let i = 0; i < texts.length; i += 100) {
+    const batch = texts.slice(i, i + 100);
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${EMBED_MODEL}:batchEmbedContents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        requests: batch.map((t) => ({
+          model: `models/${EMBED_MODEL}`,
+          content: { parts: [{ text: t }] },
+          taskType,
+          outputDimensionality: EMBED_DIMS
+        }))
+      })
+    });
+    if (!res.ok) throw new Error(`The embedding service returned an error (${res.status}).`);
+    const data = await res.json();
+    const vectors = (data.embeddings || []).map((e) => e.values);
+    if (vectors.length !== batch.length || vectors.some((v) => !Array.isArray(v) || v.length !== EMBED_DIMS)) {
+      throw new Error('The embedding service returned an unexpected result.');
+    }
+    out.push(...vectors);
+  }
+  return out;
+}
+
+const vectorLiteral = (v) => `[${v.join(',')}]`;
+const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+
+async function getKnowledgeDoc(tv, id) {
+  const r = await tvJson(await fetch(`${tv.url}/rest/v1/knowledge_documents?id=eq.${id}&select=*`, { headers: tvHeaders(tv.key) }));
+  if (!r.ok || !Array.isArray(r.data)) throw new Error('The knowledge database could not be read. Has the knowledge_center migration been applied?');
+  return r.data[0] || null;
+}
+
+async function patchKnowledgeDoc(tv, id, patch) {
+  await fetch(`${tv.url}/rest/v1/knowledge_documents?id=eq.${id}`, {
+    method: 'PATCH', headers: tvHeaders(tv.key), body: JSON.stringify({ ...patch, updated_at: new Date().toISOString() })
+  });
+}
+
+async function signDocumentUrl(tv, path) {
+  const res = await fetch(`${tv.url}/storage/v1/object/sign/botanical-documents/${path.split('/').map(encodeURIComponent).join('/')}`, {
+    method: 'POST', headers: tvHeaders(tv.key), body: JSON.stringify({ expiresIn: 1800 })
+  });
+  const d = await res.json().catch(() => ({}));
+  if (!res.ok || !d.signedURL) return null;
+  return String(d.signedURL).startsWith('http') ? d.signedURL : `${tv.url}/storage/v1${d.signedURL}`;
+}
+
+async function handleKnowledgeUpload(request, url, env) {
+  if (request.method !== 'POST') return jsonResponse(405, { status: 'error', error: 'Method not allowed' });
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const tv = reviewDatabaseConfig(env);
+  const name = String(url.searchParams.get('name') || 'document.pdf').replace(/[^\w.\- ()]+/g, '_').slice(0, 200);
+  const buffer = await request.arrayBuffer();
+  if (buffer.byteLength === 0) return jsonResponse(400, { status: 'error', error: 'The file is empty.' });
+  if (buffer.byteLength > MAX_PDF_BYTES) return jsonResponse(413, { status: 'error', error: 'PDF files can be at most 20 MB.' });
+  const head = new TextDecoder().decode(new Uint8Array(buffer.slice(0, 5)));
+  if (head !== '%PDF-') return jsonResponse(400, { status: 'error', error: 'That file is not a PDF.' });
+
+  const sha = await sha256Hex(buffer);
+  const dup = await tvJson(await fetch(
+    `${tv.url}/rest/v1/knowledge_documents?content_sha256=eq.${sha}&select=id,original_name,status`, { headers: tvHeaders(tv.key) }));
+  if (dup.ok && Array.isArray(dup.data) && dup.data[0]) {
+    return jsonResponse(200, { status: 'success', duplicate: true, document: dup.data[0] });
+  }
+
+  const path = `${new Date().getUTCFullYear()}/${crypto.randomUUID()}.pdf`;
+  const up = await fetch(`${tv.url}/storage/v1/object/botanical-documents/${path}`, {
+    method: 'POST',
+    headers: { apikey: tv.key, Authorization: `Bearer ${tv.key}`, 'Content-Type': 'application/pdf', 'x-upsert': 'false' },
+    body: buffer
+  });
+  if (!up.ok) {
+    const d = await up.json().catch(() => ({}));
+    return jsonResponse(502, { status: 'error', error: `The PDF could not be stored: ${d.message || d.error || up.status}` });
+  }
+  const ins = await tvJson(await fetch(`${tv.url}/rest/v1/knowledge_documents`, {
+    method: 'POST', headers: tvHeaders(tv.key, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      original_name: name, storage_path: path, file_size_bytes: buffer.byteLength, content_sha256: sha,
+      uploaded_by_email: String(auth.user.email || 'unknown')
+    })
+  }));
+  if (!ins.ok || !Array.isArray(ins.data) || !ins.data[0]) {
+    return jsonResponse(502, { status: 'error', error: 'The PDF was stored but its record could not be created.' });
+  }
+  return jsonResponse(200, { status: 'success', duplicate: false, document: ins.data[0] });
+}
+
+async function knowledgeIngest(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) return jsonResponse(500, { status: 'error', error: 'GEMINI_API_KEY is not configured, so text cannot be indexed yet.' });
+  if (!isUuid(body.document_id)) return jsonResponse(400, { status: 'error', error: 'Missing document.' });
+  const pages = Array.isArray(body.pages) ? body.pages.slice(0, MAX_PAGES_PER_INGEST) : [];
+  const tv = reviewDatabaseConfig(env);
+  const doc = await getKnowledgeDoc(tv, body.document_id);
+  if (!doc) return jsonResponse(404, { status: 'error', error: 'Document not found.' });
+  if (doc.status === 'approved') return jsonResponse(409, { status: 'error', error: 'An approved document cannot be re-indexed. Reject or retry it first.' });
+
+  const pieces = [];
+  for (const pg of pages) {
+    const n = Number.isInteger(pg?.page) ? pg.page : null;
+    for (const c of chunkText(String(pg?.text || '').slice(0, 60000))) pieces.push({ page: n, content: c });
+  }
+  try {
+    if (pieces.length) {
+      const startRes = await tvJson(await fetch(
+        `${tv.url}/rest/v1/knowledge_chunks?document_id=eq.${doc.id}&select=chunk_index&order=chunk_index.desc&limit=1`, { headers: tvHeaders(tv.key) }));
+      let next = Array.isArray(startRes.data) && startRes.data[0] ? startRes.data[0].chunk_index + 1 : 0;
+      const vectors = await embedTexts(apiKey, pieces.map((p) => p.content), 'RETRIEVAL_DOCUMENT');
+      const rows = pieces.map((p, i) => ({
+        document_id: doc.id, chunk_index: next++, page_number: p.page, content: p.content,
+        token_estimate: Math.ceil(p.content.length / 4), embedding: vectorLiteral(vectors[i])
+      }));
+      const ins = await fetch(`${tv.url}/rest/v1/knowledge_chunks`, { method: 'POST', headers: tvHeaders(tv.key), body: JSON.stringify(rows) });
+      if (!ins.ok) throw new Error('The indexed text could not be saved.');
+    }
+    const countRes = await fetch(`${tv.url}/rest/v1/knowledge_chunks?document_id=eq.${doc.id}&select=id`, { headers: { ...tvHeaders(tv.key), Prefer: 'count=exact', Range: '0-0' } });
+    const total = Number((countRes.headers.get('content-range') || '').split('/')[1]) || 0;
+    const patch = { status: 'processing', stage: 'indexing_text', chunks_count: total, error_message: null };
+    if (body.final) {
+      patch.page_count = Number.isInteger(body.page_count) ? body.page_count : null;
+      patch.stage = total > 0 ? 'text_indexed' : 'failed';
+      if (total === 0) { patch.status = 'failed'; patch.error_message = 'No readable text was found. Scanned PDFs without a text layer are not supported yet.'; }
+      if (pieces[0]) patch.text_preview = pieces[0].content.slice(0, 1500);
+    }
+    await patchKnowledgeDoc(tv, doc.id, patch);
+    return jsonResponse(200, { status: 'success', chunks_total: total, document_status: patch.status });
+  } catch (e) {
+    await patchKnowledgeDoc(tv, doc.id, { status: 'failed', stage: 'failed', error_message: String(e.message || e).slice(0, 500) });
+    return jsonResponse(502, { status: 'error', error: e.message || 'Indexing failed.' });
+  }
+}
+
+function normalizeForMatch(t) {
+  return String(t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+async function knowledgeExtract(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.document_id)) return jsonResponse(400, { status: 'error', error: 'Missing document.' });
+  const tv = reviewDatabaseConfig(env);
+  const doc = await getKnowledgeDoc(tv, body.document_id);
+  if (!doc) return jsonResponse(404, { status: 'error', error: 'Document not found.' });
+  const chunkRes = await tvJson(await fetch(
+    `${tv.url}/rest/v1/knowledge_chunks?document_id=eq.${doc.id}&select=chunk_index,page_number,content&order=chunk_index.asc&limit=400`, { headers: tvHeaders(tv.key) }));
+  const chunks = Array.isArray(chunkRes.data) ? chunkRes.data : [];
+  if (chunks.length === 0) return jsonResponse(400, { status: 'error', error: 'The document has no indexed text yet.' });
+  const fullText = normalizeForMatch(chunks.map((c) => c.content).join(' '));
+
+  // Entity extraction is an enhancement: if the AI is unavailable the indexed text is still reviewable.
+  let warning = null;
+  const entities = [];
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) warning = 'Automatic extraction is unavailable (no AI key). The text is indexed and can be reviewed and approved.';
+  else {
+    const windows = [];
+    let cur = '';
+    for (const c of chunks) {
+      const line = `[page ${c.page_number ?? '?'}] ${c.content}\n`;
+      if (cur.length + line.length > 20000 && cur) { windows.push(cur); cur = ''; }
+      cur += line;
+    }
+    if (cur) windows.push(cur);
+    try {
+      for (const w of windows.slice(0, 6)) {
+        const prompt = `You extract botanical facts from a scientific document. Use ONLY the text below. Never add knowledge from elsewhere.
+For each fact return: field_name (one of ${Object.keys(ENTITY_FIELDS).join(', ')}), scientific_name of the plant the fact is about (Genus species), value (concise), confidence (0 to 1), page (number from the [page N] marker), snippet (an exact verbatim quote from the text, at most 200 characters, that supports the fact).
+If a fact is not clearly stated, omit it. Respond ONLY with JSON: {"entities":[{"field_name":"","scientific_name":"","value":"","confidence":0.0,"page":1,"snippet":""}]}
+TEXT:
+${w}`;
+        const { parsed } = await callGemini(env, apiKey, [{ text: prompt }], { totalMs: 25000, perCallMs: 20000 });
+        for (const e of Array.isArray(parsed?.entities) ? parsed.entities : []) {
+          const field = String(e.field_name || '');
+          const snippet = String(e.snippet || '').trim();
+          // Anti-hallucination: the quoted evidence must really occur in the document.
+          if (!ENTITY_FIELDS[field] || !e.value || snippet.length < 8 || !fullText.includes(normalizeForMatch(snippet))) continue;
+          entities.push({
+            document_id: doc.id, category: ENTITY_FIELDS[field], field_name: field,
+            scientific_name: e.scientific_name ? String(e.scientific_name).slice(0, 200) : null,
+            extracted_value: { value: String(e.value).slice(0, 1500) },
+            confidence: Math.min(1, Math.max(0, Number(e.confidence) || 0.5)),
+            source_page: Number.isInteger(e.page) ? e.page : null, source_snippet: snippet.slice(0, 400)
+          });
+        }
+      }
+    } catch (e) {
+      warning = `Automatic extraction failed (${e.message}). The text is indexed and can still be reviewed and approved.`;
+    }
+  }
+  await fetch(`${tv.url}/rest/v1/knowledge_entities?document_id=eq.${doc.id}`, { method: 'DELETE', headers: tvHeaders(tv.key) });
+  if (entities.length) {
+    const ins = await fetch(`${tv.url}/rest/v1/knowledge_entities`, { method: 'POST', headers: tvHeaders(tv.key), body: JSON.stringify(entities.slice(0, 300)) });
+    if (!ins.ok) warning = 'Extracted facts could not be saved. The text is indexed and can still be reviewed.';
+  }
+  await patchKnowledgeDoc(tv, doc.id, { status: 'awaiting_review', stage: 'awaiting_review', error_message: warning });
+  return jsonResponse(200, { status: 'success', entities: Math.min(entities.length, 300), warning });
+}
+
+async function knowledgeList(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const tv = reviewDatabaseConfig(env);
+  const r = await tvJson(await fetch(
+    `${tv.url}/rest/v1/knowledge_documents?select=id,original_name,file_size_bytes,status,stage,error_message,visibility,citation,source_institution,page_count,chunks_count,rag_indexed,uploaded_by_email,created_at,reviewed_at&order=created_at.desc&limit=200`,
+    { headers: tvHeaders(tv.key) }));
+  if (!r.ok || !Array.isArray(r.data)) return jsonResponse(502, { status: 'error', error: 'The knowledge database could not be read. Has the knowledge_center migration been applied?' });
+  return jsonResponse(200, { status: 'success', documents: r.data });
+}
+
+async function knowledgeDocument(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.document_id)) return jsonResponse(400, { status: 'error', error: 'Missing document.' });
+  const tv = reviewDatabaseConfig(env);
+  const doc = await getKnowledgeDoc(tv, body.document_id);
+  if (!doc) return jsonResponse(404, { status: 'error', error: 'Document not found.' });
+  const [ents, chunks, signed] = await Promise.all([
+    tvJson(await fetch(`${tv.url}/rest/v1/knowledge_entities?document_id=eq.${doc.id}&select=*&order=category.asc,confidence.desc&limit=400`, { headers: tvHeaders(tv.key) })),
+    tvJson(await fetch(`${tv.url}/rest/v1/knowledge_chunks?document_id=eq.${doc.id}&select=chunk_index,page_number,content&order=chunk_index.asc&limit=80`, { headers: tvHeaders(tv.key) })),
+    signDocumentUrl(tv, doc.storage_path)
+  ]);
+  return jsonResponse(200, {
+    status: 'success',
+    document: doc,
+    entities: Array.isArray(ents.data) ? ents.data : [],
+    chunks: Array.isArray(chunks.data) ? chunks.data : [],
+    pdf_url: signed
+  });
+}
+
+async function knowledgeReview(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.document_id) || !['approve', 'reject'].includes(body.action)) {
+    return jsonResponse(400, { status: 'error', error: 'Choose a document and approve or reject.' });
+  }
+  const tv = reviewDatabaseConfig(env);
+  const doc = await getKnowledgeDoc(tv, body.document_id);
+  if (!doc) return jsonResponse(404, { status: 'error', error: 'Document not found.' });
+  const email = String(auth.user.email || 'unknown');
+
+  for (const d of Array.isArray(body.entity_decisions) ? body.entity_decisions.slice(0, 400) : []) {
+    if (!isUuid(d?.id) || !['approved', 'rejected', 'modified', 'pending'].includes(d.status)) continue;
+    const patch = { approval_status: d.status, updated_at: new Date().toISOString() };
+    if (d.status === 'modified' && d.edited_value && typeof d.edited_value === 'object') patch.edited_value = d.edited_value;
+    await fetch(`${tv.url}/rest/v1/knowledge_entities?id=eq.${d.id}&document_id=eq.${doc.id}`, { method: 'PATCH', headers: tvHeaders(tv.key), body: JSON.stringify(patch) });
+  }
+
+  if (body.action === 'reject') {
+    await patchKnowledgeDoc(tv, doc.id, { status: 'rejected', stage: 'rejected', rag_indexed: false, reviewed_by_email: email, reviewed_at: new Date().toISOString() });
+    return jsonResponse(200, { status: 'success', document_status: 'rejected' });
+  }
+  if (!['awaiting_review', 'rejected'].includes(doc.status)) {
+    return jsonResponse(409, { status: 'error', error: `A document that is "${doc.status}" cannot be approved.` });
+  }
+  if (!(doc.chunks_count > 0)) return jsonResponse(409, { status: 'error', error: 'The document has no indexed text.' });
+  const missing = await fetch(`${tv.url}/rest/v1/knowledge_chunks?document_id=eq.${doc.id}&embedding=is.null&select=id`, { headers: { ...tvHeaders(tv.key), Prefer: 'count=exact', Range: '0-0' } });
+  if (Number((missing.headers.get('content-range') || '').split('/')[1]) > 0) {
+    return jsonResponse(409, { status: 'error', error: 'Some text has no embedding yet. Retry the document before approving it.' });
+  }
+  await patchKnowledgeDoc(tv, doc.id, {
+    status: 'approved', stage: 'indexed', rag_indexed: true, reviewed_by_email: email, reviewed_at: new Date().toISOString(),
+    visibility: body.visibility === 'public' ? 'public' : 'private',
+    citation: typeof body.citation === 'string' ? body.citation.slice(0, 500) : doc.citation,
+    source_institution: typeof body.source_institution === 'string' ? body.source_institution.slice(0, 200) : doc.source_institution
+  });
+  return jsonResponse(200, { status: 'success', document_status: 'approved' });
+}
+
+async function knowledgeRetry(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.document_id)) return jsonResponse(400, { status: 'error', error: 'Missing document.' });
+  const tv = reviewDatabaseConfig(env);
+  const doc = await getKnowledgeDoc(tv, body.document_id);
+  if (!doc) return jsonResponse(404, { status: 'error', error: 'Document not found.' });
+  if (doc.status === 'approved') return jsonResponse(409, { status: 'error', error: 'Reject the approved document before retrying it.' });
+  await fetch(`${tv.url}/rest/v1/knowledge_chunks?document_id=eq.${doc.id}`, { method: 'DELETE', headers: tvHeaders(tv.key) });
+  await fetch(`${tv.url}/rest/v1/knowledge_entities?document_id=eq.${doc.id}`, { method: 'DELETE', headers: tvHeaders(tv.key) });
+  await patchKnowledgeDoc(tv, doc.id, { status: 'uploaded', stage: 'uploaded', error_message: null, chunks_count: 0, rag_indexed: false, text_preview: null });
+  return jsonResponse(200, { status: 'success', document_id: doc.id, pdf_url: await signDocumentUrl(tv, doc.storage_path) });
+}
+
+async function knowledgeMarkFailed(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.document_id)) return jsonResponse(400, { status: 'error', error: 'Missing document.' });
+  const tv = reviewDatabaseConfig(env);
+  await patchKnowledgeDoc(tv, body.document_id, { status: 'failed', stage: 'failed', error_message: String(body.message || 'Processing failed.').slice(0, 500) });
+  return jsonResponse(200, { status: 'success' });
+}
+
+async function knowledgeAsk(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const apiKey = env.GEMINI_API_KEY;
+  if (!apiKey) return jsonResponse(500, { status: 'error', error: 'GEMINI_API_KEY is not configured.' });
+  const question = String(body.question || '').trim().slice(0, 500);
+  if (question.length < 3) return jsonResponse(400, { status: 'error', error: 'Ask a question first.' });
+  const tv = reviewDatabaseConfig(env);
+  try {
+    const [qv] = await embedTexts(apiKey, [question], 'RETRIEVAL_QUERY');
+    const match = await tvJson(await fetch(`${tv.url}/rest/v1/rpc/match_knowledge_chunks`, {
+      method: 'POST', headers: tvHeaders(tv.key),
+      body: JSON.stringify({ query_embedding: vectorLiteral(qv), match_count: 6, min_similarity: Number(body.min_similarity) > 0 ? Number(body.min_similarity) : 0.35, include_private: body.include_private !== false })
+    }));
+    if (!match.ok || !Array.isArray(match.data)) throw new Error('The knowledge search failed.');
+    const hits = match.data;
+    if (hits.length === 0) {
+      return jsonResponse(200, { status: 'success', answered: false, answer: 'No approved document supports an answer to this question.', sources: [] });
+    }
+    const context = hits.map((h, i) => `[${i + 1}] (${h.original_name}, page ${h.page_number ?? '?'})\n${h.content}`).join('\n\n');
+    const prompt = `Answer the question using ONLY the numbered sources. If they do not contain the answer, say so. Cite sources like [1].
+Question: ${question}
+Sources:
+${context}
+Respond ONLY with JSON: {"answer": "...", "used": [1]}`;
+    const { parsed } = await callGemini(env, apiKey, [{ text: prompt }], { totalMs: 20000, perCallMs: 15000 });
+    const used = Array.isArray(parsed?.used) ? parsed.used.filter((n) => Number.isInteger(n) && n >= 1 && n <= hits.length) : [];
+    return jsonResponse(200, {
+      status: 'success', answered: true, answer: String(parsed?.answer || '').slice(0, 4000),
+      sources: hits.map((h, i) => ({
+        n: i + 1, document_id: h.document_id, document: h.original_name, citation: h.citation, page: h.page_number,
+        similarity: Math.round(h.similarity * 1000) / 1000, snippet: h.content.slice(0, 400), used: used.includes(i + 1)
+      }))
+    });
+  } catch (e) {
+    return jsonResponse(502, { status: 'error', error: e.message || 'The question could not be answered.' });
+  }
+}
+
+const KNOWLEDGE_ROUTES = {
+  ingest: knowledgeIngest,
+  extract: knowledgeExtract,
+  list: knowledgeList,
+  document: knowledgeDocument,
+  review: knowledgeReview,
+  retry: knowledgeRetry,
+  'mark-failed': knowledgeMarkFailed,
+  ask: knowledgeAsk
+};
