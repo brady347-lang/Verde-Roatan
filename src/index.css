@@ -141,37 +141,87 @@ html, body {
   }
 }
 
-/* Compact, gentle motion for the botanical scan companion */
+/* Layered, lightweight botanical scan overlay (Android WebView friendly) */
+.scan-overlay {
+  isolation: isolate;
+  contain: paint;
+}
+
 .hummingbird-scan {
   display: block;
   object-fit: contain;
   transform-origin: 50% 55%;
-  animation: hummingbird-hover 2.8s ease-in-out infinite;
+  animation: hummingbird-hover 1.35s ease-in-out infinite;
+  filter: drop-shadow(0 0 5px rgba(76, 195, 209, .42))
+    drop-shadow(0 0 11px rgba(27, 107, 79, .28));
   will-change: transform;
+  z-index: 4;
 }
 
 @keyframes hummingbird-hover {
-  0%, 100% { transform: translate3d(0, 0, 0) rotate(-1deg); }
-  50% { transform: translate3d(0, -5px, 0) rotate(1deg); }
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-1.5deg) scale(1); }
+  50% { transform: translate3d(0, -4px, 0) rotate(1.5deg) scale(1.025); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hummingbird-scan { animation: none; }
-}
-
-/* Subtle holographic scan rings positioned over the live specimen photo */
+/* Two soft rings create depth without covering the specimen. */
 .scan-orbit-ring {
-  box-shadow: 0 0 10px color-mix(in srgb, var(--lagoon) 28%, transparent), inset 0 0 10px color-mix(in srgb, var(--lagoon) 12%, transparent);
-  animation: scan-orbit-pulse 3.2s ease-in-out infinite;
+  border: 1px solid color-mix(in srgb, var(--lagoon) 66%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 9px color-mix(in srgb, var(--lagoon) 24%, transparent),
+    inset 0 0 8px color-mix(in srgb, var(--lagoon) 10%, transparent);
+  animation: scan-orbit-pulse 2.8s ease-in-out infinite;
+  z-index: 2;
 }
+
 .scan-orbit-ring-delayed {
-  animation-delay: -1.6s;
+  border-color: color-mix(in srgb, var(--palm) 42%, transparent);
   border-style: dashed;
+  animation-delay: -1.4s;
 }
+
+.scan-target-core {
+  width: 7px;
+  height: 7px;
+  border: 1px solid rgba(115, 239, 222, .95);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(76, 195, 209, .85), 0 0 18px rgba(76, 195, 209, .38);
+  animation: scan-core-pulse 1.8s ease-in-out infinite;
+  z-index: 3;
+}
+
+.scan-overlay::before {
+  content: "";
+  position: absolute;
+  left: 62%;
+  top: calc(42% - 52px);
+  width: 88px;
+  height: 1px;
+  transform: translateX(-50%);
+  background: linear-gradient(90deg, transparent, rgba(115, 239, 222, .7), transparent);
+  box-shadow: 0 0 7px rgba(76, 195, 209, .55);
+  animation: scan-sweep 2.6s ease-in-out infinite;
+  z-index: 3;
+}
+
 @keyframes scan-orbit-pulse {
-  0%, 100% { opacity: .25; transform: translate(-50%, -50%) scale(.88) rotate(0deg); }
-  50% { opacity: .78; transform: translate(-50%, -50%) scale(1.06) rotate(18deg); }
+  0%, 100% { opacity: .28; transform: translate(-50%, -50%) scale(.9) rotate(0deg); }
+  50% { opacity: .78; transform: translate(-50%, -50%) scale(1.04) rotate(18deg); }
 }
+
+@keyframes scan-core-pulse {
+  0%, 100% { opacity: .55; transform: scale(.8); }
+  50% { opacity: 1; transform: scale(1.35); }
+}
+
+@keyframes scan-sweep {
+  0%, 100% { opacity: .12; transform: translate(-50%, 0) scaleX(.65); }
+  50% { opacity: .8; transform: translate(-50%, 82px) scaleX(1); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .scan-orbit-ring { animation: none; opacity: .45; }
+  .hummingbird-scan,
+  .scan-orbit-ring,
+  .scan-target-core,
+  .scan-overlay::before { animation: none; }
+  .scan-orbit-ring { opacity: .42; }
 }
