@@ -334,6 +334,19 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             </div>
           )}
 
+          <div className="flex flex-col items-center gap-1.5 w-full" aria-live="polite">
+            <img
+              src="/hummingbird-scan.gif"
+              alt={lang === 'es' ? 'Colibrí explorando el espécimen durante el escaneo' : 'Hummingbird exploring the specimen during scan'}
+              className="w-[220px] max-w-full h-auto object-contain"
+              loading="eager"
+              decoding="async"
+            />
+            <span className="text-[11px] font-semibold tracking-wide text-[var(--palm)]">
+              {lang === 'es' ? 'Escaneo botánico en progreso' : 'Botanical scan in progress'}
+            </span>
+          </div>
+
           {/* Progress Bar & Countdown (5s - 8s Deep Search) */}
           <div className="w-full flex flex-col gap-2">
             <div className="flex items-center justify-between text-[12px] font-extrabold text-[var(--ink)]">
