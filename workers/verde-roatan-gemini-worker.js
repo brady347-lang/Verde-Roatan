@@ -188,6 +188,10 @@ export default {
       if (pathname === '/botanical-import/validate') return await handleBotanicalImportValidate(request, body, env);
       if (pathname === '/botanical-import/commit') return await handleBotanicalImportCommit(request, body, env);
 
+      // Public botanical intelligence: PostgreSQL search and care rules. No AI key is needed.
+      if (pathname === '/botanical/search') return await handleBotanicalSearch(body, env);
+      if (pathname === '/botanical/care') return await handleBotanicalCare(body, env);
+
       // Botanical Knowledge Center (administrators only) - documents, review, RAG.
       if (pathname.startsWith('/knowledge/')) {
         const handler = KNOWLEDGE_ROUTES[pathname.slice('/knowledge/'.length)];
@@ -1337,3 +1341,38 @@ const KNOWLEDGE_ROUTES = {
   'mark-failed': knowledgeMarkFailed,
   ask: knowledgeAsk
 };
+
+// ---------------------------------------------------------------------------------------------
+// Public botanical intelligence (Issue 10). Reads PUBLISHED records only, through fixed SQL functions.
+// Works without any AI provider.
+// ---------------------------------------------------------------------------------------------
+async function handleBotanicalSearch(body, env) {
+  let tv;
+  try { tv = reviewDatabaseConfig(env); } catch (e) { return jsonResponse(503, { status: 'error', error: e.message }); }
+  const pick = (v, allowed) => (typeof v === 'string' && allowed.includes(v) ? v : null);
+  const params = {
+    q: typeof body.q === 'string' ? body.q.trim().slice(0, 100) : null,
+    p_family: typeof body.family === 'string' && body.family.trim() ? body.family.trim().slice(0, 80) : null,
+    p_sun: pick(body.sun, ['full', 'partial', 'shade']),
+    p_water: pick(body.water, ['low', 'moderate', 'high']),
+    p_min_salt: Number.isInteger(body.min_salt) && body.min_salt >= 1 && body.min_salt <= 3 ? body.min_salt : null,
+    p_pet_safe: body.pet_safe === true,
+    p_native: body.native === true,
+    lim: Number.isInteger(body.limit) ? Math.min(Math.max(body.limit, 1), 25) : 25
+  };
+  const res = await tvJson(await fetch(`${tv.url}/rest/v1/rpc/botanical_search`, { method: 'POST', headers: tvHeaders(tv.key), body: JSON.stringify(params) }));
+  if (!res.ok || !Array.isArray(res.data)) {
+    return jsonResponse(503, { status: 'error', error: 'Botanical search is not set up yet. Apply the botanical_intelligence migration.' });
+  }
+  return jsonResponse(200, { status: 'success', source: 'postgresql', ai_used: false, results: res.data });
+}
+
+async function handleBotanicalCare(body, env) {
+  if (!isUuid(body.id)) return jsonResponse(400, { status: 'error', error: 'Choose a plant.' });
+  let tv;
+  try { tv = reviewDatabaseConfig(env); } catch (e) { return jsonResponse(503, { status: 'error', error: e.message }); }
+  const res = await tvJson(await fetch(`${tv.url}/rest/v1/rpc/botanical_care`, { method: 'POST', headers: tvHeaders(tv.key), body: JSON.stringify({ p_id: body.id }) }));
+  if (!res.ok) return jsonResponse(503, { status: 'error', error: 'Botanical care rules are not set up yet. Apply the botanical_intelligence migration.' });
+  if (!res.data) return jsonResponse(404, { status: 'error', error: 'Plant not found.' });
+  return jsonResponse(200, { status: 'success', source: 'postgresql', ai_used: false, care: res.data });
+}

@@ -1,3 +1,4 @@
+import { buildRuleBasedAdvice } from '../lib/botanicalRules';
 import {
   AI_WORKER_URL,
   API_URL,
@@ -751,67 +752,13 @@ export async function fetchGardenRecommendations(params: {
     console.warn('Gemini garden-advisor worker unavailable; using offline recommendations.', error);
   }
 
-  // Local fallback heuristic if both server routes are unavailable
-  const catalog = params.catalogItems.length > 0 ? params.catalogItems : INITIAL_CATALOG;
-  const isEs = params.lang === 'es';
-  const query = `${params.conditions} ${params.goals}`.toLowerCase();
-
-  const scored = catalog
-    .filter((c) => c.stock !== 'Out of stock')
-    .map((item) => {
-      let score = 70;
-      const text = `${item.name} ${item.category} ${item.note} ${(item.tags || []).join(' ')}`.toLowerCase();
-      if (query.includes('sun') || query.includes('sol')) {
-        if (text.includes('sun') || text.includes('sol') || text.includes('full') || text.includes('palm')) score += 15;
-      }
-      if (query.includes('shade') || query.includes('sombra')) {
-        if (text.includes('shade') || text.includes('sombra') || text.includes('monstera') || text.includes('indoor')) score += 20;
-      }
-      if (query.includes('salt') || query.includes('coastal') || query.includes('playa') || query.includes('mar')) {
-        if (text.includes('salt') || text.includes('coastal') || text.includes('coconut') || text.includes('palm')) score += 20;
-      }
-      if (query.includes('flower') || query.includes('flor') || query.includes('color')) {
-        if (text.includes('bloom') || text.includes('flower') || text.includes('hibiscus') || text.includes('ixora') || text.includes('bougainvillea')) score += 18;
-      }
-      if (query.includes('soil') || query.includes('tierra') || query.includes('fertilizer') || query.includes('abono')) {
-        if (item.category === 'Soils & Substrates' || item.category === 'Nutrients & Care') score += 15;
-      }
-      return { item, score: Math.min(score, 98) };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 4);
-
-  return {
-    status: 'success',
-    summary: isEs
-      ? 'Basado en las condiciones del microclima de Roatán, hemos seleccionado plantas y sustratos adaptados a suelos arenosos, brisa marina y sol tropical.'
-      : 'Based on your Roatán microclimate conditions, we selected hardy tropical specimens and soil amendments tailored to island salinity, moisture, and sun exposure.',
-    conditions_assessment: {
-      sun_and_microclimate: isEs ? 'Exposición adecuada con resistencia a radiación UV costera.' : 'Balanced sun exposure with coastal UV resistance.',
-      soil_and_drainage: isEs ? 'Requiere sustrato aireado con buen drenaje de arena o gravilla de coral.' : 'Requires high-aeration substrate with rapid coral gravel drainage.',
-      wind_and_salt_tolerance: isEs ? 'Variedades con cutícula cerosa o tolerancia al viento alisio del mar Caribe.' : 'Foliage with wax cuticle or trade wind salt spray tolerance.'
-    },
-    island_pro_tips: [
-      isEs
-        ? 'En Roatán, mezcle tierra negra de cerro con bonote de coco o gravilla de río para evitar la compactación por lluvias torrenciales.'
-        : 'In Roatán, blend rich volcanic highland soil with coconut coir or river pea gravel to prevent compaction during heavy tropical downpours.',
-      isEs
-        ? 'Riegue temprano en la mañana para evitar hongos foliares causados por la humedad nocturna de la isla.'
-        : 'Water early in the morning to allow foliage to dry before dusk, curbing nocturnal island fungal growth.'
-    ],
-    recommendations: scored.map(({ item, score }) => ({
-      product_id: item.id,
-      product_name: item.name,
-      match_score: score,
-      why_it_fits: isEs
-        ? `Excelente tolerancia para las condiciones descritas (${item.category}). Prospera con vigor en las islas de la Bahía.`
-        : `Outstanding resilience for these specific conditions (${item.category}). Proven vigor across the Bay Islands.`,
-      care_and_placement_tip: isEs
-        ? 'Ubicar con drenaje adecuado y abonar cada 4 meses al inicio de temporadas de lluvia.'
-        : 'Ensure free-draining roots and topdress organic fertilizer at the onset of island rainy seasons.',
-      catalog_item: item
-    }))
-  };
+  // Deterministic, rule-based advice from the structured plant data. Needs no network and no AI.
+  return buildRuleBasedAdvice({
+    conditions: params.conditions,
+    goals: params.goals,
+    catalog: params.catalogItems.length > 0 ? params.catalogItems : INITIAL_CATALOG,
+    lang: params.lang
+  });
 }
 
 

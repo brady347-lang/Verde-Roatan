@@ -211,4 +211,21 @@ await t('knowledge: all knowledge routes reject non-admins', async () => {
   kMock({ docs: { [DOC]: { id: DOC } } });
   for (const r of ['list', 'document', 'review', 'retry', 'ingest', 'extract', 'ask', 'mark-failed']) assert.equal((await authed('/knowledge/' + r, { document_id: DOC, question: 'abc' }, 'bad')).status, 401, r);
 });
+
+// ---- Public botanical intelligence (no AI) ----
+await t('botanical search/care: public, no AI key needed, validated inputs, PostgreSQL functions only', async () => {
+  const seen = [];
+  globalThis.fetch = async (url, init = {}) => { url = String(url); seen.push({ url, body: init.body && JSON.parse(init.body) });
+    if (url.includes('/rpc/botanical_search')) return new Response(JSON.stringify([{ id: DOC, scientific_name: 'Cocos nucifera', rank: 1 }]), { status: 200 });
+    if (url.includes('/rpc/botanical_care')) return new Response(JSON.stringify(JSON.parse(init.body).p_id === DOC ? { id: DOC, missing: ['soil'] } : null), { status: 200 });
+    throw new Error('unexpected ' + url); };
+  const noAi = { REVIEW_SUPABASE_URL: 'https://tv.test', REVIEW_SUPABASE_SERVICE_ROLE_KEY: 'svc' };
+  let j = await (await post('/botanical/search', { q: ' coco ', sun: 'full', water: 'EVIL', min_salt: 9, pet_safe: true, limit: 999 }, noAi)).json();
+  assert.equal(j.status, 'success'); assert.equal(j.ai_used, false);
+  const p = seen[0].body; assert.equal(p.q, 'coco'); assert.equal(p.p_sun, 'full'); assert.equal(p.p_water, null); assert.equal(p.p_min_salt, null); assert.equal(p.p_pet_safe, true); assert.equal(p.lim, 25);
+  j = await (await post('/botanical/care', { id: DOC }, noAi)).json(); assert.deepEqual(j.care.missing, ['soil']);
+  assert.equal((await post('/botanical/care', { id: '22222222-2222-4222-8222-222222222222' }, noAi)).status, 404);
+  assert.equal((await post('/botanical/care', { id: 'x' }, noAi)).status, 400);
+  assert.equal((await post('/botanical/search', { q: 'a' }, {})).status, 503);
+});
 console.log('ALL', n, 'PASSED');

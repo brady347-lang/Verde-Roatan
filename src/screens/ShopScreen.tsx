@@ -1,3 +1,4 @@
+import { matchesQuery } from '../lib/botanicalRules';
 import React, { useMemo, useState } from 'react';
 import { Edit2, Filter, Flower2, Palmtree, Plus, Search, Shovel, Sparkles, Sprout, Trash2, X } from 'lucide-react';
 import { CatalogItem, ItemType, Language } from '../types';
@@ -66,16 +67,7 @@ export const ShopScreen: React.FC<ShopScreenProps> = ({
           return false;
         }
       }
-      if (query.trim()) {
-        const q = query.toLowerCase();
-        const matchesName = item.name.toLowerCase().includes(q);
-        const matchesSci = item.sci.toLowerCase().includes(q);
-        const matchesNote = item.note.toLowerCase().includes(q);
-        const matchesTag = item.tags.some((tg) => tg.toLowerCase().includes(q));
-        if (!matchesName && !matchesSci && !matchesNote && !matchesTag) {
-          return false;
-        }
-      }
+      if (query.trim() && !matchesQuery(item, query)) return false;
       return true;
     });
   }, [catalog, kind, categoryFilter, query]);

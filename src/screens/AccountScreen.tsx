@@ -58,6 +58,7 @@ import { IdentificationReviewCenter } from '../components/IdentificationReviewCe
 import { LandscapingRequestsCenter } from '../components/LandscapingRequestsCenter';
 import { MyServiceRequests } from '../components/MyServiceRequests';
 import { BotanicalImportPanel } from '../components/botanical/BotanicalImportPanel';
+import { matchesQuery } from '../lib/botanicalRules';
 import { KnowledgeCenterPanel } from '../components/botanical/KnowledgeCenterPanel';
 
 interface AccountScreenProps {
@@ -226,13 +227,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const filteredCatalog = catalog.filter((item) => {
     if (catalogFilter === 'plants' && item.t !== 'plant') return false;
     if (catalogFilter === 'products' && item.t !== 'product') return false;
-    if (catalogSearch.trim()) {
-      const q = catalogSearch.toLowerCase();
-      const matchName = item.name.toLowerCase().includes(q);
-      const matchSci = item.sci.toLowerCase().includes(q);
-      const matchCat = item.category.toLowerCase().includes(q);
-      return matchName || matchSci || matchCat;
-    }
+    if (catalogSearch.trim()) return matchesQuery(item, catalogSearch);
     return true;
   });
 
