@@ -303,11 +303,11 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
               </div>
 
               {/* Subtabs */}
-              <div className="flex gap-1 overflow-x-auto pb-1 bg-[var(--surface-2)] p-1 rounded-xl text-center no-scrollbar">
+              <div className="flex flex-wrap gap-1 bg-[var(--surface-2)] p-1 rounded-xl text-center">
                 <button
                   type="button"
                   onClick={() => setAdminTab('command_center')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'command_center' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
@@ -317,7 +317,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('botanical_center')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'botanical_center' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
@@ -327,7 +327,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('identification_reviews')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'identification_reviews' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
@@ -337,7 +337,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('landscaping_requests')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'landscaping_requests' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
@@ -349,7 +349,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('botanical_import')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'botanical_import' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
@@ -358,7 +358,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('knowledge_docs')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'knowledge_docs' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
@@ -367,7 +367,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('supplier_portal')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'supplier_portal' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
@@ -377,7 +377,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('catalog')}
-                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap transition-all ${
+                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap grow transition-all ${
                     adminTab === 'catalog' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-xs' : 'text-[var(--ink-soft)]'
                   }`}
                 >
@@ -386,7 +386,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('suppliers')}
-                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap transition-all ${
+                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap grow transition-all ${
                     adminTab === 'suppliers' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-xs' : 'text-[var(--ink-soft)]'
                   }`}
                 >
@@ -395,7 +395,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('landscapers')}
-                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap transition-all ${
+                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap grow transition-all ${
                     adminTab === 'landscapers' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-xs' : 'text-[var(--ink-soft)]'
                   }`}
                 >
@@ -404,7 +404,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('transport')}
-                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap transition-all flex items-center justify-center gap-1 ${
+                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap grow transition-all flex items-center justify-center gap-1 ${
                     adminTab === 'transport' ? 'bg-[var(--surface)] text-[var(--palm)] shadow-xs' : 'text-[var(--ink-soft)]'
                   }`}
                 >
@@ -414,7 +414,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setAdminTab('database')}
-                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap transition-all ${
+                  className={`py-1.5 px-2.5 text-[11px] font-bold rounded-lg whitespace-nowrap grow transition-all ${
                     adminTab === 'database' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-xs' : 'text-[var(--ink-soft)]'
                   }`}
                 >
