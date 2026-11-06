@@ -33,6 +33,7 @@ import {
 import { ActiveOrder, CanonicalOrderStatus, CartItem, CatalogItem, DeliveryZone, Language, OrderCheckoutResult } from '../types';
 import { STRINGS } from '../data/initialData';
 import { ORDER_LIFECYCLE_STATUS_LABELS } from '../services/orderSystem';
+import { clearSavedContact, hasSavedContact, loadSavedContact, saveContact } from '../lib/savedContact';
 
 interface DeliveryScreenProps {
   lang: Language;
@@ -67,6 +68,9 @@ interface DeliveryScreenProps {
   isAdmin?: boolean;
   onOpenTransportFeeModal?: (zoneId?: string) => void;
   onSendCustomerMessage?: (orderId: string, message: string) => void;
+  /** Signed-in account id and name, used to pre-fill the checkout form (still editable). */
+  userId?: string | null;
+  defaultName?: string;
 }
 
 export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
@@ -91,7 +95,9 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
   onAdvanceOrderStatus,
   isAdmin = false,
   onOpenTransportFeeModal,
-  onSendCustomerMessage
+  onSendCustomerMessage,
+  userId = null,
+  defaultName = ''
 }) => {
   // Segmented tab inside Delivery Screen: 'cart' | 'active' | 'history'
   const [subTab, setSubTab] = useState<'cart' | 'active' | 'history'>(() => {
@@ -100,9 +106,16 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
   });
 
   const [timing, setTiming] = useState('This week');
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('+504 ');
-  const [address, setAddress] = useState('');
+  const [saved, setSaved] = useState(() => loadSavedContact(userId));
+  const [name, setName] = useState(() => saved.name || defaultName);
+  const [phone, setPhone] = useState(() => saved.phone || '+504 ');
+  const [address, setAddress] = useState(() => saved.address);
+  const prefilled = hasSavedContact(saved);
+  const forgetSavedDetails = () => {
+    clearSavedContact(userId);
+    setSaved(loadSavedContact(userId));
+    setName(defaultName); setPhone('+504 '); setAddress('');
+  };
   const [notes, setNotes] = useState('');
   const [consent, setConsent] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -185,6 +198,7 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
       return;
     }
     setErrorMsg('');
+    saveContact(userId, { name, phone, address });
     await onSubmitCheckout({
       name: name.trim(),
       phone: phone.trim(),
@@ -869,6 +883,15 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
                   </div>
                 )}
 
+                {prefilled && (
+                  <div className="flex items-center justify-between gap-2 rounded-xl bg-[var(--palm)]/10 px-3 py-2 text-[11.5px] text-[var(--ink)]">
+                    <span>{lang === 'es' ? 'Datos de tu último pedido. Puedes editar lo que quieras.' : 'Filled in from your last order. Edit anything you like.'}</span>
+                    <button type="button" onClick={forgetSavedDetails} className="shrink-0 font-extrabold text-[var(--palm)] underline">
+                      {lang === 'es' ? 'Borrar' : 'Clear'}
+                    </button>
+                  </div>
+                )}
+
                 <div className="flex flex-col gap-1">
                   <label className="text-[12px] font-bold text-[var(--ink)]">{t('fullName')} *</label>
                   <input
@@ -876,6 +899,7 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
                     required
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    autoComplete="name"
                     placeholder="Maya Wood"
                     className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:border-[var(--palm)]"
                   />
@@ -888,6 +912,7 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
                     required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    autoComplete="tel"
                     placeholder="+504 9900-0000"
                     className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:border-[var(--palm)]"
                   />
@@ -900,6 +925,7 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
                     required
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
+                    autoComplete="street-address"
                     placeholder="e.g. West Bay Road, Villa Pelican #3"
                     className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:border-[var(--palm)]"
                   />

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Loader2, Send } from 'lucide-react';
 import { submitServiceRequest } from '../services/api';
+import { loadSavedContact, saveContact } from '../lib/savedContact';
 import { AuthSession, DeliveryZone, Landscaper, Language } from '../types';
 
 interface LandscaperQuoteFormProps {
@@ -22,10 +23,11 @@ export const LandscaperQuoteForm: React.FC<LandscaperQuoteFormProps> = ({
   crew, zones, defaultZoneName, session, lang, title, submitLabel, onRequireSignIn, onSubmitted
 }) => {
   const es = lang === 'es';
-  const [name, setName] = useState(session?.user.full_name || '');
-  const [phone, setPhone] = useState('');
+  const saved = loadSavedContact(session?.user.id);
+  const [name, setName] = useState(session?.user.full_name || saved.name);
+  const [phone, setPhone] = useState(saved.phone);
   const [service, setService] = useState(crew.svc[0] || 'Landscaping');
-  const [area, setArea] = useState(defaultZoneName || zones[0]?.name || '');
+  const [area, setArea] = useState(defaultZoneName || (zones.find((z) => z.name === saved.area)?.name) || zones[0]?.name || '');
   const [timing, setTiming] = useState('As soon as possible');
   const [date, setDate] = useState('');
   const [details, setDetails] = useState('');
@@ -58,7 +60,7 @@ export const LandscaperQuoteForm: React.FC<LandscaperQuoteFormProps> = ({
     setBusy(true);
     setError('');
     try {
-      const saved = await submitServiceRequest(session.access_token, {
+      const created = await submitServiceRequest(session.access_token, {
         customerId: session.user.id,
         customerName: name,
         customerPhone: phone,
@@ -71,7 +73,8 @@ export const LandscaperQuoteForm: React.FC<LandscaperQuoteFormProps> = ({
         landscaperRef: crew.id,
         landscaperName: crew.name
       });
-      onSubmitted(saved.request_number);
+      saveContact(session.user.id, { name, phone, area });
+      onSubmitted(created.request_number);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'The request could not be sent.');
     } finally {

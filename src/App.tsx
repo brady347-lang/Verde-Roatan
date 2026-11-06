@@ -1853,6 +1853,8 @@ export default function App() {
               onRemoveItem={handleRemoveFromCart}
               onNavigate={(nextTab) => setTab(nextTab)}
               onSubmitCheckout={handleSubmitCheckout}
+              userId={session?.user?.id || null}
+              defaultName={session?.user?.full_name || ''}
               isSubmitting={isSubmittingOrder}
               orderResult={orderResult}
               onResetOrder={() => setOrderResult(null)}
