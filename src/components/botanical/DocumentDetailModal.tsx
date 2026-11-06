@@ -95,8 +95,8 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             <span className="w-10 h-10 rounded-2xl bg-[var(--palm)] text-white flex items-center justify-center shadow-xs">
               <FileText className="w-5 h-5" />
             </span>
-            <div>
-              <h2 className="text-[17px] font-extrabold text-[var(--ink)] leading-tight flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-[15px] sm:text-[17px] font-extrabold text-[var(--ink)] leading-tight break-words [overflow-wrap:anywhere]">
                 {document.original_name}
               </h2>
               <div className="flex flex-wrap items-center gap-2 mt-1 min-w-0">
@@ -228,7 +228,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                     Review and verify extracted fields before committing to the canonical botanical database.
                   </small>
                 </div>
-                <span className="text-[11px] font-bold text-[var(--palm)]">
+                <span className="text-[11px] font-bold text-[var(--palm)] min-w-0 max-w-full sm:max-w-[48%] whitespace-normal break-words [overflow-wrap:anywhere]">
                   {document.extracted_taxa.join(', ') || 'No taxa tagged'}
                 </span>
               </div>
@@ -255,8 +255,8 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                         }`}
                       >
                         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1 min-w-0">
                               <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-[var(--surface-2)] text-[var(--ink-soft)]">
                                 {entity.category}
                               </span>
