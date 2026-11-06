@@ -27,12 +27,13 @@ await t('/api/refine alias + garden advisor', async () => {
   assert.equal((await (await post('/api/refine', { image: IMG, initialResult: plant })).json()).status, 'success');
   const g = await (await post('/garden-advisor', { conditions: 'x', catalogItems: [] })).json(); assert.equal(g.status, 'success'); assert.equal(g.summary, 's');
 });
-await t('hung model is aborted and next model is used', async () => {
-  mock((m, init) => m === 'gemini-3.8-flash' ? new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))) : ok(plant));
-  const t0 = Date.now(); const j = await (await post('/', { image: IMG })).json();
-  assert.equal(j.status, 'success'); assert.ok(Date.now() - t0 < 14000, 'stayed inside client timeout');
+await t('hung Gemini 3.8 request is aborted without trying a retired model', async () => {
+  mock((m, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))));
+  const t0 = Date.now(); const r = await post('/', { image: IMG }); const j = await r.json();
+  assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini gemini-3.8-flash timed out/);
+  assert.deepEqual(calls, ['gemini-3.8-flash']); assert.ok(Date.now() - t0 < 14000, 'stayed inside client timeout');
 });
-await t('all models fail -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
+await t('Gemini 3.8 failure -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
 await t('missing image -> 400', async () => { const r = await post('/', { mode: 'plant' }); assert.equal(r.status, 400); });
 await t('missing API key -> 500 config error', async () => { const r = await post('/', { image: IMG }, {}); assert.equal(r.status, 500); });
 await t('CORS preflight', async () => { const r = await worker.fetch(new Request('https://w.test/', { method: 'OPTIONS' }), env); assert.equal(r.status, 204); assert.equal(r.headers.get('access-control-allow-origin'), '*'); });
