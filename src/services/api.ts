@@ -319,7 +319,7 @@ export async function analyzeBotanicalImage(
 
   for (const endpoint of endpoints) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), endpoint === '/api/analyze' ? 12000 : 20000);
+    const timeoutId = setTimeout(() => controller.abort(), 70000);
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
@@ -360,7 +360,7 @@ export async function refineBotanicalIdentification(
 
   for (const endpoint of endpoints) {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 18000);
+    const timeoutId = setTimeout(() => controller.abort(), 70000);
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
