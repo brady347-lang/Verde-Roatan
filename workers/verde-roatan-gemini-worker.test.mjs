@@ -232,6 +232,24 @@ await t('knowledge: promote makes DRAFT unverified records from approved facts o
   kMock({ docs: { [DOC]: { id: DOC, status: 'awaiting_review' } } });
   assert.equal((await authed('/knowledge/promote', { document_id: DOC })).status, 409);
 });
+await t('app update: reports latest build from a private release; downloads the APK with the token; fails closed', async () => {
+  const base = globalThis.fetch; const seen = [];
+  globalThis.fetch = async (url, init = {}) => {
+    url = String(url); seen.push({ url, init });
+    if (url === 'https://api.github.com/repos/o/r/releases/latest') return new Response(JSON.stringify({ name: 'Verde Roatan 2.4.57', body: 'build_number=57\nFix photos', assets: [{ name: 'Verde-Roatan.apk', url: 'https://api.github.com/repos/o/r/releases/assets/9' }] }), { status: 200 });
+    if (url === 'https://api.github.com/repos/o/r/releases/assets/9') return new Response('APKBYTES', { status: 200 });
+    return base(url, init);
+  };
+  const env = { GITHUB_REPO: 'o/r', GITHUB_RELEASE_TOKEN: 'tok' };
+  const get = (path) => worker.fetch(new Request('https://w.test' + path, { method: 'GET' }), env);
+  const u = await (await get('/app/update')).json();
+  assert.equal(u.build_number, 57); assert.equal(u.version_name, '2.4.57'); assert.equal(u.notes, 'Fix photos');
+  const d = await get('/app/download'); assert.equal(await d.text(), 'APKBYTES');
+  assert.equal(d.headers.get('Content-Type'), 'application/vnd.android.package-archive');
+  assert.equal(seen.find((c) => c.url.endsWith('/assets/9')).init.headers.Authorization, 'Bearer tok');
+  const off = await (await worker.fetch(new Request('https://w.test/app/update', { method: 'GET' }), {})).json(); assert.equal(off.status, 'unavailable');
+  assert.equal((await worker.fetch(new Request('https://w.test/app/download', { method: 'GET' }), {})).status, 503);
+});
 await t('knowledge: all knowledge routes reject non-admins', async () => {
   kMock({ docs: { [DOC]: { id: DOC } } });
   for (const r of ['list', 'document', 'review', 'retry', 'ingest', 'extract', 'ask', 'mark-failed']) assert.equal((await authed('/knowledge/' + r, { document_id: DOC, question: 'abc' }, 'bad')).status, 401, r);

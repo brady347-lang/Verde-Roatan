@@ -1,3 +1,4 @@
+import { checkForAppUpdate, AppUpdateInfo } from './lib/appUpdate';
 import { LandscaperQuoteForm } from './components/LandscaperQuoteForm';
 import React, { useEffect, useRef, useState } from 'react';
 import { putPhoto, deletePhoto, migrateGardenPhotos, requestPersistentStorage, safeSetItem } from './lib/photoStore';
@@ -579,6 +580,15 @@ export default function App() {
     });
     return () => { cancelled = true; };
   }, [isAdmin, session?.access_token]);
+
+  // New APK available? (Android app only; silent when offline or current.)
+  const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    checkForAppUpdate().then((info) => { if (!cancelled) setAppUpdate(info); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Selected Zone
   const currentZone = zones.find((z) => z.id === selectedZoneId) || zones[0];
@@ -1643,6 +1653,17 @@ export default function App() {
     <div className="app-viewport flex justify-center bg-[var(--bg)] text-[var(--ink)] pl-[env(safe-area-inset-left,0px)] pr-[env(safe-area-inset-right,0px)]">
       {/* 440px Mobile Shell */}
       <div className="app-shell w-full max-w-[440px] flex flex-col relative shadow-2xl bg-[var(--bg)]">
+        {appUpdate && !updateDismissed && (
+          <div role="status" className="flex items-center gap-2 bg-[var(--palm)] px-3 py-2 text-[12px] font-bold text-white">
+            <span className="flex-1">
+              {lang === 'es' ? `Nueva versión disponible (${appUpdate.versionName}).` : `New version available (${appUpdate.versionName}).`}
+            </span>
+            <a href={appUpdate.downloadUrl} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-white px-3 py-1.5 text-[var(--palm)]">
+              {lang === 'es' ? 'Actualizar' : 'Update'}
+            </a>
+            <button type="button" aria-label="Dismiss" onClick={() => setUpdateDismissed(true)} className="px-1 text-[16px] leading-none">×</button>
+          </div>
+        )}
         {/* Floating Draggable Currency Widget */}
         <CurrencyWidget
           rateData={rateData}
