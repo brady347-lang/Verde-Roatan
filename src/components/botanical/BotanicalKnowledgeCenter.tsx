@@ -162,6 +162,7 @@ export const BotanicalKnowledgeCenter: React.FC<BotanicalKnowledgeCenterProps> =
             name: file.name,
             size: file.size,
             type: file.type,
+            sourceFile: file,
             contentText
           },
           'Verde Administrator'
