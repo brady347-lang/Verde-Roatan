@@ -66,6 +66,37 @@ await test('exact taxon match returns only curator-approved public reference ima
   assert.equal(calls.filter((entry) => entry.url.includes('/botanical_taxon_images?')).length, 1);
 });
 
+await test('private storage reference photos are exposed only through short-lived signed URLs', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    url = String(url); calls.push({ url, init });
+    if (url.includes('generativelanguage.googleapis.com')) return geminiResponse();
+    if (url.endsWith('/rest/v1/rpc/botanical_search')) {
+      return new Response(JSON.stringify([{
+        id: TAXON_ID, scientific_name: 'Plumeria rubra', common_name: 'Frangipani',
+        family: 'Apocynaceae', verification_status: 'unverified'
+      }]), { status: 200 });
+    }
+    if (url.includes('/rest/v1/botanical_taxon_images?')) {
+      assert.match(url, /review_status=eq\.approved/);
+      assert.match(url, /visibility=eq\.public/);
+      return new Response(JSON.stringify([{
+        image_url: null, storage_path: 'taxon/reference.jpg', image_type: 'flower',
+        source_name: 'Herbarium', attribution: 'Reference specimen', license: 'CC BY 4.0'
+      }]), { status: 200 });
+    }
+    if (url.includes('/storage/v1/object/sign/botanical-reference-images/')) {
+      assert.equal(JSON.parse(init.body).expiresIn, 3600);
+      return new Response(JSON.stringify({ signedURL: '/object/sign/botanical-reference-images/taxon/reference.jpg?token=temporary' }), { status: 200 });
+    }
+    throw new Error('Unexpected request: ' + url);
+  };
+  const result = await (await call()).json();
+  assert.equal(result.verified_botanical_record.verified_images.length, 1);
+  assert.match(result.verified_botanical_record.verified_images[0].image_url, /^https:\/\/tv\.test\/storage\/v1\/object\/sign\//);
+  assert.equal(calls.filter((entry) => entry.url.includes('/storage/v1/object/sign/')).length, 1);
+});
+
 await test('fuzzy database results are not treated as exact identification matches', async () => {
   globalThis.fetch = async (url) => {
     url = String(url);
