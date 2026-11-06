@@ -458,12 +458,7 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
   parsed.is_refined = true;
   parsed.refinement_stage = 'verified';
 
-  if (parsed.verified_botanical_record) {
-    parsed.verified_botanical_record.verified_images = resolvePhotos(
-      parsed.verified_botanical_record.common_name,
-      parsed.verified_botanical_record.scientific_name
-    );
-  }
+  parsed.database_crosscheck = await crossCheckBotanicalIdentification(parsed, env);
 
   return new Response(JSON.stringify(parsed), {
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
