@@ -87,7 +87,7 @@ function parseModelJson(raw) {
   }
 }
 
-async function callGemini(env, apiKey, parts, { totalMs = 16000, perCallMs = 12000 } = {}) {
+async function callGemini(env, apiKey, parts, { totalMs = 60000, perCallMs = 30000 } = {}) {
   const models = GEMINI_MODELS;
   const deadline = Date.now() + totalMs;
   let lastError = 'No Gemini model responded.';
