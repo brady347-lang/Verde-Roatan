@@ -385,11 +385,11 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 
           {/* TAB 3: 12-STAGE PIPELINE VISUALIZER */}
           {activeTab === 'pipeline' && (
-            <div className="space-y-2">
-              <b className="text-[13px] font-bold text-[var(--ink)] block mb-3">
+            <div className="space-y-1.5">
+              <b className="text-[13px] font-bold text-[var(--ink)] block mb-1.5">
                 Botanical Document Ingestion Protocol Stages
               </b>
-              <div className="space-y-2">
+              <div className="space-y-1.5">
                 {Object.entries(STAGE_LABELS)
                   .filter(([k]) => !['failed', 'reprocessing', 'cancelled'].includes(k))
                   .map(([key, label], i) => {
@@ -398,7 +398,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                     return (
                       <div
                         key={key}
-                        className={`p-3 rounded-2xl border flex items-center justify-between transition-all ${
+                        className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 min-w-0 transition-all ${
                           isCurrent
                             ? 'bg-[var(--palm)]/15 border-[var(--palm)] text-[var(--palm)] font-extrabold'
                             : isPassed
@@ -406,7 +406,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                             : 'bg-[var(--surface-2)]/30 border-[var(--line)] text-[var(--ink-soft)] opacity-60'
                         }`}
                       >
-                        <span className="text-[12.5px] font-bold">{label.en}</span>
+                        <span className="text-[12px] font-bold min-w-0 break-words">{label.en}</span>
                         {isPassed && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
                         {isCurrent && (
                           <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[var(--palm)] text-white">
