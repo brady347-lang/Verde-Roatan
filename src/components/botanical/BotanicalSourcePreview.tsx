@@ -35,6 +35,7 @@ export const BotanicalSourcePreview: React.FC<Props> = ({ document }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sheetName, setSheetName] = useState('');
+  const [plainText, setPlainText] = useState('');
 
   useEffect(() => {
     let active = true;
@@ -48,7 +49,10 @@ export const BotanicalSourcePreview: React.FC<Props> = ({ document }) => {
         setBlob(source);
         url = URL.createObjectURL(source);
         setFileUrl(url);
-        if (document.file_type === 'csv') {
+        if (document.file_type === 'txt') {
+          const text = await source.text();
+          if (active) setPlainText(text);
+        } else if (document.file_type === 'csv') {
           const text = await source.text();
           if (active) setRows(parseCsv(text));
         } else if (document.file_type === 'xlsx') {
@@ -90,7 +94,7 @@ export const BotanicalSourcePreview: React.FC<Props> = ({ document }) => {
           {rows.length > 500 && <p className="p-2 text-center text-xs text-[var(--ink-soft)]">Showing first 500 rows for mobile performance.</p>}
         </div>
       )}
-      {!error && document.file_type === 'txt' && blob && <pre className="p-3 rounded-xl bg-[var(--surface-2)] text-xs whitespace-pre-wrap break-words max-h-[65dvh] overflow-auto">{await blob.text()}</pre>}
+      {!error && document.file_type === 'txt' && blob && <pre className="p-3 rounded-xl bg-[var(--surface-2)] text-xs whitespace-pre-wrap break-words max-h-[65dvh] overflow-auto">{plainText}</pre>}
       {!error && !isTable && document.file_type !== 'pdf' && document.file_type !== 'txt' && fileUrl && <div className="p-4 text-sm text-[var(--ink-soft)]">This file can be downloaded for review. Inline preview for this format is not available yet.</div>}
     </div>
   );
