@@ -153,6 +153,11 @@ export default {
       );
     }
 
+    // App updates: the repository is private, so the app asks this worker (which holds a read-only
+    // GitHub token) for the latest APK release. Needs GITHUB_RELEASE_TOKEN (secret) and GITHUB_REPO.
+    if (request.method === 'GET' && pathname === '/app/update') return await handleAppUpdate(env);
+    if (request.method === 'GET' && pathname === '/app/download') return await handleAppDownload(env);
+
     if (request.method !== 'POST') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), {
         status: 405,
@@ -754,6 +759,56 @@ async function handleIdentificationReviewAdmin(request, body, env) {
     throw new Error('The review could not be updated.');
   }
   return jsonResponse(200, { status: 'success', review: rows[0] });
+}
+
+// ---------------------------------------------------------------------------------------------
+// App updates (latest APK from the private GitHub repository's newest release)
+// ---------------------------------------------------------------------------------------------
+async function latestApkRelease(env) {
+  const repo = String(env.GITHUB_REPO || '').trim();
+  const token = String(env.GITHUB_RELEASE_TOKEN || '').trim();
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !token) return { error: 'not_configured' };
+  const res = await fetch(`https://api.github.com/repos/${repo}/releases/latest`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'verde-roatan-worker' }
+  });
+  if (!res.ok) return { error: 'github_' + res.status };
+  const release = await res.json().catch(() => null);
+  const asset = (release?.assets || []).find((a) => /\.apk$/i.test(a.name));
+  const match = /build_number=(\d+)/.exec(String(release?.body || ''));
+  if (!asset || !match) return { error: 'no_apk_release' };
+  return { release, asset, build: Number(match[1]), token };
+}
+
+async function handleAppUpdate(env) {
+  const latest = await latestApkRelease(env);
+  const headers = { ...CORS_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
+  if (latest.error) return new Response(JSON.stringify({ status: 'unavailable', reason: latest.error }), { status: 200, headers });
+  const notes = String(latest.release.body || '').replace(/build_number=\d+\s*/, '').trim().slice(0, 300);
+  return new Response(JSON.stringify({
+    status: 'success',
+    build_number: latest.build,
+    version_name: String(latest.release.name || '').replace(/^Verde Roatan\s*/i, '') || String(latest.build),
+    notes
+  }), { status: 200, headers });
+}
+
+async function handleAppDownload(env) {
+  const latest = await latestApkRelease(env);
+  if (latest.error) return new Response('Update service is not available.', { status: 503, headers: CORS_HEADERS });
+  const file = await fetch(latest.asset.url, {
+    headers: { Authorization: `Bearer ${latest.token}`, Accept: 'application/octet-stream', 'User-Agent': 'verde-roatan-worker' },
+    redirect: 'follow'
+  });
+  if (!file.ok || !file.body) return new Response('The update file could not be downloaded.', { status: 502, headers: CORS_HEADERS });
+  return new Response(file.body, {
+    status: 200,
+    headers: {
+      ...CORS_HEADERS,
+      'Content-Type': 'application/vnd.android.package-archive',
+      'Content-Disposition': 'attachment; filename="Verde-Roatan.apk"',
+      'Cache-Control': 'no-store'
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
