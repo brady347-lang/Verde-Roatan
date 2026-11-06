@@ -208,19 +208,29 @@ export default {
  * This is deliberately an exact scientific-name match: fuzzy search results are suggestions,
  * not proof. Database outages never block the original AI identification.
  */
+async function fetchWithTimeout(url, init = {}, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function crossCheckBotanicalIdentification(parsed, env) {
   const record = parsed?.verified_botanical_record;
   if (record) record.verified_images = [];
   const scientificName = String(record?.scientific_name || parsed?.candidates?.[0]?.scientific_name || '').trim();
   const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\s+/g, ' ');
-  if (!scientificName) return { status: 'not_checked', reason: 'No scientific name was returned by the model.' };
+  if (!scientificName) return { status: 'not_checked', identification_status: 'ai_suggestion_only', reason: 'No scientific name was returned by the model.' };
 
   let tv;
   try { tv = reviewDatabaseConfig(env); }
-  catch { return { status: 'unavailable', reason: 'The botanical reference database is not configured.' }; }
+  catch { return { status: 'unavailable', identification_status: 'ai_suggestion_only', reason: 'The botanical reference database is not configured.' }; }
 
   try {
-    const response = await tvJson(await fetch(`${tv.url}/rest/v1/rpc/botanical_search`, {
+    const response = await tvJson(await fetchWithTimeout(`${tv.url}/rest/v1/rpc/botanical_search`, {
       method: 'POST',
       headers: tvHeaders(tv.key),
       body: JSON.stringify({
@@ -229,7 +239,7 @@ async function crossCheckBotanicalIdentification(parsed, env) {
       })
     }));
     if (!response.ok || !Array.isArray(response.data)) {
-      return { status: 'unavailable', reason: 'The botanical reference search is not available.' };
+      return { status: 'unavailable', identification_status: 'ai_suggestion_only', reason: 'The botanical reference search is not available.' };
     }
 
     const target = normalize(scientificName);
@@ -238,6 +248,7 @@ async function crossCheckBotanicalIdentification(parsed, env) {
       if (record) record.verified_images = [];
       return {
         status: 'not_found',
+        identification_status: 'ai_suggestion_only',
         match_basis: 'exact_scientific_name',
         proposed_scientific_name: scientificName,
         message: 'No exact scientific-name match was found in the curated botanical database. The AI result remains an unverified suggestion.'
@@ -245,7 +256,7 @@ async function crossCheckBotanicalIdentification(parsed, env) {
     }
 
     let referenceImages = [];
-    const imageResponse = await tvJson(await fetch(
+    const imageResponse = await tvJson(await fetchWithTimeout(
       `${tv.url}/rest/v1/botanical_taxon_images?taxon_id=eq.${encodeURIComponent(exact.id)}&review_status=eq.approved&visibility=eq.public&select=image_url,image_type,source_name,source_url,attribution,license&order=created_at.asc&limit=8`,
       { headers: tvHeaders(tv.key) }
     ));
@@ -273,15 +284,16 @@ async function crossCheckBotanicalIdentification(parsed, env) {
     }
     return {
       status: 'exact_match',
+      identification_status: 'ai_suggestion_only',
       match_basis: 'exact_scientific_name',
       database_verification_status: exact.verification_status || 'unverified',
       reference_image_count: referenceImages.length,
       message: exact.verification_status === 'scientifically_verified'
-        ? 'The exact scientific name exists in the curated database and is scientifically verified there.'
-        : 'The exact scientific name exists in the curated database, but that record is not scientifically verified.'
+        ? 'The taxonomy record is scientifically verified; this database cross-check does not independently verify the photographed plant.'
+        : 'The exact scientific name exists in the curated database, but that record is not scientifically verified. The photographed plant remains an AI suggestion.'
     };
   } catch {
-    return { status: 'unavailable', reason: 'The botanical reference database could not be reached.' };
+    return { status: 'unavailable', identification_status: 'ai_suggestion_only', reason: 'The botanical reference database could not be reached or timed out.' };
   }
 }
 
