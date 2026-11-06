@@ -153,8 +153,6 @@ export const BotanicalKnowledgeCenter: React.FC<BotanicalKnowledgeCenterProps> =
         let contentText = '';
         if (file.name.endsWith('.txt') || file.name.endsWith('.csv')) {
           contentText = await file.text();
-        } else {
-          contentText = `Uploaded document stream for ${file.name} (Binary / Container format). Initializing text and taxonomic extraction pipeline.`;
         }
 
         await botanicalKnowledgeService.uploadBotanicalDocument(
@@ -171,8 +169,8 @@ export const BotanicalKnowledgeCenter: React.FC<BotanicalKnowledgeCenterProps> =
       refreshState();
       showFeedback(
         lang === 'es'
-          ? '¡Documento recibido! Iniciando tubería de extracción botánica de 12 etapas.'
-          : 'Document received! Initiated 12-stage botanical extraction pipeline.'
+          ? 'Archivo guardado de forma privada. La extracción automática aún no está conectada; no se generaron datos botánicos y el documento no está disponible para la IA.'
+          : 'File saved privately. Automatic extraction is not connected yet; no botanical facts were generated and the document is not available to AI.'
       );
     } catch (err: any) {
       showFeedback(err.message || 'File upload failed');

@@ -1137,7 +1137,7 @@ export class BotanicalKnowledgeService {
       warning_message: isDuplicate ? 'A document with this exact filename has been uploaded previously.' : undefined,
       extracted_taxa: [],
       extracted_entities: [],
-      raw_text_preview: file.contentText || `Document stream for ${file.name} received. Ready for OCR and entity extraction.`
+      raw_text_preview: file.contentText?.trim() || ''
     };
 
     this.documents.unshift(newDoc);
@@ -1153,110 +1153,65 @@ export class BotanicalKnowledgeService {
   }
 
   public advanceDocumentPipeline(docId: string) {
-    const stages: DocumentProcessingStage[] = [
-      'uploaded',
-      'validating',
-      'extracting_text',
-      'parsing_botanical_info',
-      'identifying_scientific_names',
-      'extracting_botanical_characteristics',
-      'extracting_horticultural_recommendations',
-      'extracting_references_sources',
-      'awaiting_review'
-    ];
+    const doc = this.documents.find((d) => d.id === docId);
+    if (!doc) return;
 
-    let currentStageIndex = 0;
-
-    const timer = setInterval(() => {
-      const doc = this.documents.find((d) => d.id === docId);
-      if (!doc || doc.processing_stage === 'cancelled' || doc.processing_stage === 'failed') {
-        clearInterval(timer);
-        return;
-      }
-
-      currentStageIndex++;
-      if (currentStageIndex < stages.length) {
-        doc.processing_stage = stages[currentStageIndex];
-        doc.stage_progress_pct = Math.round((currentStageIndex / (stages.length - 1)) * 100);
-        doc.processed_pages = Math.min(doc.total_pages || 1, Math.round((currentStageIndex / stages.length) * (doc.total_pages || 1)));
-
-        // Inject simulated high-confidence extractions when reaching parsing stages
-        if (doc.processing_stage === 'extracting_botanical_characteristics' && doc.extracted_entities.length === 0) {
-          doc.extracted_taxa = ['Tabebuia rosea', 'Codiaeum variegatum'];
-          doc.extracted_plants_count = 2;
-          doc.chunks_count = Math.max(4, Math.round((doc.total_pages || 1) * 2));
-          doc.extracted_entities = [
-            {
-              field_name: 'scientific_name',
-              category: 'taxonomy',
-              extracted_value: 'Tabebuia rosea (Bertol.) DC.',
-              confidence: 0.97,
-              approval_status: 'pending',
-              source_snippet: 'Tabebuia rosea is a prominent neotropical flowering tree widespread across Honduras.'
-            },
-            {
-              field_name: 'salt_tolerance_level',
-              category: 'regional',
-              extracted_value: 2,
-              confidence: 0.91,
-              approval_status: 'pending',
-              source_snippet: 'Moderate windward salt tolerance; thrives slightly set back from immediate Roatan wave action.'
-            },
-            {
-              field_name: 'sunlight_requirements',
-              category: 'horticulture',
-              extracted_value: 'full_sun',
-              confidence: 0.95,
-              approval_status: 'pending',
-              source_snippet: 'Demands open full sunlight to form profuse pink floral clusters in spring.'
-            }
-          ];
-
-          // Generate simulated RAG chunks for this new document
-          this.chunks.push({
-            id: `chk-new-${doc.id}-1`,
-            document_id: doc.id,
-            chunk_index: 1,
-            page_number: 1,
-            section_title: 'Extracted Passage',
-            token_count: 145,
-            embedding_status: 'pending',
-            identified_taxa: doc.extracted_taxa,
-            content: `Extracted botanical excerpt from ${doc.original_name}. Focus species: Tabebuia rosea. Suitable for Honduras island landscaping with high wind tolerance and spectacular dry-season floral blooms.`
-          });
-        }
-
-        this.persist();
-      } else {
-        clearInterval(timer);
-      }
-    }, 1200);
+    // No OCR/parser is connected here yet. Never simulate extraction or create
+    // botanical facts/chunks. Keep the original source private for review.
+    doc.processing_stage = 'failed';
+    doc.stage_progress_pct = 0;
+    doc.processed_pages = 0;
+    doc.extracted_plants_count = 0;
+    doc.chunks_count = 0;
+    doc.extracted_taxa = [];
+    doc.extracted_entities = [];
+    doc.rag_indexed = false;
+    doc.visibility = 'private';
+    doc.error_message =
+      'Automatic document extraction is not connected yet. The original file is stored privately; no botanical facts were generated. Review the source file, then retry after a real extraction service is connected.';
+    this.chunks = this.chunks.filter((chunk) => chunk.document_id !== docId);
+    this.persist();
   }
 
   public approveDocumentForRAG(docId: string): BotanicalDocument | undefined {
     const doc = this.documents.find((d) => d.id === docId);
     if (!doc) return undefined;
 
+    const documentChunks = this.chunks.filter(
+      (chunk) => chunk.document_id === docId && Boolean(chunk.content?.trim())
+    );
+    const hasExtractedFacts =
+      doc.extracted_entities.length > 0 || doc.extracted_taxa.length > 0;
+    const hasUnreviewedFacts = doc.extracted_entities.some(
+      (entity) => entity.approval_status === 'pending'
+    );
+
+    // Approval is only allowed after a real extractor has produced source-backed
+    // content and an administrator has reviewed every extracted field.
+    if (
+      doc.processing_stage !== 'awaiting_review' ||
+      !doc.raw_text_preview?.trim() ||
+      !hasExtractedFacts ||
+      documentChunks.length === 0 ||
+      hasUnreviewedFacts
+    ) {
+      doc.rag_indexed = false;
+      doc.visibility = 'private';
+      doc.error_message =
+        'Approval blocked: this document does not have complete, source-backed extraction and reviewed botanical facts. It remains private and is not available to AI retrieval.';
+      this.persist();
+      return undefined;
+    }
+
     doc.processing_stage = 'indexed_in_rag';
     doc.rag_indexed = true;
     doc.stage_progress_pct = 100;
     doc.visibility = 'public';
 
-    // Mark document's chunks as indexed
-    this.chunks.forEach((c) => {
-      if (c.document_id === docId) {
-        c.embedding_status = 'indexed';
-      }
+    documentChunks.forEach((chunk) => {
+      chunk.embedding_status = 'indexed';
     });
 
-    // Mark remaining pending entities as approved
-    doc.extracted_entities.forEach((e) => {
-      if (e.approval_status === 'pending') {
-        e.approval_status = 'approved';
-      }
-    });
-
-    // Advance to available for AI retrieval
     setTimeout(() => {
       doc.processing_stage = 'available_for_ai_retrieval';
       this.persist();

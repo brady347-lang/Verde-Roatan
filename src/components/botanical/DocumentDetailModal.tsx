@@ -139,7 +139,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 
           {/* Quick Actions */}
           <div className="flex items-center gap-2">
-            {!document.rag_indexed && (
+            {!document.rag_indexed && document.processing_stage === 'awaiting_review' && (
               <button
                 type="button"
                 onClick={() => onApproveForRAG(document.id)}
@@ -174,6 +174,16 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             </button>
           </div>
         </div>
+
+        {document.error_message && (
+          <div className="mx-3 sm:mx-4 mt-3 rounded-xl border border-amber-300/60 bg-amber-500/10 p-3 text-[12px] leading-relaxed text-[var(--ink)]">
+            <div className="flex items-center gap-2 font-extrabold mb-1">
+              <AlertTriangle className="w-4 h-4 text-amber-600" />
+              Extraction unavailable
+            </div>
+            {document.error_message}
+          </div>
+        )}
 
         {/* Tabs Bar */}
         <button
@@ -222,7 +232,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            12-Stage Pipeline
+Processing Status
           </button>
         </div>
 
@@ -252,7 +262,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
               {document.extracted_entities.length === 0 ? (
                 <div className="p-8 text-center bg-[var(--surface-2)]/40 rounded-2xl border border-[var(--line)]">
                   <p className="text-[13px] text-[var(--ink-soft)]">
-                    No individual entities extracted yet. Processing pipeline is ongoing.
+                    No verified extraction is available yet. The original file remains private until a real extraction process is connected and reviewed.
                   </p>
                 </div>
               ) : (
@@ -388,7 +398,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                   Extracted Document Text Preview
                 </b>
                 <p className="text-[12.5px] text-[var(--ink)] leading-relaxed font-serif whitespace-pre-wrap">
-                  {document.raw_text_preview || 'No raw text stream extracted.'}
+                  {document.raw_text_preview || 'No extracted text is available yet. Open Original File to inspect the uploaded source.'}
                 </p>
               </div>
 
@@ -399,11 +409,11 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
             </div>
           )}
 
-          {/* TAB 3: 12-STAGE PIPELINE VISUALIZER */}
+          {/* TAB 3: DOCUMENT PROCESSING STATUS */}
           {activeTab === 'pipeline' && (
             <div className="space-y-1.5">
               <b className="text-[13px] font-bold text-[var(--ink)] block mb-1.5">
-                Botanical Document Ingestion Protocol Stages
+                Document processing stages
               </b>
               <div className="space-y-1.5">
                 {Object.entries(STAGE_LABELS)
