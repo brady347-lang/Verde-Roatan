@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - safety/supabase-target-hardening
 
 permissions:
@@ -47,6 +48,11 @@ jobs:
 
       - name: Synchronize Capacitor
         run: npx cap sync android
+
+      - name: Use the fixed debug signing key (so updates install over older builds)
+        run: |
+          mkdir -p ~/.android
+          cp android-signing/verde-debug.keystore ~/.android/debug.keystore
 
       - name: Build debug APK
         working-directory: android
