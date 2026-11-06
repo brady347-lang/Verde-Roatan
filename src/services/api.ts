@@ -597,7 +597,7 @@ export async function fetchAdminOrders(token: string): Promise<ActiveOrder[]> {
       payment_status: row.payment_status || 'pending',
       payment_method: row.payment_method || undefined,
       delivery_type: row.delivery_type || 'island_delivery',
-      exchange_rate_used: Number(row.exchange_rate_used || 26),
+      exchange_rate_used: Number(row.usd_to_hnl_rate || row.exchange_rate_used || 26),
       assigned_supplier_id: row.assigned_supplier_id || undefined,
       assigned_supplier_name: row.assigned_supplier_name || undefined,
       supplier_cost: Number(row.supplier_cost || 0),
@@ -609,6 +609,12 @@ export async function fetchAdminOrders(token: string): Promise<ActiveOrder[]> {
       messages
     } as ActiveOrder;
   });
+}
+
+// Customer reads use the same Supabase REST queries as the admin loader; RLS limits
+// this authenticated request to the signed-in customer's own orders and related rows.
+export async function fetchCustomerOrders(token: string): Promise<ActiveOrder[]> {
+  return fetchAdminOrders(token);
 }
 
 export async function fetchAdminTransactions(token: string): Promise<TransactionRecord[]> {
