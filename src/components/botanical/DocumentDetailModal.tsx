@@ -87,11 +87,11 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] overflow-y-auto">
-      <div className="bg-[var(--surface)] border border-[var(--line)] rounded-3xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-[70] bg-black/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-2 sm:p-5 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] overflow-y-auto overflow-x-hidden">
+      <div className="bg-[var(--surface)] border border-[var(--line)] rounded-3xl w-full min-w-0 max-w-4xl max-h-[calc(100dvh-1rem)] sm:max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-2)]/60">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between gap-2 p-3 sm:p-5 border-b border-[var(--line)] bg-[var(--surface-2)]/60 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <span className="w-10 h-10 rounded-2xl bg-[var(--palm)] text-white flex items-center justify-center shadow-xs">
               <FileText className="w-5 h-5" />
             </span>
@@ -99,7 +99,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
               <h2 className="text-[17px] font-extrabold text-[var(--ink)] leading-tight flex items-center gap-2">
                 {document.original_name}
               </h2>
-              <div className="flex items-center gap-2 mt-0.5">
+              <div className="flex flex-wrap items-center gap-2 mt-1 min-w-0">
                 <span className="text-[11px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-[var(--surface-2)] text-[var(--ink-soft)] font-mono">
                   {document.file_type.toUpperCase()} · {(document.file_size_bytes / (1024 * 1024)).toFixed(1)} MB
                 </span>
@@ -175,7 +175,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
         </div>
 
         {/* Tabs Bar */}
-        <div className="flex items-center gap-1 px-4 pt-2 pb-1 border-b border-[var(--line)] bg-[var(--surface)]">
+        <div className="flex items-center gap-1 px-2 sm:px-4 pt-2 pb-1 border-b border-[var(--line)] bg-[var(--surface)] overflow-x-auto overflow-y-hidden shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab('entities')}
@@ -215,11 +215,11 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+        <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-6">
           {/* TAB 1: EXTRACTED ENTITIES */}
           {activeTab === 'entities' && (
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 min-w-0">
                 <div>
                   <b className="text-[14px] text-[var(--ink)] font-bold">
                     AI-Identified Botanical Properties
@@ -254,7 +254,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                             : 'bg-[var(--surface)] border-[var(--line)]'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 min-w-0">
                           <div className="flex-1">
                             <div className="flex items-center gap-2 mb-1">
                               <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-md bg-[var(--surface-2)] text-[var(--ink-soft)]">
@@ -314,7 +314,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
                           </div>
 
                           {/* Approval Controls */}
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center justify-end gap-1.5 shrink-0 self-end sm:self-start max-w-full">
                             <button
                               type="button"
                               onClick={() =>
