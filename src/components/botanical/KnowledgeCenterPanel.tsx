@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileText, Loader2, RefreshCw, Search, Upload } from 'lucide-react';
 import {
   KnowledgeDocument, KnowledgeEntity, KnowledgeSource, askKnowledge, extractKnowledgeEntities, getKnowledgeDocument,
-  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf
+  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf, BotanicalReferenceImage, listBotanicalReferenceImages, uploadBotanicalReferenceImage, reviewBotanicalReferenceImage, searchBotanicalTaxa
 } from '../../services/api';
 import { extractPdfPages } from '../../lib/pdfText';
 import { Language } from '../../types';
@@ -28,7 +28,7 @@ const when = (iso?: string | null) => (iso ? new Date(iso).toLocaleString(undefi
 
 export const KnowledgeCenterPanel: React.FC<Props> = ({ lang, accessToken }) => {
   const es = lang === 'es';
-  const [tab, setTab] = useState<'documents' | 'playground'>('documents');
+  const [tab, setTab] = useState<'documents' | 'playground' | 'reference_photos'>('documents');
   const [docs, setDocs] = useState<KnowledgeDocument[] | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -100,10 +100,10 @@ export const KnowledgeCenterPanel: React.FC<Props> = ({ lang, accessToken }) => 
         </small>
       </div>
       <div className="flex gap-1.5">
-        {(['documents', 'playground'] as const).map((t) => (
+        {(['documents', 'reference_photos', 'playground'] as const).map((t) => (
           <button key={t} type="button" onClick={() => setTab(t)}
             className={`px-3 py-1.5 rounded-full text-[12px] font-bold border ${tab === t ? 'bg-[var(--palm)] text-white border-[var(--palm)]' : 'border-[var(--line)] text-[var(--ink-soft)]'}`}>
-            {t === 'documents' ? (es ? 'Documentos' : 'Documents') : 'RAG Playground'}
+            {t === 'documents' ? (es ? 'Documentos' : 'Documents') : t === 'reference_photos' ? (es ? 'Fotos de referencia' : 'Reference photos') : 'RAG Playground'}
           </button>
         ))}
       </div>
@@ -133,7 +133,7 @@ export const KnowledgeCenterPanel: React.FC<Props> = ({ lang, accessToken }) => 
           </div>
         </>
       )}
-      {tab === 'playground' && <Playground es={es} accessToken={accessToken} />}
+      {tab === 'reference_photos' && <ReferencePhotos es={es} accessToken={accessToken} />}\n      {tab === 'playground' && <Playground es={es} accessToken={accessToken} />}
     </div>
   );
 };
@@ -285,6 +285,112 @@ const ReviewPane: React.FC<{ d: KnowledgeDocument; es: boolean; accessToken?: st
       )}
     </div>
   );
+};
+
+const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, accessToken }) => {
+  const [items, setItems] = useState<BotanicalReferenceImage[]>([]);
+  const [status, setStatus] = useState<'pending' | 'approved' | 'rejected'>('pending');
+  const [q, setQ] = useState('');
+  const [taxa, setTaxa] = useState<Array<{ id: string; scientific_name: string; common_name?: string }>>([]);
+  const [taxon, setTaxon] = useState<{ id: string; scientific_name: string; common_name?: string } | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [imageType, setImageType] = useState('mature_specimen');
+  const [sourceName, setSourceName] = useState('');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [attribution, setAttribution] = useState('');
+  const [license, setLicense] = useState('');
+  const [visibility, setVisibility] = useState<'private' | 'public'>('private');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+
+  const load = useCallback(async () => {
+    if (!accessToken) return;
+    try { setItems(await listBotanicalReferenceImages(accessToken, status)); setError(''); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Could not load reference photos.'); }
+  }, [accessToken, status]);
+  useEffect(() => { load(); }, [load]);
+
+  const findTaxa = async () => {
+    if (!accessToken || q.trim().length < 2) return;
+    setBusy(true); setError('');
+    try { setTaxa(await searchBotanicalTaxa(accessToken, q.trim())); }
+    catch (e) { setError(e instanceof Error ? e.message : 'Plant search failed.'); }
+    finally { setBusy(false); }
+  };
+
+  const upload = async () => {
+    if (!accessToken || !file || !taxon) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      await uploadBotanicalReferenceImage(accessToken, file, {
+        taxon_id: taxon.id, image_type: imageType, source_name: sourceName,
+        source_url: sourceUrl, attribution, license
+      });
+      setNotice(es ? 'Foto subida. Quedó privada y pendiente de revisión.' : 'Photo uploaded. It is private and awaiting review.');
+      setFile(null); setSourceName(''); setSourceUrl(''); setAttribution(''); setLicense('');
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Upload failed.'); }
+    finally { setBusy(false); }
+  };
+
+  const review = async (id: string, action: 'approve' | 'reject') => {
+    if (!accessToken) return;
+    setBusy(true); setError('');
+    try {
+      await reviewBotanicalReferenceImage(accessToken, id, action, action === 'approve' ? visibility : 'private');
+      setNotice(action === 'approve' ? (es ? 'Foto aprobada.' : 'Photo approved.') : (es ? 'Foto rechazada.' : 'Photo rejected.'));
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Review failed.'); }
+    finally { setBusy(false); }
+  };
+
+  return <div className="flex flex-col gap-3">
+    <div className="rounded-xl border border-[var(--line)] p-3 flex flex-col gap-2">
+      <b className="text-[13px]">{es ? 'Agregar foto botánica de referencia' : 'Add a botanical reference photo'}</b>
+      <p className="text-[11.5px] text-[var(--ink-soft)]">{es ? 'Las fotos nuevas son privadas y pendientes. Solo las aprobadas como públicas pueden aparecer en identificaciones.' : 'New photos are private and pending. Only photos approved as public can appear in identification results.'}</p>
+      <div className="flex gap-2">
+        <input className={inputCls} value={q} onChange={e => { setQ(e.target.value); setTaxa([]); setTaxon(null); }} placeholder={es ? 'Buscar nombre científico o común' : 'Search scientific or common name'} />
+        <button type="button" className={ghostCls} disabled={busy || q.trim().length < 2} onClick={findTaxa}><Search className="w-4 h-4" /></button>
+      </div>
+      {taxa.map(t => <button key={t.id} type="button" onClick={() => { setTaxon(t); setTaxa([]); }} className={`text-left rounded-lg border p-2 text-[12px] ${taxon?.id === t.id ? 'border-[var(--palm)]' : 'border-[var(--line)]'}`}><b>{t.scientific_name}</b><span className="block text-[var(--ink-soft)]">{t.common_name || ''}</span></button>)}
+      {taxon && <div className="text-[12px] text-emerald-700">{es ? 'Planta seleccionada:' : 'Selected plant:'} <b>{taxon.scientific_name}</b> · {taxon.common_name || ''}</div>}
+      <label className="text-[11px] font-semibold">{es ? 'Tipo de imagen' : 'Image type'}
+        <select className={inputCls} value={imageType} onChange={e => setImageType(e.target.value)}>
+          {['mature_specimen','foliage_detail','flower','fruit','bark','habitat','seedling','other'].map(v => <option key={v} value={v}>{v.replaceAll('_',' ')}</option>)}
+        </select>
+      </label>
+      <input className={inputCls} type="file" accept="image/jpeg,image/png,image/webp" onChange={e => setFile(e.target.files?.[0] || null)} />
+      <input className={inputCls} value={sourceName} onChange={e => setSourceName(e.target.value)} placeholder={es ? 'Nombre de la fuente' : 'Source name'} />
+      <input className={inputCls} value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="https:// source URL" />
+      <input className={inputCls} value={attribution} onChange={e => setAttribution(e.target.value)} placeholder={es ? 'Atribución / autor' : 'Attribution / author'} />
+      <input className={inputCls} value={license} onChange={e => setLicense(e.target.value)} placeholder={es ? 'Licencia (ej. CC BY 4.0)' : 'License (e.g. CC BY 4.0)'} />
+      <button type="button" className={btnCls} disabled={busy || !file || !taxon} onClick={upload}><Upload className="w-4 h-4 inline mr-1" />{es ? 'Subir foto privada' : 'Upload private photo'}</button>
+    </div>
+    <div className="flex gap-2 items-center">
+      <select className={inputCls} value={status} onChange={e => setStatus(e.target.value as typeof status)}>
+        <option value="pending">{es ? 'Pendientes' : 'Pending'}</option><option value="approved">{es ? 'Aprobadas' : 'Approved'}</option><option value="rejected">{es ? 'Rechazadas' : 'Rejected'}</option>
+      </select>
+      <button type="button" className={ghostCls} onClick={load} disabled={busy}><RefreshCw className="w-4 h-4" /></button>
+    </div>
+    {error && <p role="alert" className="text-[12px] text-red-600">{error}</p>}
+    {notice && <p className="text-[12px] text-[var(--ink-soft)]">{notice}</p>}
+    {items.length === 0 && <p className="text-[12px] text-[var(--ink-soft)] text-center p-3">{es ? 'No hay fotos en este estado.' : 'No photos in this status.'}</p>}
+    {items.map(item => <div key={item.id} className="border border-[var(--line)] rounded-xl p-2.5 flex flex-col gap-2">
+      {item.preview_url && <img src={item.preview_url} alt={item.image_type} className="w-full max-h-56 object-contain rounded-lg bg-[var(--surface-2)]" />}
+      <div className="text-[12px]"><b>{item.image_type.replaceAll('_',' ')}</b> · {item.source_name || (es ? 'Sin fuente' : 'No source')}<div className="text-[var(--ink-soft)] break-all">{item.taxon_id}</div>
+        {item.attribution && <div className="text-[var(--ink-soft)]">{item.attribution}</div>}
+        {item.license && <div className="text-[var(--ink-soft)]">{item.license}</div>}
+        {item.source_url && <a className="text-[var(--palm)] underline" href={item.source_url} target="_blank" rel="noopener noreferrer">{es ? 'Abrir fuente' : 'Open source'}</a>}
+        <div className="text-[11px] mt-1">{item.review_status} · {item.visibility}</div>
+      </div>
+      {status === 'pending' && <div className="flex flex-wrap gap-2">
+        <select className={inputCls} value={visibility} onChange={e => setVisibility(e.target.value as typeof visibility)}><option value="private">{es ? 'Aprobar como privado' : 'Approve as private'}</option><option value="public">{es ? 'Aprobar como público' : 'Approve as public'}</option></select>
+        <button type="button" className={btnCls} disabled={busy} onClick={() => review(item.id,'approve')}>{es ? 'Aprobar' : 'Approve'}</button>
+        <button type="button" className={ghostCls} disabled={busy} onClick={() => review(item.id,'reject')}>{es ? 'Rechazar' : 'Reject'}</button>
+      </div>}
+    </div>)}
+  </div>;
 };
 
 const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, accessToken }) => {
