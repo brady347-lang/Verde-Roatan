@@ -13,11 +13,11 @@ const post = (path, body, e = env) => worker.fetch(new Request('https://w.test' 
 let n = 0; const t = async (name, fn) => { calls.length = 0; await fn(); console.log('ok', ++n, name); };
 
 await t('health', async () => { const r = await worker.fetch(new Request('https://w.test/health'), env); assert.equal((await r.json()).status, 'ok'); });
-await t('analyze falls back past 404 model and forces status=success (model omitted it)', async () => {
-  mock((m) => m === 'gemini-3.8-flash' ? new Response('nf', { status: 404 }) : ok(plant));
+await t('analyze does not call a retired model when Gemini 3.8 returns 404', async () => {
+  mock(() => new Response('model unavailable', { status: 404 }));
   const r = await post('/', { mode: 'plant', image: IMG }); const j = await r.json();
-  assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.equal(j.model_used, 'gemini-3.6-flash');
-  assert.equal(calls.length, 2); assert.ok(Array.isArray(j.verified_botanical_record.verified_images));
+  assert.equal(r.status, 502); assert.match(j.error, /Gemini gemini-3.8-flash error 404/);
+  assert.deepEqual(calls, ['gemini-3.8-flash']);
 });
 await t('analyze accepts fenced JSON', async () => { mock(() => ok(plant, true)); const j = await (await post('/', { image: IMG })).json(); assert.equal(j.status, 'success'); });
 await t('pest mode', async () => { mock(() => ok({ result: { primary_diagnosis: 'Mealybugs' } })); const j = await (await post('/', { mode: 'pest', image: IMG })).json(); assert.equal(j.result.primary_diagnosis, 'Mealybugs'); assert.equal(j.status, 'success'); });
