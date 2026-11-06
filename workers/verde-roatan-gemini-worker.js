@@ -135,6 +135,7 @@ export default {
     try {
       // The PDF upload sends raw bytes, so it must be handled before the JSON body is parsed.
       if (pathname === '/knowledge/upload') return await handleKnowledgeUpload(request, url, env);
+      if (pathname === '/knowledge/reference-images/upload') return await knowledgeReferenceImageUpload(request, env);
 
       const body = await request.json().catch(() => ({}));
 
@@ -257,19 +258,22 @@ async function crossCheckBotanicalIdentification(parsed, env) {
 
     let referenceImages = [];
     const imageResponse = await tvJson(await fetchWithTimeout(
-      `${tv.url}/rest/v1/botanical_taxon_images?taxon_id=eq.${encodeURIComponent(exact.id)}&review_status=eq.approved&visibility=eq.public&select=image_url,image_type,source_name,source_url,attribution,license&order=created_at.asc&limit=8`,
+      `${tv.url}/rest/v1/botanical_taxon_images?taxon_id=eq.${encodeURIComponent(exact.id)}&review_status=eq.approved&visibility=eq.public&select=image_url,storage_path,image_type,source_name,source_url,attribution,license&order=created_at.asc&limit=8`,
       { headers: tvHeaders(tv.key) }
     ));
     if (imageResponse.ok && Array.isArray(imageResponse.data)) {
-      referenceImages = imageResponse.data
-        .filter((image) => typeof image.image_url === 'string' && /^https:\/\//i.test(image.image_url))
-        .map((image) => ({
-          image_url: image.image_url,
+      referenceImages = (await Promise.all(imageResponse.data.map(async (image) => {
+        let imageUrl = typeof image.image_url === 'string' && /^https:\/\//i.test(image.image_url) ? image.image_url : null;
+        if (image.storage_path) imageUrl = await signReferenceImageUrl(tv, image.storage_path);
+        if (!imageUrl) return null;
+        return {
+          image_url: imageUrl,
           image_type: image.image_type,
           description: image.attribution || image.source_name || 'Curator-approved botanical reference',
           source_url: image.source_url || null,
           license: image.license || null
-        }));
+        };
+      }))).filter(Boolean);
     }
 
     if (record) {
@@ -1169,6 +1173,120 @@ async function signDocumentUrl(tv, path) {
   return String(d.signedURL).startsWith('http') ? d.signedURL : `${tv.url}/storage/v1${d.signedURL}`;
 }
 
+async function signReferenceImageUrl(tv, path) {
+  const safePath = String(path || '').split('/').map(encodeURIComponent).join('/');
+  if (!safePath || safePath.includes('..')) return null;
+  const res = await fetchWithTimeout(`${tv.url}/storage/v1/object/sign/botanical-reference-images/${safePath}`, {
+    method: 'POST', headers: tvHeaders(tv.key), body: JSON.stringify({ expiresIn: 3600 })
+  }, 2500);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.signedURL) return null;
+  return String(data.signedURL).startsWith('http') ? data.signedURL : `${tv.url}/storage/v1${data.signedURL}`;
+}
+
+async function knowledgeReferenceImageUpload(request, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const tv = reviewDatabaseConfig(env);
+  let form;
+  try { form = await request.formData(); } catch { return jsonResponse(400, { status: 'error', error: 'Send the photo as multipart form data.' }); }
+  const file = form.get('file');
+  const taxonId = String(form.get('taxon_id') || '');
+  if (!isUuid(taxonId) || !file || typeof file.arrayBuffer !== 'function') {
+    return jsonResponse(400, { status: 'error', error: 'Choose a plant record and an image file.' });
+  }
+  if (file.size < 1 || file.size > 12 * 1024 * 1024) return jsonResponse(413, { status: 'error', error: 'Reference photos must be smaller than 12 MB.' });
+  const allowed = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  const ext = allowed[file.type];
+  if (!ext) return jsonResponse(400, { status: 'error', error: 'Use a JPEG, PNG, or WebP image.' });
+  const bytes = await file.arrayBuffer();
+  const head = new Uint8Array(bytes.slice(0, 12));
+  const valid = ext === 'jpg'
+    ? head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff
+    : ext === 'png'
+      ? head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+      : String.fromCharCode(...head.slice(0, 4)) === 'RIFF' && String.fromCharCode(...head.slice(8, 12)) === 'WEBP';
+  if (!valid) return jsonResponse(400, { status: 'error', error: 'The image contents do not match the selected file type.' });
+  const taxon = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxa?id=eq.${taxonId}&select=id&limit=1`, { headers: tvHeaders(tv.key) }));
+  if (!taxon.ok || !Array.isArray(taxon.data) || !taxon.data[0]) return jsonResponse(404, { status: 'error', error: 'Plant record not found.' });
+  const imageType = String(form.get('image_type') || 'mature_specimen');
+  const types = ['mature_specimen','foliage_detail','flower','fruit','bark','habitat','seedling','other'];
+  if (!types.includes(imageType)) return jsonResponse(400, { status: 'error', error: 'Choose a valid image type.' });
+  const sourceName = String(form.get('source_name') || '').trim().slice(0, 200) || null;
+  const sourceUrl = String(form.get('source_url') || '').trim().slice(0, 1000) || null;
+  if (sourceUrl && !/^https:\/\//i.test(sourceUrl)) return jsonResponse(400, { status: 'error', error: 'Source links must use HTTPS.' });
+  const attribution = String(form.get('attribution') || '').trim().slice(0, 500) || null;
+  const license = String(form.get('license') || '').trim().slice(0, 160) || null;
+  const id = crypto.randomUUID();
+  const path = `${taxonId}/${id}.${ext}`;
+  const upload = await fetch(`${tv.url}/storage/v1/object/botanical-reference-images/${path}`, {
+    method: 'POST', headers: { apikey: tv.key, Authorization: `Bearer ${tv.key}`, 'Content-Type': file.type, 'x-upsert': 'false' }, body: bytes
+  });
+  if (!upload.ok) return jsonResponse(502, { status: 'error', error: 'The reference image could not be stored.' });
+  const inserted = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxon_images`, {
+    method: 'POST', headers: tvHeaders(tv.key, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      id, taxon_id: taxonId, storage_path: path, image_url: null, image_type: imageType,
+      source_name: sourceName, source_url: sourceUrl, attribution, license,
+      review_status: 'pending', visibility: 'private', uploaded_by_email: String(auth.user.email || 'unknown')
+    })
+  }));
+  if (!inserted.ok || !Array.isArray(inserted.data) || !inserted.data[0]) {
+    await fetch(`${tv.url}/storage/v1/object/botanical-reference-images/${path}`, {
+      method: 'DELETE', headers: tvHeaders(tv.key)
+    }).catch(() => {});
+    return jsonResponse(502, { status: 'error', error: 'The image was stored, but its review record could not be created.' });
+  }
+  return jsonResponse(200, { status: 'success', image: { ...inserted.data[0], preview_url: await signReferenceImageUrl(tv, path) } });
+}
+
+async function knowledgeReferenceImagesList(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (body.taxon_id && !isUuid(body.taxon_id)) return jsonResponse(400, { status: 'error', error: 'Invalid plant record.' });
+  const tv = reviewDatabaseConfig(env);
+  const status = ['pending','approved','rejected'].includes(body.review_status) ? body.review_status : null;
+  const params = new URLSearchParams({
+    select: 'id,taxon_id,image_url,storage_path,image_type,source_name,source_url,attribution,license,review_status,visibility,uploaded_by_email,reviewed_by_email,reviewed_at,created_at',
+    order: 'created_at.desc', limit: '30'
+  });
+  if (body.taxon_id) params.set('taxon_id', `eq.${body.taxon_id}`);
+  if (status) params.set('review_status', `eq.${status}`);
+  const result = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxon_images?${params}`, { headers: tvHeaders(tv.key) }));
+  if (!result.ok || !Array.isArray(result.data)) return jsonResponse(502, { status: 'error', error: 'Reference photos could not be loaded. Apply the botanical recognition migration first.' });
+  const images = await Promise.all(result.data.map(async (row) => ({
+    ...row,
+    preview_url: row.storage_path ? await signReferenceImageUrl(tv, row.storage_path) : row.image_url
+  })));
+  return jsonResponse(200, { status: 'success', images });
+}
+
+async function knowledgeReferenceImageReview(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.image_id) || !['approve','reject'].includes(body.action)) {
+    return jsonResponse(400, { status: 'error', error: 'Choose a photo and approve or reject it.' });
+  }
+  const tv = reviewDatabaseConfig(env);
+  const result = await tvJson(await fetch(
+    `${tv.url}/rest/v1/botanical_taxon_images?id=eq.${body.image_id}&select=id,storage_path,image_url,review_status&limit=1`,
+    { headers: tvHeaders(tv.key) }
+  ));
+  if (!result.ok || !Array.isArray(result.data) || !result.data[0]) return jsonResponse(404, { status: 'error', error: 'Reference photo not found.' });
+  const now = new Date().toISOString();
+  const approved = body.action === 'approve';
+  const updated = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxon_images?id=eq.${body.image_id}`, {
+    method: 'PATCH', headers: tvHeaders(tv.key, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      review_status: approved ? 'approved' : 'rejected',
+      visibility: approved && body.visibility === 'public' ? 'public' : 'private',
+      reviewed_by_email: String(auth.user.email || 'unknown'), reviewed_at: now, updated_at: now
+    })
+  }));
+  if (!updated.ok) return jsonResponse(502, { status: 'error', error: 'The photo review decision could not be saved.' });
+  return jsonResponse(200, { status: 'success', review_status: approved ? 'approved' : 'rejected', visibility: approved && body.visibility === 'public' ? 'public' : 'private' });
+}
+
 async function handleKnowledgeUpload(request, url, env) {
   if (request.method !== 'POST') return jsonResponse(405, { status: 'error', error: 'Method not allowed' });
   const auth = await requireImportAdmin(request, env);
@@ -1533,7 +1651,9 @@ const KNOWLEDGE_ROUTES = {
   retry: knowledgeRetry,
   'mark-failed': knowledgeMarkFailed,
   ask: knowledgeAsk,
-  promote: knowledgePromote
+  promote: knowledgePromote,
+  'reference-images/list': knowledgeReferenceImagesList,
+  'reference-images/review': knowledgeReferenceImageReview
 };
 
 // ---------------------------------------------------------------------------------------------
