@@ -209,6 +209,7 @@ export default {
  */
 async function crossCheckBotanicalIdentification(parsed, env) {
   const record = parsed?.verified_botanical_record;
+  if (record) record.verified_images = [];
   const scientificName = String(record?.scientific_name || parsed?.candidates?.[0]?.scientific_name || '').trim();
   const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\s+/g, ' ');
   if (!scientificName) return { status: 'not_checked', reason: 'No scientific name was returned by the model.' };
