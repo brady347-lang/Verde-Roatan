@@ -67,8 +67,8 @@ async function studySignals(env) {
       !taxa.ok || !Array.isArray(taxa.data)) {
     throw new Error('The botanical data could not be read.');
   }
-  const foldName = (value) => clean(value, 180).normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')
-    .toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\\s+/g, ' ');
+  const foldName = (value) => clean(value, 180).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\s+/g, ' ');
   const publishedTaxa = new Set(taxa.data.map((taxon) => foldName(taxon.scientific_name)).filter(Boolean));
   const signals = [];
 
