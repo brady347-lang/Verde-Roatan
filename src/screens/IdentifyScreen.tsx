@@ -100,7 +100,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
       const start = Date.now();
       interval = setInterval(() => {
         const seconds = (Date.now() - start) / 1000;
-        setElapsedTime(Math.min(8.0, Number(seconds.toFixed(1))));
+        setElapsedTime(Number(seconds.toFixed(1)));
       }, 100);
     } else {
       setElapsedTime(0);
@@ -395,14 +395,14 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                 Gemini 3.8 Flash Botanical Search
               </span>
               <span className="tabular-nums font-mono bg-[var(--surface-2)] px-2 py-0.5 rounded-md text-[11px] text-[var(--ink-soft)] font-bold">
-                {elapsedTime.toFixed(1)}s / 8.0s
+                {elapsedTime.toFixed(0)}s
               </span>
             </div>
 
             <div className="w-full h-2.5 rounded-full bg-[var(--surface-2)] overflow-hidden border border-[var(--line)]">
               <motion.div
                 className="h-full bg-gradient-to-r from-[var(--palm)] via-[var(--lagoon)] to-[var(--sun)]"
-                style={{ width: `${Math.min(100, Math.max(5, (elapsedTime / 8.0) * 100))}%` }}
+                style={{ width: `${(5 + 90 * (1 - Math.exp(-elapsedTime / 12))).toFixed(1)}%` }}
                 transition={{ ease: 'linear' }}
               />
             </div>
@@ -418,7 +418,11 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                 ? lang === 'es' ? '2/4: Analizando nervadura, filotaxis y estructuras florales…' : '2/4: Analyzing venation, phyllotaxy & floral anatomy…'
                 : elapsedTime < 7.0
                 ? lang === 'es' ? '3/4: Búsqueda taxonómica profunda en flora caribeña…' : '3/4: Deep taxonomic search across Caribbean flora…'
-                : lang === 'es' ? '4/4: Verificando clasificación botánica exacta…' : '4/4: Finalizing verified botanical classification…'}
+                : elapsedTime < 12
+                ? lang === 'es' ? '4/4: Verificando clasificación botánica exacta…' : '4/4: Finalizing verified botanical classification…'
+                : elapsedTime < 30
+                ? lang === 'es' ? 'Sigue trabajando: la señal puede ser lenta o la IA estar ocupada. Mantén la app abierta.' : 'Still working. The signal may be slow or the AI busy. Keep the app open.'
+                : lang === 'es' ? 'Está tardando más de lo normal. Puedes esperar un poco más o volver a intentarlo con una señal mejor.' : 'This is taking longer than usual. Wait a little longer, or try again with a better signal.'}
             </p>
           </div>
         </motion.div>

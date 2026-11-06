@@ -1,6 +1,6 @@
 import { checkForAppUpdate, AppUpdateInfo } from './lib/appUpdate';
 import { LandscaperQuoteForm } from './components/LandscaperQuoteForm';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { putPhoto, deletePhoto, migrateGardenPhotos, requestPersistentStorage, safeSetItem } from './lib/photoStore';
 import {
   AIAnalysisResult,
@@ -503,15 +503,12 @@ export default function App() {
       ? currentCatalog.find((c) => String(c.id) === String(activeModal.item.id)) || activeModal.item
       : null;
 
-  // --- Initial Data Fetching ---
-  useEffect(() => {
-    fetchBchRate().then((res) => setRateData(res));
-    fetchDeliveryZones().then((res) => {
-      if (res && res.length) setZones(res);
-    });
-
-    // Refresh the catalog from the existing API worker on every app launch.
-    fetchCatalog().then((res) => {
+  // Reloads the live catalog. On failure the last saved catalog stays visible and the shop says so.
+  const [catalogStatus, setCatalogStatus] = useState<'loading' | 'ok' | 'failed'>('loading');
+  const refreshCatalog = useCallback(async () => {
+    setCatalogStatus('loading');
+    try {
+      const res = await fetchCatalog();
       if (Array.isArray(res)) {
         // Keep locally cached photos for matching records when the API response omits image_url.
         // Also retain locally created draft items; these are not yet synced to the catalog API.
@@ -533,9 +530,22 @@ export default function App() {
           return [...localDrafts, ...mergedRemote];
         });
       }
-    }).catch((error) => {
+      setCatalogStatus('ok');
+    } catch (error) {
       console.warn('Live catalog refresh skipped; keeping the last saved catalog.', error);
+      setCatalogStatus('failed');
+    }
+  }, []);
+
+  // --- Initial Data Fetching ---
+  useEffect(() => {
+    fetchBchRate().then((res) => setRateData(res));
+    fetchDeliveryZones().then((res) => {
+      if (res && res.length) setZones(res);
     });
+
+    // Refresh the catalog from the existing API worker on every app launch.
+    void refreshCatalog();
 
     const interval = setInterval(() => {
       fetchBchRate().then((res) => setRateData(res));
@@ -1747,6 +1757,8 @@ export default function App() {
             <ShopScreen
               lang={lang}
               catalog={currentCatalog}
+              catalogStatus={catalogStatus}
+              onRetryCatalog={() => { void refreshCatalog(); }}
               onSelectItem={(item) => {
                 setSheetQty(1);
                 setActiveModal({ type: 'item-details', item });

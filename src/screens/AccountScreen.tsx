@@ -61,6 +61,7 @@ import { BotanicalImportPanel } from '../components/botanical/BotanicalImportPan
 import { matchesQuery } from '../lib/botanicalRules';
 import { KnowledgeCenterPanel } from '../components/botanical/KnowledgeCenterPanel';
 import { ConstitutionPanel } from '../components/botanical/ConstitutionPanel';
+import { AdminInsightsPanel } from '../components/AdminInsightsPanel';
 
 interface AccountScreenProps {
   lang: Language;
@@ -158,7 +159,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [adminTab, setAdminTab] = useState<
-    'command_center' | 'botanical_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'constitution' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
+    'command_center' | 'botanical_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'constitution' | 'insights' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
   const [newServiceCount, setNewServiceCount] = useState(0);
   const [activeSupplierId, setActiveSupplierId] = useState<string>(() => registeredSuppliers[0]?.id || 'sup-1');
@@ -376,6 +377,15 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setAdminTab('insights')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap transition-all flex items-center gap-1 grow justify-center ${
+                    adminTab === 'insights' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  Insights
+                </button>
+                <button
+                  type="button"
                   onClick={() => setAdminTab('supplier_portal')}
                   className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'supplier_portal' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
@@ -487,6 +497,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
 
                 {adminTab === 'knowledge_docs' && (
                   <KnowledgeCenterPanel lang={lang} accessToken={session?.access_token} />
+                )}
+                {adminTab === 'insights' && (
+                  <AdminInsightsPanel lang={lang} orders={orders} exchangeRateHnl={exchangeRateHnl} accessToken={session?.access_token} />
                 )}
                 {adminTab === 'constitution' && (
                   <ConstitutionPanel lang={lang} accessToken={session?.access_token} />
