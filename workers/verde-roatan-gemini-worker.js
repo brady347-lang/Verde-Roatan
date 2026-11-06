@@ -1240,6 +1240,24 @@ async function knowledgeReferenceImageUpload(request, env) {
   return jsonResponse(200, { status: 'success', image: { ...inserted.data[0], preview_url: await signReferenceImageUrl(tv, path) } });
 }
 
+async function knowledgeReferenceTaxaSearch(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const q = String(body.q || '').trim().replace(/[(),.*%_\\\\]/g, ' ').replace(/\\s+/g, ' ').slice(0, 80);
+  if (q.length < 2) return jsonResponse(200, { status: 'success', results: [] });
+  const tv = reviewDatabaseConfig(env);
+  const params = new URLSearchParams({
+    select: 'id,scientific_name,common_name',
+    record_status: 'eq.published',
+    order: 'scientific_name.asc',
+    limit: '15',
+    or: `(scientific_name.ilike.*${q}*,common_name.ilike.*${q}*)`
+  });
+  const result = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxa?${params}`, { headers: tvHeaders(tv.key) }));
+  if (!result.ok || !Array.isArray(result.data)) return jsonResponse(502, { status: 'error', error: 'Published botanical records could not be searched.' });
+  return jsonResponse(200, { status: 'success', results: result.data });
+}
+
 async function knowledgeReferenceImagesList(request, body, env) {
   const auth = await requireImportAdmin(request, env);
   if (auth.response) return auth.response;
@@ -1653,7 +1671,8 @@ const KNOWLEDGE_ROUTES = {
   ask: knowledgeAsk,
   promote: knowledgePromote,
   'reference-images/list': knowledgeReferenceImagesList,
-  'reference-images/review': knowledgeReferenceImageReview
+  'reference-images/review': knowledgeReferenceImageReview,
+  'reference-images/taxa-search': knowledgeReferenceTaxaSearch
 };
 
 // ---------------------------------------------------------------------------------------------
