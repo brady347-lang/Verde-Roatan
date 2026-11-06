@@ -20,8 +20,12 @@ jobs:
           node-version: '22'
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Cloudflare Worker syntax check
-        run: node --input-type=module --check < workers/verde-roatan-gemini-worker.js
+      - name: Cloudflare Worker syntax checks
+        run: |
+          node --input-type=module --check < workers/verde-roatan-gemini-worker.js
+          node --input-type=module --check < workers/verde-roatan-constitution-worker.js
+      - name: Worker regression tests
+        run: npm run test:worker
       - name: TypeScript check
         run: npm run lint
       - name: Production web build

@@ -58,13 +58,18 @@ async function requireAdmin(request, env) {
 
 // ---- Self-study: counted facts from data that already exists. Read-only. ----
 async function studySignals(env) {
-  const [entities, reviews] = await Promise.all([
+  const [entities, reviews, taxa] = await Promise.all([
     rest(env, 'knowledge_entities?select=id,field_name,approval_status&limit=5000'),
-    rest(env, 'identification_reviews?select=id,ai_scientific_name,user_decision,status,submitted_by&limit=5000')
+    rest(env, 'identification_reviews?select=id,ai_scientific_name,user_decision,status,submitted_by&limit=5000'),
+    rest(env, 'botanical_taxa?select=id,scientific_name,record_status,verification_status&record_status=eq.published&limit=5000')
   ]);
-  if (!entities.ok || !Array.isArray(entities.data) || !reviews.ok || !Array.isArray(reviews.data)) {
+  if (!entities.ok || !Array.isArray(entities.data) || !reviews.ok || !Array.isArray(reviews.data) ||
+      !taxa.ok || !Array.isArray(taxa.data)) {
     throw new Error('The botanical data could not be read.');
   }
+  const foldName = (value) => clean(value, 180).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const publishedTaxa = new Set(taxa.data.map((taxon) => foldName(taxon.scientific_name)).filter(Boolean));
   const signals = [];
 
   // 1. Extraction weak spots: which fields do reviewers reject or edit most?
@@ -91,7 +96,33 @@ async function studySignals(env) {
     }
   }
 
-  // 2. Identifications that people or reviewers keep questioning (customer feedback = a hint only).
+  // 2. Repeated customer confirmations can reveal a coverage gap, but never scientific proof.
+  // Only propose expert review after three different users confirm the same AI suggestion
+  // and that scientific name is absent from the published reference taxonomy.
+  const coverageGaps = new Map();
+  for (const review of reviews.data) {
+    if (review.user_decision !== 'confirmed') continue;
+    const scientificName = clean(review.ai_scientific_name, 160);
+    const key = foldName(scientificName);
+    if (!key || publishedTaxa.has(key)) continue;
+    const gap = coverageGaps.get(key) || { name: scientificName, people: new Set(), ids: [] };
+    if (review.submitted_by) gap.people.add(review.submitted_by);
+    if (gap.ids.length < 5) gap.ids.push(review.id);
+    coverageGaps.set(key, gap);
+  }
+  for (const [key, gap] of coverageGaps) {
+    if (gap.people.size < 3) continue;
+    signals.push({
+      signal_key: `taxonomy_coverage:${key}:${Math.floor(gap.people.size / 3) * 3}`,
+      proposed_key: `review_taxon_${key.replace(/[^a-z0-9]+/g, '_')}`.slice(0, 60),
+      title: `Review missing reference record: ${gap.name}`,
+      body: `At least ${gap.people.size} different customers confirmed an AI suggestion for "${gap.name}", but that scientific name is not present in the published botanical reference taxonomy. Send it for expert/taxonomic review before adding it. Customer confirmation is useful feedback, not scientific verification.`,
+      rationale: `${gap.people.size} distinct customers confirmed a suggestion missing from the published reference taxonomy.`,
+      evidence: { source: 'identification_reviews_and_botanical_taxa', scientific_name: gap.name, customer_confirmations: gap.people.size, sample_ids: gap.ids }
+    });
+  }
+
+  // 3. Identifications that people or reviewers keep questioning (customer feedback = a hint only).
   const byName = new Map();
   for (const r of reviews.data) {
     const name = clean(r.ai_scientific_name, 160);
@@ -121,7 +152,9 @@ async function studySignals(env) {
       extracted_facts: entities.data.length,
       facts_rejected_or_edited: entities.data.filter((e) => ['rejected', 'modified'].includes(e.approval_status)).length,
       identification_submissions: reviews.data.length,
-      identifications_doubted: reviews.data.filter((r) => ['almost', 'not_my_plant'].includes(r.user_decision)).length
+      identifications_doubted: reviews.data.filter((r) => ['almost', 'not_my_plant'].includes(r.user_decision)).length,
+      published_taxa: taxa.data.length,
+      scientifically_verified_taxa: taxa.data.filter((t) => t.verification_status === 'scientifically_verified').length
     },
     signals
   };

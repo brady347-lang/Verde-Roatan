@@ -19,6 +19,7 @@ function mock(db) {
     const ok = (d, s = 200) => new Response(JSON.stringify(d), { status: s });
     if (url.includes('/knowledge_entities?')) return ok(db.entities || []);
     if (url.includes('/identification_reviews?')) return ok(db.reviews || []);
+    if (url.includes('/botanical_taxa?')) return ok(db.taxa || []);
     if (url.includes('/constitution_amendments?') && m === 'GET' && url.includes('signal_key=in.')) return ok(db.existing || []);
     if (url.includes('/constitution_amendments?') && m === 'GET' && url.includes('id=eq.')) return ok(db.amendment ? [db.amendment] : []);
     if (url.includes('/constitution_amendments?') && m === 'GET') return ok(db.amendments || []);
@@ -70,6 +71,20 @@ await t('lessons: admin rejections alone can trigger (2 rejections)', async () =
   mock({ entities: [], reviews: [1, 2].map((i) => ({ id: 'k' + i, ai_scientific_name: 'Ficus lyrata', user_decision: 'confirmed', status: 'rejected', submitted_by: 'p' + i })) });
   assert.equal((await (await call('/constitution/lessons', {})).json()).signals.length, 1);
 });
+await t('lessons: three distinct customer confirmations flag a missing taxonomy record for expert review', async () => {
+  const reviews = ['p1', 'p2', 'p3'].map((person, i) => ({
+    id: 'gap' + i, ai_scientific_name: 'Plumeria alba', user_decision: 'confirmed',
+    status: 'pending', submitted_by: person
+  }));
+  mock({ entities: [], reviews, taxa: [] });
+  const j = await (await call('/constitution/lessons', {})).json();
+  const gap = j.signals.find((signal) => signal.signal_key.startsWith('taxonomy_coverage:'));
+  assert.ok(gap);
+  assert.match(gap.title, /Plumeria alba/);
+  assert.match(gap.body, /not scientific verification/);
+  assert.equal(j.stats.published_taxa, 0);
+});
+
 await t('propose: saves new proposals as PENDING add_rule, skips ones already proposed, never touches rules', async () => {
   const db = mock({ entities: ents('water', 5, 0, 5), reviews: [] });
   const j = await (await call('/constitution/propose', {})).json();

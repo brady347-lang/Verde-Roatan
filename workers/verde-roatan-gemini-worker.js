@@ -12,8 +12,9 @@
  *
  * Environment Secrets / Variables required in Cloudflare Worker settings:
  * - GEMINI_API_KEY (Google AI Studio / Gemini API Key)
- * - SUPABASE_URL (optional: for direct catalog verification)
- * - SUPABASE_SERVICE_ROLE_KEY (optional)
+ * - REVIEW_SUPABASE_URL (optional: curated botanical taxonomy cross-check)
+ * - REVIEW_SUPABASE_SERVICE_ROLE_KEY (optional secret; never expose to the client)
+ * - PRIMARY_SUPABASE_URL / PRIMARY_SUPABASE_ANON_KEY (used by authenticated review routes)
  */
 
 const CORS_HEADERS = {
@@ -23,45 +24,9 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400'
 };
 
-// Curated reference photos for verified Roatán botanical specimens
-const BOTANICAL_SPECIMEN_IMAGE_BANK = {
-  monstera: [
-    { image_url: 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Monstera deliciosa tropical canopy' },
-    { image_url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Fenestrated split-leaf blade' },
-    { image_url: 'https://images.unsplash.com/photo-1604762524889-3e2fccbc95f8?w=1000&auto=format&fit=crop&q=80', image_type: 'container_specimen', description: 'Nursery container specimen' }
-  ],
-  areca: [
-    { image_url: 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Golden Cane Palm cluster' },
-    { image_url: 'https://images.unsplash.com/photo-1596726696582-7f287959063c?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Pinnate feathery fronds' }
-  ],
-  coconut: [
-    { image_url: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Tall coastal coconut palm (Cocos nucifera)' },
-    { image_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Long arching coastal fronds' }
-  ],
-  bougainvillea: [
-    { image_url: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Vibrant blooming climbing canopy' },
-    { image_url: 'https://images.unsplash.com/photo-1597848212624-a19eb35e2651?w=1000&auto=format&fit=crop&q=80', image_type: 'bloom_stage', description: 'Papery magenta floral bracts' }
-  ],
-  hibiscus: [
-    { image_url: 'https://images.unsplash.com/photo-1550950158-d0d960dff51b?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Tropical flowering hibiscus shrub' },
-    { image_url: 'https://images.unsplash.com/photo-1567696911980-2eed69a46042?w=1000&auto=format&fit=crop&q=80', image_type: 'bloom_stage', description: 'Prominent style and stamen column' }
-  ],
-  default: [
-    { image_url: 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Mature tropical botanical specimen' },
-    { image_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Foliage and venation structure' }
-  ]
-};
-
-function resolvePhotos(common = '', sci = '') {
-  const q = `${common} ${sci}`.toLowerCase();
-  if (q.includes('monstera') || q.includes('deliciosa')) return BOTANICAL_SPECIMEN_IMAGE_BANK.monstera;
-  if (q.includes('areca') || q.includes('dypsis')) return BOTANICAL_SPECIMEN_IMAGE_BANK.areca;
-  if (q.includes('coconut') || q.includes('cocos')) return BOTANICAL_SPECIMEN_IMAGE_BANK.coconut;
-  if (q.includes('bougainvillea')) return BOTANICAL_SPECIMEN_IMAGE_BANK.bougainvillea;
-  if (q.includes('hibiscus')) return BOTANICAL_SPECIMEN_IMAGE_BANK.hibiscus;
-  return BOTANICAL_SPECIMEN_IMAGE_BANK.default;
-}
-
+// Reference photos are never guessed or selected from a generic stock-photo bank.
+// The recognition response may include only curator-approved images linked to an exact
+// scientific-name match in the separate botanical reference database.
 
 /**
  * Model policy: only the latest Gemini Flash model and the one before it. Older generations
@@ -87,7 +52,7 @@ function parseModelJson(raw) {
   }
 }
 
-async function callGemini(env, apiKey, parts, { totalMs = 60000, perCallMs = 30000 } = {}) {
+async function callGemini(env, apiKey, parts, { totalMs = 30000, perCallMs = 12000 } = {}) {
   const models = GEMINI_MODELS;
   const deadline = Date.now() + totalMs;
   let lastError = 'No Gemini model responded.';
@@ -145,7 +110,7 @@ export default {
         JSON.stringify({
           status: 'ok',
           worker: 'Verde Roatán Gemini Worker',
-          version: '3.0.0',
+          version: '3.1.0',
           model: GEMINI_MODELS[0],
           time: new Date().toISOString()
         }),
@@ -170,6 +135,7 @@ export default {
     try {
       // The PDF upload sends raw bytes, so it must be handled before the JSON body is parsed.
       if (pathname === '/knowledge/upload') return await handleKnowledgeUpload(request, url, env);
+      if (pathname === '/knowledge/reference-images/upload') return await knowledgeReferenceImageUpload(request, env);
 
       const body = await request.json().catch(() => ({}));
 
@@ -237,6 +203,103 @@ export default {
     }
   }
 };
+
+/**
+ * Cross-check Gemini's proposed taxon against the curated botanical reference database.
+ * This is deliberately an exact scientific-name match: fuzzy search results are suggestions,
+ * not proof. Database outages never block the original AI identification.
+ */
+async function fetchWithTimeout(url, init = {}, timeoutMs = 2500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function crossCheckBotanicalIdentification(parsed, env) {
+  const record = parsed?.verified_botanical_record;
+  if (record) record.verified_images = [];
+  const scientificName = String(record?.scientific_name || parsed?.candidates?.[0]?.scientific_name || '').trim();
+  const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\s+/g, ' ');
+  if (!scientificName) return { status: 'not_checked', identification_status: 'ai_suggestion_only', reason: 'No scientific name was returned by the model.' };
+
+  let tv;
+  try { tv = reviewDatabaseConfig(env); }
+  catch { return { status: 'unavailable', identification_status: 'ai_suggestion_only', reason: 'The botanical reference database is not configured.' }; }
+
+  try {
+    const response = await tvJson(await fetchWithTimeout(`${tv.url}/rest/v1/rpc/botanical_search`, {
+      method: 'POST',
+      headers: tvHeaders(tv.key),
+      body: JSON.stringify({
+        q: scientificName, p_family: null, p_sun: null, p_water: null,
+        p_min_salt: null, p_pet_safe: false, p_native: false, lim: 10
+      })
+    }));
+    if (!response.ok || !Array.isArray(response.data)) {
+      return { status: 'unavailable', identification_status: 'ai_suggestion_only', reason: 'The botanical reference search is not available.' };
+    }
+
+    const target = normalize(scientificName);
+    const exact = response.data.find((row) => normalize(row.scientific_name) === target);
+    if (!exact) {
+      if (record) record.verified_images = [];
+      return {
+        status: 'not_found',
+        identification_status: 'ai_suggestion_only',
+        match_basis: 'exact_scientific_name',
+        proposed_scientific_name: scientificName,
+        message: 'No exact scientific-name match was found in the curated botanical database. The AI result remains an unverified suggestion.'
+      };
+    }
+
+    let referenceImages = [];
+    const imageResponse = await tvJson(await fetchWithTimeout(
+      `${tv.url}/rest/v1/botanical_taxon_images?taxon_id=eq.${encodeURIComponent(exact.id)}&review_status=eq.approved&visibility=eq.public&select=image_url,storage_path,image_type,source_name,source_url,attribution,license&order=created_at.asc&limit=8`,
+      { headers: tvHeaders(tv.key) }
+    ));
+    if (imageResponse.ok && Array.isArray(imageResponse.data)) {
+      referenceImages = (await Promise.all(imageResponse.data.map(async (image) => {
+        let imageUrl = typeof image.image_url === 'string' && /^https:\/\//i.test(image.image_url) ? image.image_url : null;
+        if (image.storage_path) imageUrl = await signReferenceImageUrl(tv, image.storage_path);
+        if (!imageUrl) return null;
+        return {
+          image_url: imageUrl,
+          image_type: image.image_type,
+          description: image.attribution || image.source_name || 'Curator-approved botanical reference',
+          source_url: image.source_url || null,
+          license: image.license || null
+        };
+      }))).filter(Boolean);
+    }
+
+    if (record) {
+      record.verified_images = referenceImages;
+      record.reference_database = {
+        taxon_id: exact.id,
+        scientific_name: exact.scientific_name,
+        common_name: exact.common_name,
+        family: exact.family,
+        verification_status: exact.verification_status
+      };
+    }
+    return {
+      status: 'exact_match',
+      identification_status: 'ai_suggestion_only',
+      match_basis: 'exact_scientific_name',
+      database_verification_status: exact.verification_status || 'unverified',
+      reference_image_count: referenceImages.length,
+      message: exact.verification_status === 'scientifically_verified'
+        ? 'The taxonomy record is scientifically verified; this database cross-check does not independently verify the photographed plant.'
+        : 'The exact scientific name exists in the curated database, but that record is not scientifically verified. The photographed plant remains an AI suggestion.'
+    };
+  } catch {
+    return { status: 'unavailable', identification_status: 'ai_suggestion_only', reason: 'The botanical reference database could not be reached or timed out.' };
+  }
+}
 
 /**
  * Handle initial Plant / Pest Identification with Gemini 3.8 Flash
@@ -326,11 +389,8 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
   parsed.status = 'success';
   parsed.model_used = model;
 
-  if (parsed.verified_botanical_record) {
-    parsed.verified_botanical_record.verified_images = resolvePhotos(
-      parsed.verified_botanical_record.common_name,
-      parsed.verified_botanical_record.scientific_name
-    );
+  if (mode !== 'pest') {
+    parsed.database_crosscheck = await crossCheckBotanicalIdentification(parsed, env);
   }
 
   return new Response(JSON.stringify(parsed), {
@@ -414,12 +474,7 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
   parsed.is_refined = true;
   parsed.refinement_stage = 'verified';
 
-  if (parsed.verified_botanical_record) {
-    parsed.verified_botanical_record.verified_images = resolvePhotos(
-      parsed.verified_botanical_record.common_name,
-      parsed.verified_botanical_record.scientific_name
-    );
-  }
+  parsed.database_crosscheck = await crossCheckBotanicalIdentification(parsed, env);
 
   return new Response(JSON.stringify(parsed), {
     headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
@@ -1118,6 +1173,138 @@ async function signDocumentUrl(tv, path) {
   return String(d.signedURL).startsWith('http') ? d.signedURL : `${tv.url}/storage/v1${d.signedURL}`;
 }
 
+async function signReferenceImageUrl(tv, path) {
+  const safePath = String(path || '').split('/').map(encodeURIComponent).join('/');
+  if (!safePath || safePath.includes('..')) return null;
+  const res = await fetchWithTimeout(`${tv.url}/storage/v1/object/sign/botanical-reference-images/${safePath}`, {
+    method: 'POST', headers: tvHeaders(tv.key), body: JSON.stringify({ expiresIn: 3600 })
+  }, 2500);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data.signedURL) return null;
+  return String(data.signedURL).startsWith('http') ? data.signedURL : `${tv.url}/storage/v1${data.signedURL}`;
+}
+
+async function knowledgeReferenceImageUpload(request, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const tv = reviewDatabaseConfig(env);
+  let form;
+  try { form = await request.formData(); } catch { return jsonResponse(400, { status: 'error', error: 'Send the photo as multipart form data.' }); }
+  const file = form.get('file');
+  const taxonId = String(form.get('taxon_id') || '');
+  if (!isUuid(taxonId) || !file || typeof file.arrayBuffer !== 'function') {
+    return jsonResponse(400, { status: 'error', error: 'Choose a plant record and an image file.' });
+  }
+  if (file.size < 1 || file.size > 12 * 1024 * 1024) return jsonResponse(413, { status: 'error', error: 'Reference photos must be smaller than 12 MB.' });
+  const allowed = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+  const ext = allowed[file.type];
+  if (!ext) return jsonResponse(400, { status: 'error', error: 'Use a JPEG, PNG, or WebP image.' });
+  const bytes = await file.arrayBuffer();
+  const head = new Uint8Array(bytes.slice(0, 12));
+  const valid = ext === 'jpg'
+    ? head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff
+    : ext === 'png'
+      ? head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+      : String.fromCharCode(...head.slice(0, 4)) === 'RIFF' && String.fromCharCode(...head.slice(8, 12)) === 'WEBP';
+  if (!valid) return jsonResponse(400, { status: 'error', error: 'The image contents do not match the selected file type.' });
+  const taxon = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxa?id=eq.${taxonId}&select=id&limit=1`, { headers: tvHeaders(tv.key) }));
+  if (!taxon.ok || !Array.isArray(taxon.data) || !taxon.data[0]) return jsonResponse(404, { status: 'error', error: 'Plant record not found.' });
+  const imageType = String(form.get('image_type') || 'mature_specimen');
+  const types = ['mature_specimen','foliage_detail','flower','fruit','bark','habitat','seedling','other'];
+  if (!types.includes(imageType)) return jsonResponse(400, { status: 'error', error: 'Choose a valid image type.' });
+  const sourceName = String(form.get('source_name') || '').trim().slice(0, 200) || null;
+  const sourceUrl = String(form.get('source_url') || '').trim().slice(0, 1000) || null;
+  if (sourceUrl && !/^https:\/\//i.test(sourceUrl)) return jsonResponse(400, { status: 'error', error: 'Source links must use HTTPS.' });
+  const attribution = String(form.get('attribution') || '').trim().slice(0, 500) || null;
+  const license = String(form.get('license') || '').trim().slice(0, 160) || null;
+  const id = crypto.randomUUID();
+  const path = `${taxonId}/${id}.${ext}`;
+  const upload = await fetch(`${tv.url}/storage/v1/object/botanical-reference-images/${path}`, {
+    method: 'POST', headers: { apikey: tv.key, Authorization: `Bearer ${tv.key}`, 'Content-Type': file.type, 'x-upsert': 'false' }, body: bytes
+  });
+  if (!upload.ok) return jsonResponse(502, { status: 'error', error: 'The reference image could not be stored.' });
+  const inserted = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxon_images`, {
+    method: 'POST', headers: tvHeaders(tv.key, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      id, taxon_id: taxonId, storage_path: path, image_url: null, image_type: imageType,
+      source_name: sourceName, source_url: sourceUrl, attribution, license,
+      review_status: 'pending', visibility: 'private', uploaded_by_email: String(auth.user.email || 'unknown')
+    })
+  }));
+  if (!inserted.ok || !Array.isArray(inserted.data) || !inserted.data[0]) {
+    await fetch(`${tv.url}/storage/v1/object/botanical-reference-images/${path}`, {
+      method: 'DELETE', headers: tvHeaders(tv.key)
+    }).catch(() => {});
+    return jsonResponse(502, { status: 'error', error: 'The image was stored, but its review record could not be created.' });
+  }
+  return jsonResponse(200, { status: 'success', image: { ...inserted.data[0], preview_url: await signReferenceImageUrl(tv, path) } });
+}
+
+async function knowledgeReferenceTaxaSearch(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const q = String(body.q || '').trim().replace(/[(),.*%_\\\\]/g, ' ').replace(/\\s+/g, ' ').slice(0, 80);
+  if (q.length < 2) return jsonResponse(200, { status: 'success', results: [] });
+  const tv = reviewDatabaseConfig(env);
+  const params = new URLSearchParams({
+    select: 'id,scientific_name,common_name',
+    record_status: 'eq.published',
+    order: 'scientific_name.asc',
+    limit: '15',
+    or: `(scientific_name.ilike.*${q}*,common_name.ilike.*${q}*)`
+  });
+  const result = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxa?${params}`, { headers: tvHeaders(tv.key) }));
+  if (!result.ok || !Array.isArray(result.data)) return jsonResponse(502, { status: 'error', error: 'Published botanical records could not be searched.' });
+  return jsonResponse(200, { status: 'success', results: result.data });
+}
+
+async function knowledgeReferenceImagesList(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (body.taxon_id && !isUuid(body.taxon_id)) return jsonResponse(400, { status: 'error', error: 'Invalid plant record.' });
+  const tv = reviewDatabaseConfig(env);
+  const status = ['pending','approved','rejected'].includes(body.review_status) ? body.review_status : null;
+  const params = new URLSearchParams({
+    select: 'id,taxon_id,image_url,storage_path,image_type,source_name,source_url,attribution,license,review_status,visibility,uploaded_by_email,reviewed_by_email,reviewed_at,created_at',
+    order: 'created_at.desc', limit: '30'
+  });
+  if (body.taxon_id) params.set('taxon_id', `eq.${body.taxon_id}`);
+  if (status) params.set('review_status', `eq.${status}`);
+  const result = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxon_images?${params}`, { headers: tvHeaders(tv.key) }));
+  if (!result.ok || !Array.isArray(result.data)) return jsonResponse(502, { status: 'error', error: 'Reference photos could not be loaded. Apply the botanical recognition migration first.' });
+  const images = await Promise.all(result.data.map(async (row) => ({
+    ...row,
+    preview_url: row.storage_path ? await signReferenceImageUrl(tv, row.storage_path) : row.image_url
+  })));
+  return jsonResponse(200, { status: 'success', images });
+}
+
+async function knowledgeReferenceImageReview(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.image_id) || !['approve','reject'].includes(body.action)) {
+    return jsonResponse(400, { status: 'error', error: 'Choose a photo and approve or reject it.' });
+  }
+  const tv = reviewDatabaseConfig(env);
+  const result = await tvJson(await fetch(
+    `${tv.url}/rest/v1/botanical_taxon_images?id=eq.${body.image_id}&select=id,storage_path,image_url,review_status&limit=1`,
+    { headers: tvHeaders(tv.key) }
+  ));
+  if (!result.ok || !Array.isArray(result.data) || !result.data[0]) return jsonResponse(404, { status: 'error', error: 'Reference photo not found.' });
+  const now = new Date().toISOString();
+  const approved = body.action === 'approve';
+  const updated = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxon_images?id=eq.${body.image_id}`, {
+    method: 'PATCH', headers: tvHeaders(tv.key, { Prefer: 'return=representation' }),
+    body: JSON.stringify({
+      review_status: approved ? 'approved' : 'rejected',
+      visibility: approved && body.visibility === 'public' ? 'public' : 'private',
+      reviewed_by_email: String(auth.user.email || 'unknown'), reviewed_at: now, updated_at: now
+    })
+  }));
+  if (!updated.ok) return jsonResponse(502, { status: 'error', error: 'The photo review decision could not be saved.' });
+  return jsonResponse(200, { status: 'success', review_status: approved ? 'approved' : 'rejected', visibility: approved && body.visibility === 'public' ? 'public' : 'private' });
+}
+
 async function handleKnowledgeUpload(request, url, env) {
   if (request.method !== 'POST') return jsonResponse(405, { status: 'error', error: 'Method not allowed' });
   const auth = await requireImportAdmin(request, env);
@@ -1482,7 +1669,10 @@ const KNOWLEDGE_ROUTES = {
   retry: knowledgeRetry,
   'mark-failed': knowledgeMarkFailed,
   ask: knowledgeAsk,
-  promote: knowledgePromote
+  promote: knowledgePromote,
+  'reference-images/list': knowledgeReferenceImagesList,
+  'reference-images/review': knowledgeReferenceImageReview,
+  'reference-images/taxa-search': knowledgeReferenceTaxaSearch
 };
 
 // ---------------------------------------------------------------------------------------------
