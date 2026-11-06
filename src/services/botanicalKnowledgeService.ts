@@ -1,3 +1,4 @@
+import { saveBotanicalSourceFile } from './botanicalSourceFileStorage';
 import {
   BotanicalAssistantMessage,
   BotanicalDocument,
@@ -1101,7 +1102,7 @@ export class BotanicalKnowledgeService {
   }
 
   public async uploadBotanicalDocument(
-    file: { name: string; size: number; type: string; contentText?: string },
+    file: { name: string; size: number; type: string; contentText?: string; sourceFile?: File },
     uploadedBy: string = 'Verde Administrator'
   ): Promise<BotanicalDocument> {
     const ext = file.name.split('.').pop()?.toLowerCase() || 'pdf';
@@ -1141,6 +1142,9 @@ export class BotanicalKnowledgeService {
 
     this.documents.unshift(newDoc);
     this.persist();
+    if (file.sourceFile) {
+      await saveBotanicalSourceFile(docId, file.sourceFile);
+    }
 
     // Trigger asynchronous ingestion stages 1 -> 12 progression
     this.advanceDocumentPipeline(docId);
