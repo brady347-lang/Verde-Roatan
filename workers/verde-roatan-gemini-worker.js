@@ -210,7 +210,7 @@ export default {
 async function crossCheckBotanicalIdentification(parsed, env) {
   const record = parsed?.verified_botanical_record;
   const scientificName = String(record?.scientific_name || parsed?.candidates?.[0]?.scientific_name || '').trim();
-  const normalize = (value) => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\\s+/g, ' ');
+  const normalize = (value) => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\s+/g, ' ');
   if (!scientificName) return { status: 'not_checked', reason: 'No scientific name was returned by the model.' };
 
   let tv;
@@ -249,7 +249,7 @@ async function crossCheckBotanicalIdentification(parsed, env) {
     ));
     if (imageResponse.ok && Array.isArray(imageResponse.data)) {
       referenceImages = imageResponse.data
-        .filter((image) => typeof image.image_url === 'string' && /^https:\\/\\//i.test(image.image_url))
+        .filter((image) => typeof image.image_url === 'string' && /^https:\/\//i.test(image.image_url))
         .map((image) => ({
           image_url: image.image_url,
           image_type: image.image_type,
