@@ -360,11 +360,12 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                 alt="Specimen preview"
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 pointer-events-none">
-                <div className="scan-orbit-ring absolute left-[62%] top-[42%] w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--lagoon)]/60" />
-                <div className="scan-orbit-ring scan-orbit-ring-delayed absolute left-[62%] top-[42%] w-32 h-32 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[var(--palm)]/35" />
+              <div className="scan-overlay absolute inset-0 pointer-events-none overflow-hidden">
+                <div className="scan-orbit-ring absolute left-[62%] top-[42%] w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full" />
+                <div className="scan-orbit-ring scan-orbit-ring-delayed absolute left-[62%] top-[42%] w-32 h-32 -translate-x-1/2 -translate-y-1/2 rounded-full" />
+                <span className="scan-target-core absolute left-[62%] top-[42%] -translate-x-1/2 -translate-y-1/2" />
                 <img
-                  src="/hummingbird-scan.gif"
+                  src="/verde-hummingbird-scan-76.webp"
                   alt={lang === 'es' ? 'Colibrí explorando la planta durante el escaneo' : 'Hummingbird inspecting the plant during scan'}
                   className="hummingbird-scan absolute left-[62%] top-[42%] w-[76px] h-[72px] -translate-x-1/2 -translate-y-1/2 object-contain"
                   loading="eager"
