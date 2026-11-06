@@ -3,7 +3,7 @@
  * Production-ready Cloudflare Worker script for Verde Roatán Plant Intelligence.
  *
  * Capabilities:
- * - Upgraded to Gemini 3.8 Flash (models/gemini-3.8-flash)
+ * - Gemini 3.8 Flash, falling back to 3.6 Flash only (see GEMINI_MODELS)
  * - Botanical specimen identification with 8-second accuracy window
  * - Continuous secondary taxonomic refinement (/refine) for Roatán microclimate
  * - Tropical pathology & organic pest diagnostics (mode: 'pest')
@@ -64,16 +64,14 @@ function resolvePhotos(common = '', sci = '') {
 
 
 /**
- * Call Gemini with a model fallback list and a hard per-call timeout.
- * Order: GEMINI_MODEL (optional env override), then the models below. A missing/retired model
- * returns 404 quickly, so falling through is cheap. The whole call stays inside the app's own
- * client timeouts (20s identify, 18s refine).
+ * Model policy: only the latest Gemini Flash model and the one before it. Older generations
+ * (1.5, 2.0, 2.5) and moving aliases are not used anywhere. No environment override, so a stale
+ * setting can never bring a retired model back. When Google ships a newer model, update this list.
+ * (gemini-3.7-flash is only an alias of 3.8, so 3.6 is the real previous model.)
  */
 const GEMINI_MODELS = [
   'gemini-3.8-flash',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash-lite',
-  'gemini-flash-latest'
+  'gemini-3.6-flash'
 ];
 
 function parseModelJson(raw) {
@@ -90,7 +88,7 @@ function parseModelJson(raw) {
 }
 
 async function callGemini(env, apiKey, parts, { totalMs = 16000, perCallMs = 12000 } = {}) {
-  const models = [...new Set([env?.GEMINI_MODEL, ...GEMINI_MODELS].filter(Boolean))];
+  const models = GEMINI_MODELS;
   const deadline = Date.now() + totalMs;
   let lastError = 'No Gemini model responded.';
 
