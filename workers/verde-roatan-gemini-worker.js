@@ -3,7 +3,7 @@
  * Production-ready Cloudflare Worker script for Verde Roatán Plant Intelligence.
  *
  * Capabilities:
- * - Gemini 3.8 Flash, falling back to 3.6 Flash only (see GEMINI_MODELS)
+ * - Gemini 3.8 Flash only (see GEMINI_MODELS)
  * - Botanical specimen identification with 8-second accuracy window
  * - Continuous secondary taxonomic refinement (/refine) for Roatán microclimate
  * - Tropical pathology & organic pest diagnostics (mode: 'pest')
@@ -29,15 +29,11 @@ const CORS_HEADERS = {
 // scientific-name match in the separate botanical reference database.
 
 /**
- * Model policy: only the latest Gemini Flash model and the one before it. Older generations
- * (1.5, 2.0, 2.5) and moving aliases are not used anywhere. No environment override, so a stale
- * setting can never bring a retired model back. When Google ships a newer model, update this list.
- * (gemini-3.7-flash is only an alias of 3.8, so 3.6 is the real previous model.)
+ * Model policy: use the supported Gemini 3.8 Flash model only. No environment override or
+ * retired-model fallback is permitted. When the supported model changes, update this list
+ * deliberately and validate it before deployment.
  */
-const GEMINI_MODELS = [
-  'gemini-3.8-flash',
-  'gemini-3.6-flash'
-];
+const GEMINI_MODELS = ['gemini-3.8-flash'];
 
 function parseModelJson(raw) {
   let text = String(raw || '').trim();
