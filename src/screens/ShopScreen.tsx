@@ -7,6 +7,9 @@ import { STRINGS } from '../data/initialData';
 interface ShopScreenProps {
   lang: Language;
   catalog: CatalogItem[];
+  /** Result of the last live catalog refresh. */
+  catalogStatus?: 'loading' | 'ok' | 'failed';
+  onRetryCatalog?: () => void;
   onSelectItem: (item: CatalogItem) => void;
   rateStatus: string;
   formatMoney: (val: number, cur: string) => React.ReactNode;
@@ -24,6 +27,8 @@ interface ShopScreenProps {
 export const ShopScreen: React.FC<ShopScreenProps> = ({
   lang,
   catalog,
+  catalogStatus = 'ok',
+  onRetryCatalog,
   onSelectItem,
   rateStatus,
   formatMoney,
@@ -248,6 +253,17 @@ export const ShopScreen: React.FC<ShopScreenProps> = ({
           );
         })}
       </div>
+
+      {catalogStatus === 'failed' && (
+        <div role="status" className="flex items-center justify-between gap-2 rounded-2xl border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-[var(--ink)]">
+          <span>{lang === 'es' ? 'No se pudo actualizar el catálogo. Mostrando la última versión guardada.' : "Couldn't refresh the catalog. Showing your last saved version."}</span>
+          {onRetryCatalog && (
+            <button type="button" onClick={onRetryCatalog} className="shrink-0 rounded-lg bg-[var(--palm)] px-3 py-1.5 text-[11.5px] font-extrabold text-white">
+              {lang === 'es' ? 'Reintentar' : 'Retry'}
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Items List */}
       <div className="flex flex-col gap-2.5">
