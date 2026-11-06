@@ -1021,4 +1021,35 @@ export const reviewKnowledgeDocument = async (token: string, payload: { document
 export const retryKnowledgeDocument = async (token: string, id: string): Promise<{ pdf_url: string | null }> => knowledgeCall('retry', { document_id: id }, token);
 export const promoteKnowledgeDocument = async (token: string, id: string): Promise<{ created: number; skipped: number; message?: string }> => knowledgeCall('promote', { document_id: id }, token);
 export const markKnowledgeFailed = async (token: string, id: string, message: string) => knowledgeCall('mark-failed', { document_id: id, message }, token);
+export interface BotanicalReferenceImage {
+  id: string; taxon_id: string; image_type: string; source_name?: string | null; source_url?: string | null;
+  attribution?: string | null; license?: string | null; review_status: 'pending' | 'approved' | 'rejected';
+  visibility: 'private' | 'public'; preview_url?: string | null; created_at?: string;
+}
+export async function listBotanicalReferenceImages(token: string, review_status = 'pending'): Promise<BotanicalReferenceImage[]> {
+  return (await knowledgeCall('reference-images/list', { review_status }, token)).images || [];
+}
+export async function uploadBotanicalReferenceImage(token: string, file: File, fields: {
+  taxon_id: string; image_type: string; source_name?: string; source_url?: string; attribution?: string; license?: string;
+}): Promise<BotanicalReferenceImage> {
+  const form = new FormData();
+  form.append('file', file); Object.entries(fields).forEach(([k,v]) => { if (v) form.append(k, v); });
+  let response: Response;
+  try {
+    response = await fetch(`${AI_WORKER_URL}/knowledge/reference-images/upload`, {
+      method: 'POST', headers: { Accept: 'application/json', apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}` }, body: form
+    });
+  } catch { throw new Error('Could not reach the Verde Roatán service. Check your connection and try again.'); }
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.status !== 'success') throw new Error(data.error || 'The reference photo upload failed (' + response.status + ').');
+  return data.image;
+}
+export async function reviewBotanicalReferenceImage(token: string, image_id: string, action: 'approve' | 'reject', visibility: 'private' | 'public' = 'private'): Promise<void> {
+  await knowledgeCall('reference-images/review', { image_id, action, visibility }, token);
+}
+export async function searchBotanicalTaxa(token: string, q: string): Promise<Array<{id:string; scientific_name:string; common_name?:string}>> {
+  const data = await knowledgeCall('reference-images/taxa-search', { q }, token);
+  return data.results || [];
+}
+
 export const askKnowledge = async (token: string, question: string, opts: { includePrivate: boolean; minSimilarity: number }): Promise<{ answered: boolean; answer: string; sources: KnowledgeSource[] }> => knowledgeCall('ask', { question, include_private: opts.includePrivate, min_similarity: opts.minSimilarity }, token);
