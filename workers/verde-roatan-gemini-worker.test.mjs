@@ -13,11 +13,11 @@ const post = (path, body, e = env) => worker.fetch(new Request('https://w.test' 
 let n = 0; const t = async (name, fn) => { calls.length = 0; await fn(); console.log('ok', ++n, name); };
 
 await t('health', async () => { const r = await worker.fetch(new Request('https://w.test/health'), env); assert.equal((await r.json()).status, 'ok'); });
-await t('analyze falls back past 404 model and forces status=success (model omitted it)', async () => {
-  mock((m) => m === 'gemini-3.8-flash' ? new Response('nf', { status: 404 }) : ok(plant));
+await t('analyze does not call a retired model when Gemini 3.8 returns 404', async () => {
+  mock(() => new Response('model unavailable', { status: 404 }));
   const r = await post('/', { mode: 'plant', image: IMG }); const j = await r.json();
-  assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.equal(j.model_used, 'gemini-3.6-flash');
-  assert.equal(calls.length, 2); assert.ok(Array.isArray(j.verified_botanical_record.verified_images));
+  assert.equal(r.status, 502); assert.match(j.error, /Gemini gemini-3.8-flash error 404/);
+  assert.deepEqual(calls, ['gemini-3.8-flash']);
 });
 await t('analyze accepts fenced JSON', async () => { mock(() => ok(plant, true)); const j = await (await post('/', { image: IMG })).json(); assert.equal(j.status, 'success'); });
 await t('pest mode', async () => { mock(() => ok({ result: { primary_diagnosis: 'Mealybugs' } })); const j = await (await post('/', { mode: 'pest', image: IMG })).json(); assert.equal(j.result.primary_diagnosis, 'Mealybugs'); assert.equal(j.status, 'success'); });
@@ -27,12 +27,13 @@ await t('/api/refine alias + garden advisor', async () => {
   assert.equal((await (await post('/api/refine', { image: IMG, initialResult: plant })).json()).status, 'success');
   const g = await (await post('/garden-advisor', { conditions: 'x', catalogItems: [] })).json(); assert.equal(g.status, 'success'); assert.equal(g.summary, 's');
 });
-await t('hung model is aborted and next model is used', async () => {
-  mock((m, init) => m === 'gemini-3.8-flash' ? new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))) : ok(plant));
-  const t0 = Date.now(); const j = await (await post('/', { image: IMG })).json();
-  assert.equal(j.status, 'success'); assert.ok(Date.now() - t0 < 14000, 'stayed inside client timeout');
+await t('hung Gemini 3.8 request is aborted without trying a retired model', async () => {
+  mock((m, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))));
+  const t0 = Date.now(); const r = await post('/', { image: IMG }); const j = await r.json();
+  assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini gemini-3.8-flash timed out/);
+  assert.deepEqual(calls, ['gemini-3.8-flash']); assert.ok(Date.now() - t0 < 14000, 'stayed inside client timeout');
 });
-await t('all models fail -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
+await t('Gemini 3.8 failure -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
 await t('missing image -> 400', async () => { const r = await post('/', { mode: 'plant' }); assert.equal(r.status, 400); });
 await t('missing API key -> 500 config error', async () => { const r = await post('/', { image: IMG }, {}); assert.equal(r.status, 500); });
 await t('CORS preflight', async () => { const r = await worker.fetch(new Request('https://w.test/', { method: 'OPTIONS' }), env); assert.equal(r.status, 204); assert.equal(r.headers.get('access-control-allow-origin'), '*'); });
