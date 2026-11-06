@@ -59,6 +59,7 @@ await test('exact taxon match returns only curator-approved public reference ima
   const result = await response.json();
   assert.equal(response.status, 200);
   assert.equal(result.database_crosscheck.status, 'exact_match');
+  assert.equal(result.database_crosscheck.identification_status, 'ai_suggestion_only');
   assert.equal(result.database_crosscheck.database_verification_status, 'scientifically_verified');
   assert.equal(result.verified_botanical_record.verified_images.length, 1);
   assert.equal(result.verified_botanical_record.verified_images[0].image_url, 'https://plants.example.org/plumeria-rubra.jpg');
@@ -79,6 +80,7 @@ await test('fuzzy database results are not treated as exact identification match
   };
   const result = await (await call()).json();
   assert.equal(result.database_crosscheck.status, 'not_found');
+  assert.equal(result.database_crosscheck.identification_status, 'ai_suggestion_only');
   assert.equal(result.verified_botanical_record.verified_images.length, 0);
   assert.match(result.database_crosscheck.message, /unverified suggestion/);
 });
@@ -93,7 +95,25 @@ await test('reference database outage never blocks the Gemini identification', a
   assert.equal(response.status, 200);
   assert.equal(result.status, 'success');
   assert.equal(result.database_crosscheck.status, 'unavailable');
+  assert.equal(result.database_crosscheck.identification_status, 'ai_suggestion_only');
   assert.equal(result.candidates[0].scientific_name, 'Plumeria rubra');
+});
+
+await test('a stalled reference database times out without blocking the AI result', async () => {
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes('generativelanguage.googleapis.com')) return geminiResponse();
+    return new Promise((resolve, reject) => {
+      init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    });
+  };
+  const started = Date.now();
+  const response = await call();
+  const result = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(result.status, 'success');
+  assert.equal(result.database_crosscheck.status, 'unavailable');
+  assert.equal(result.database_crosscheck.identification_status, 'ai_suggestion_only');
+  assert.ok(Date.now() - started < 4000, 'reference lookup exceeded its timeout budget');
 });
 
 console.log(`ALL ${passed} BOTANICAL RECOGNITION TESTS PASSED`);
