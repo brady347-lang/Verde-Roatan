@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import readXlsxFile from 'read-excel-file/browser';
+import readXlsxFile from 'read-excel-file';
 import { AlertCircle, Download, FileSpreadsheet, FileText, Loader2 } from 'lucide-react';
 import { BotanicalDocument } from '../../types/botanicalKnowledge';
 import { getBotanicalSourceFile } from '../../services/botanicalSourceFileStorage';
