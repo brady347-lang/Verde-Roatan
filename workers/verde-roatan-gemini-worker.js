@@ -12,8 +12,9 @@
  *
  * Environment Secrets / Variables required in Cloudflare Worker settings:
  * - GEMINI_API_KEY (Google AI Studio / Gemini API Key)
- * - SUPABASE_URL (optional: for direct catalog verification)
- * - SUPABASE_SERVICE_ROLE_KEY (optional)
+ * - REVIEW_SUPABASE_URL (optional: curated botanical taxonomy cross-check)
+ * - REVIEW_SUPABASE_SERVICE_ROLE_KEY (optional secret; never expose to the client)
+ * - PRIMARY_SUPABASE_URL / PRIMARY_SUPABASE_ANON_KEY (used by authenticated review routes)
  */
 
 const CORS_HEADERS = {
@@ -109,7 +110,7 @@ export default {
         JSON.stringify({
           status: 'ok',
           worker: 'Verde Roatán Gemini Worker',
-          version: '3.0.0',
+          version: '3.1.0',
           model: GEMINI_MODELS[0],
           time: new Date().toISOString()
         }),
