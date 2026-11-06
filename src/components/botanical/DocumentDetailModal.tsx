@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { BotanicalDocument } from '../../types/botanicalKnowledge';
 import { Language } from '../../types';
+import { BotanicalSourcePreview } from './BotanicalSourcePreview';
 import {
   AlertCircle,
   AlertTriangle,
@@ -70,7 +71,7 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 }) => {
   if (!isOpen || !document) return null;
 
-  const [activeTab, setActiveTab] = useState<'entities' | 'text' | 'pipeline' | 'metadata'>('entities');
+  const [activeTab, setActiveTab] = useState<'source' | 'entities' | 'text' | 'pipeline' | 'metadata'>('source');
   const [editingField, setEditingField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState<string>('');
 
@@ -175,6 +176,17 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
         </div>
 
         {/* Tabs Bar */}
+        <button
+            type="button"
+            onClick={() => setActiveTab('source')}
+            className={`py-1.5 px-3 rounded-xl text-[12px] font-extrabold transition-all flex items-center gap-1.5 ${
+              activeTab === 'source' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5" />
+            Original File
+          </button>
+          
         <div className="flex items-center gap-1 px-2 sm:px-4 pt-2 pb-1 border-b border-[var(--line)] bg-[var(--surface)] overflow-x-auto overflow-y-hidden shrink-0">
           <button
             type="button"
@@ -216,6 +228,10 @@ export const DocumentDetailModal: React.FC<DocumentDetailModalProps> = ({
 
         {/* Content Body */}
         <div className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-6">
+          {activeTab === 'source' && (
+            <BotanicalSourcePreview document={document} />
+          )}
+
           {/* TAB 1: EXTRACTED ENTITIES */}
           {activeTab === 'entities' && (
             <div className="space-y-3">
