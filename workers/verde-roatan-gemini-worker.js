@@ -23,45 +23,9 @@ const CORS_HEADERS = {
   'Access-Control-Max-Age': '86400'
 };
 
-// Curated reference photos for verified Roatán botanical specimens
-const BOTANICAL_SPECIMEN_IMAGE_BANK = {
-  monstera: [
-    { image_url: 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Monstera deliciosa tropical canopy' },
-    { image_url: 'https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Fenestrated split-leaf blade' },
-    { image_url: 'https://images.unsplash.com/photo-1604762524889-3e2fccbc95f8?w=1000&auto=format&fit=crop&q=80', image_type: 'container_specimen', description: 'Nursery container specimen' }
-  ],
-  areca: [
-    { image_url: 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Golden Cane Palm cluster' },
-    { image_url: 'https://images.unsplash.com/photo-1596726696582-7f287959063c?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Pinnate feathery fronds' }
-  ],
-  coconut: [
-    { image_url: 'https://images.unsplash.com/photo-1512453979798-5ea266f8880c?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Tall coastal coconut palm (Cocos nucifera)' },
-    { image_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Long arching coastal fronds' }
-  ],
-  bougainvillea: [
-    { image_url: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Vibrant blooming climbing canopy' },
-    { image_url: 'https://images.unsplash.com/photo-1597848212624-a19eb35e2651?w=1000&auto=format&fit=crop&q=80', image_type: 'bloom_stage', description: 'Papery magenta floral bracts' }
-  ],
-  hibiscus: [
-    { image_url: 'https://images.unsplash.com/photo-1550950158-d0d960dff51b?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Tropical flowering hibiscus shrub' },
-    { image_url: 'https://images.unsplash.com/photo-1567696911980-2eed69a46042?w=1000&auto=format&fit=crop&q=80', image_type: 'bloom_stage', description: 'Prominent style and stamen column' }
-  ],
-  default: [
-    { image_url: 'https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=1000&auto=format&fit=crop&q=80', image_type: 'mature_specimen', description: 'Mature tropical botanical specimen' },
-    { image_url: 'https://images.unsplash.com/photo-1540555700478-4be289fbecef?w=1000&auto=format&fit=crop&q=80', image_type: 'foliage_detail', description: 'Foliage and venation structure' }
-  ]
-};
-
-function resolvePhotos(common = '', sci = '') {
-  const q = `${common} ${sci}`.toLowerCase();
-  if (q.includes('monstera') || q.includes('deliciosa')) return BOTANICAL_SPECIMEN_IMAGE_BANK.monstera;
-  if (q.includes('areca') || q.includes('dypsis')) return BOTANICAL_SPECIMEN_IMAGE_BANK.areca;
-  if (q.includes('coconut') || q.includes('cocos')) return BOTANICAL_SPECIMEN_IMAGE_BANK.coconut;
-  if (q.includes('bougainvillea')) return BOTANICAL_SPECIMEN_IMAGE_BANK.bougainvillea;
-  if (q.includes('hibiscus')) return BOTANICAL_SPECIMEN_IMAGE_BANK.hibiscus;
-  return BOTANICAL_SPECIMEN_IMAGE_BANK.default;
-}
-
+// Reference photos are never guessed or selected from a generic stock-photo bank.
+// The recognition response may include only curator-approved images linked to an exact
+// scientific-name match in the separate botanical reference database.
 
 /**
  * Model policy: only the latest Gemini Flash model and the one before it. Older generations
@@ -239,6 +203,87 @@ export default {
 };
 
 /**
+ * Cross-check Gemini's proposed taxon against the curated botanical reference database.
+ * This is deliberately an exact scientific-name match: fuzzy search results are suggestions,
+ * not proof. Database outages never block the original AI identification.
+ */
+async function crossCheckBotanicalIdentification(parsed, env) {
+  const record = parsed?.verified_botanical_record;
+  const scientificName = String(record?.scientific_name || parsed?.candidates?.[0]?.scientific_name || '').trim();
+  const normalize = (value) => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9×]+/g, ' ').trim().replace(/\\s+/g, ' ');
+  if (!scientificName) return { status: 'not_checked', reason: 'No scientific name was returned by the model.' };
+
+  let tv;
+  try { tv = reviewDatabaseConfig(env); }
+  catch { return { status: 'unavailable', reason: 'The botanical reference database is not configured.' }; }
+
+  try {
+    const response = await tvJson(await fetch(`${tv.url}/rest/v1/rpc/botanical_search`, {
+      method: 'POST',
+      headers: tvHeaders(tv.key),
+      body: JSON.stringify({
+        q: scientificName, p_family: null, p_sun: null, p_water: null,
+        p_min_salt: null, p_pet_safe: false, p_native: false, lim: 10
+      })
+    }));
+    if (!response.ok || !Array.isArray(response.data)) {
+      return { status: 'unavailable', reason: 'The botanical reference search is not available.' };
+    }
+
+    const target = normalize(scientificName);
+    const exact = response.data.find((row) => normalize(row.scientific_name) === target);
+    if (!exact) {
+      if (record) record.verified_images = [];
+      return {
+        status: 'not_found',
+        match_basis: 'exact_scientific_name',
+        proposed_scientific_name: scientificName,
+        message: 'No exact scientific-name match was found in the curated botanical database. The AI result remains an unverified suggestion.'
+      };
+    }
+
+    let referenceImages = [];
+    const imageResponse = await tvJson(await fetch(
+      `${tv.url}/rest/v1/botanical_taxon_images?taxon_id=eq.${encodeURIComponent(exact.id)}&review_status=eq.approved&visibility=eq.public&select=image_url,image_type,source_name,source_url,attribution,license&order=created_at.asc&limit=8`,
+      { headers: tvHeaders(tv.key) }
+    ));
+    if (imageResponse.ok && Array.isArray(imageResponse.data)) {
+      referenceImages = imageResponse.data
+        .filter((image) => typeof image.image_url === 'string' && /^https:\\/\\//i.test(image.image_url))
+        .map((image) => ({
+          image_url: image.image_url,
+          image_type: image.image_type,
+          description: image.attribution || image.source_name || 'Curator-approved botanical reference',
+          source_url: image.source_url || null,
+          license: image.license || null
+        }));
+    }
+
+    if (record) {
+      record.verified_images = referenceImages;
+      record.reference_database = {
+        taxon_id: exact.id,
+        scientific_name: exact.scientific_name,
+        common_name: exact.common_name,
+        family: exact.family,
+        verification_status: exact.verification_status
+      };
+    }
+    return {
+      status: 'exact_match',
+      match_basis: 'exact_scientific_name',
+      database_verification_status: exact.verification_status || 'unverified',
+      reference_image_count: referenceImages.length,
+      message: exact.verification_status === 'scientifically_verified'
+        ? 'The exact scientific name exists in the curated database and is scientifically verified there.'
+        : 'The exact scientific name exists in the curated database, but that record is not scientifically verified.'
+    };
+  } catch {
+    return { status: 'unavailable', reason: 'The botanical reference database could not be reached.' };
+  }
+}
+
+/**
  * Handle initial Plant / Pest Identification with Gemini 3.8 Flash
  */
 async function handleAnalyze(body, apiKey, env) {
@@ -326,11 +371,8 @@ Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
   parsed.status = 'success';
   parsed.model_used = model;
 
-  if (parsed.verified_botanical_record) {
-    parsed.verified_botanical_record.verified_images = resolvePhotos(
-      parsed.verified_botanical_record.common_name,
-      parsed.verified_botanical_record.scientific_name
-    );
+  if (mode !== 'pest') {
+    parsed.database_crosscheck = await crossCheckBotanicalIdentification(parsed, env);
   }
 
   return new Response(JSON.stringify(parsed), {
