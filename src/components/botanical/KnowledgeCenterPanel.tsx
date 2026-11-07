@@ -425,8 +425,8 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
             sources: core.results.map((p, index) => ({
               n: index + 1,
               document_id: p.document_id || p.source_id,
-              document: `${p.source_type.toUpperCase()}: ${p.source_title}`,
-              citation: p.citation,
+              document: `${p.source_type.toUpperCase()}: ${p.source_title} · ${p.verification_status.toUpperCase()}`,
+              citation: [p.citation, p.page_end && p.page_start && p.page_end !== p.page_start ? `pages ${p.page_start}-${p.page_end}` : null].filter(Boolean).join(' · '),
               page: p.page_start,
               similarity: p.rank,
               snippet: p.content,
