@@ -191,9 +191,11 @@ BEGIN
 
   IF length(btrim(coalesce(p_reviewed_by_email, ''))) = 0
      OR p_chunks IS NULL
-     OR jsonb_typeof(p_chunks) IS DISTINCT FROM 'array'
-     OR jsonb_array_length(p_chunks) < 1 THEN
-    RAISE EXCEPTION 'Reviewer identity and at least one curated chunk are required';
+     OR jsonb_typeof(p_chunks) IS DISTINCT FROM 'array' THEN
+    RAISE EXCEPTION 'Reviewer identity and a JSON array of curated chunks are required';
+  END IF;
+  IF jsonb_array_length(p_chunks) < 1 THEN
+    RAISE EXCEPTION 'At least one curated chunk is required';
   END IF;
 
   DELETE FROM public.knowledge_curated_chunks WHERE summary_id = s.id;
