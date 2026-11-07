@@ -1,0 +1,49 @@
+name: Deploy Verde Roatan Knowledge Core Worker
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "workers/verde-botanical-knowledge-core-worker.js"
+      - "wrangler.knowledge-core.toml"
+      - ".github/workflows/deploy-knowledge-core-worker.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verde-botanical-knowledge-core-worker-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy Knowledge Core Worker to Cloudflare
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Knowledge Core tests before deploying
+        run: node workers/verde-botanical-knowledge-core-worker.test.mjs
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error::Missing GitHub Actions secret CLOUDFLARE_API_TOKEN"
+            exit 1
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Missing GitHub Actions secret CLOUDFLARE_ACCOUNT_ID"
+            exit 1
+          fi
+          npx --yes wrangler@4 deploy --config wrangler.knowledge-core.toml

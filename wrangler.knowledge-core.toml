@@ -1,0 +1,9 @@
+# Deploys workers/verde-botanical-knowledge-core-worker.js to the Cloudflare worker of the same name.
+# keep_vars = true keeps the variables and secrets already set in the Cloudflare dashboard:
+#   VERDE_PRIMARY_SUPABASE_URL, VERDE_PRIMARY_SUPABASE_ANON_KEY, VERDE_REVIEW_SUPABASE_URL,
+#   VERDE_REVIEW_SUPABASE_SERVICE_ROLE_KEY (secret), VERDE_ADMIN_EMAILS.
+# This file never contains a key.
+name = "verde-botanical-knowledge-core-worker"
+main = "workers/verde-botanical-knowledge-core-worker.js"
+compatibility_date = "2025-01-01"
+keep_vars = true
