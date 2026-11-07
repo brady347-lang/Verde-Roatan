@@ -268,8 +268,16 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
                 <div><b className="text-[13px] text-[var(--ink)]">{record.common_name}</b><p className="text-[10px] uppercase text-[var(--ink-soft)]">{record.record_type} · {record.verification_status}</p></div>
                 <span className="text-[10px] font-bold text-[var(--ink-soft)]">{record.review_status}</span>
               </div>
-              {record.evidence?.ai_identification && <p className="text-[10px] text-[var(--ink-soft)]">AI suggestion (unverified): {record.evidence.ai_identification.primary_diagnosis || record.common_name}</p>}
+              {record.evidence?.ai_identification && (
+                <div className="rounded-xl bg-[var(--surface-2)] p-2 text-[10px] text-[var(--ink-soft)]">
+                  <b>AI evidence only — unverified:</b> {record.evidence.ai_identification.primary_diagnosis || record.common_name}
+                  {record.evidence.ai_identification.likely_cause && <p>Possible cause: {record.evidence.ai_identification.likely_cause}</p>}
+                  {!!record.evidence.ai_identification.suggested_treatment?.length && <p>Suggested treatment: {record.evidence.ai_identification.suggested_treatment.join('; ')}</p>}
+                  {!!record.evidence.ai_identification.suggested_prevention?.length && <p>Suggested prevention: {record.evidence.ai_identification.suggested_prevention.join('; ')}</p>}
+                </div>
+              )}
               {input(es ? 'Nombre común' : 'Common name', value.common_name, v => setEdits(old => ({ ...old, [record.id]: { ...value, common_name: v } })), 1)}
+              {input(es ? 'Nombre científico' : 'Scientific name', value.scientific_name, v => setEdits(old => ({ ...old, [record.id]: { ...value, scientific_name: v } })), 1)}
               {input(es ? 'Síntomas' : 'Symptoms', value.symptoms, v => setEdits(old => ({ ...old, [record.id]: { ...value, symptoms: v } })))}
               {input(es ? 'Descripción' : 'Description', value.description, v => setEdits(old => ({ ...old, [record.id]: { ...value, description: v } })))}
               {input(es ? 'Tratamiento' : 'Treatment', value.treatment, v => setEdits(old => ({ ...old, [record.id]: { ...value, treatment: v } })))}
