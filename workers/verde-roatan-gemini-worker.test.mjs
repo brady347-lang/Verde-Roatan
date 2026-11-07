@@ -167,7 +167,7 @@ function kMock(state = {}) {
     const J = (o, st = 200, h = {}) => new Response(JSON.stringify(o), { status: st, headers: h });
     if (url.startsWith('https://main.test/auth/v1/user')) return init.headers.Authorization === 'Bearer tok' ? J({ id: 'u1', email: 'boss@x.com' }) : J({}, 401);
     if (url.includes(':batchEmbedContents')) { if (state.embedFail) return J({}, 500); return J({ embeddings: JSON.parse(init.body).requests.map(() => ({ values: vec() })) }); }
-    if (url.includes(':generateContent')) { state.genCalls = (state.genCalls || 0) + 1; return J({ candidates: [{ content: { parts: [{ text: JSON.stringify(state.genReply || {}) }] } }] }); }
+    if (url.includes(':generateContent')) { state.genCalls = (state.genCalls || 0) + 1; if (state.genFail) return new Response('down', { status: 503 }); return J({ candidates: [{ content: { parts: [{ text: JSON.stringify(state.genReply || {}) }] } }] }); }
     if (url.includes('/storage/v1/object/sign/')) return J({ signedURL: '/object/sign/botanical-documents/x?token=t' });
     if (url.includes('/storage/v1/object/botanical-documents/')) return J({ Key: 'ok' });
     if (url.includes('/rest/v1/rpc/match_knowledge_chunks')) { state.rpcBody = JSON.parse(init.body); return J(state.hits || []); }
@@ -264,6 +264,13 @@ await t('knowledge: ask answers only from retrieved sources and cites them; no h
   j = await (await authed('/knowledge/ask', { question: 'How much sun does a coconut palm need?' })).json();
   assert.equal(j.answered, true); assert.equal(j.sources.length, 1); assert.equal(j.sources[0].used, true); assert.equal(j.sources[0].page, 3); assert.equal(st.rpcBody.query_embedding.split(',').length, 768);
   assert.equal(st.rpcBody.include_private, true);
+});
+await t('knowledge: if Gemini is down, ask still returns the approved document passages (no error)', async () => {
+  const st = kMock({ hits: [{ document_id: DOC, original_name: 'Hibiscus.pdf', citation: 'UF 2019', page_number: 7, content: 'Bacterial leaf spot of hibiscus shows water-soaked lesions.', similarity: 0.71 }], genFail: true });
+  const r = await authed('/knowledge/ask', { question: 'Bacteria on hibiscus' }); const j = await r.json();
+  assert.equal(r.status, 200); assert.equal(j.answered, true); assert.equal(j.ai_assisted, false);
+  assert.match(j.answer, /Bacterial leaf spot of hibiscus/); assert.match(j.answer, /Hibiscus\.pdf, page 7/);
+  assert.equal(j.sources.length, 1); assert.equal(j.sources[0].used, true);
 });
 await t('knowledge: promote makes DRAFT unverified records from approved facts only, never overwrites', async () => {
   let posted = null;
