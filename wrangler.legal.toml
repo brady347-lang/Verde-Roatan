@@ -1,0 +1,4 @@
+# Public privacy policy + account-deletion pages for Google Play. No secrets or variables needed.
+name = "verde-roatan-legal"
+main = "workers/verde-roatan-legal-worker.js"
+compatibility_date = "2025-01-01"

@@ -6,6 +6,7 @@ export const API_URL = 'https://verde-roatan-api.brady347.workers.dev';
 export const AI_WORKER_URL = 'https://verde-roatan-gemini-worker.brady347.workers.dev';
 export const CONSTITUTION_WORKER_URL = 'https://verde-roatan-constitution-worker.brady347.workers.dev';
 export const KNOWLEDGE_CORE_WORKER_URL = 'https://verde-botanical-knowledge-core-worker.brady347.workers.dev';
+export const LEGAL_WORKER_URL = 'https://verde-roatan-legal.brady347.workers.dev';
 export const CURRENCY_WORKER_URL = 'https://verde-roatan-currency-worker.brady347.workers.dev';
 // Keep the established production Supabase project as the app's primary database.
 export const SUPABASE_URL = 'https://tjzqxsyxvfdabfguezmu.supabase.co';

@@ -62,6 +62,7 @@ import { KnowledgeCenterPanel } from '../components/botanical/KnowledgeCenterPan
 import { BotanicalKnowledgeCorePanel } from '../components/botanical/BotanicalKnowledgeCorePanel';
 import { ConstitutionPanel } from '../components/botanical/ConstitutionPanel';
 import { AdminInsightsPanel } from '../components/AdminInsightsPanel';
+import { AccountPrivacySection } from '../components/AccountPrivacySection';
 
 interface AccountScreenProps {
   lang: Language;
@@ -995,6 +996,8 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
           {session?.access_token && !isAdmin && (
             <MyServiceRequests lang={lang} accessToken={session.access_token} />
           )}
+
+          <AccountPrivacySection lang={lang} accessToken={session?.access_token} isAdmin={isAdmin} onDeleted={onSignOut} />
 
           {/* My Garden Section */}
           <div className="flex flex-col gap-3">
