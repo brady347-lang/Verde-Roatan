@@ -262,6 +262,7 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
           {records.map(record => {
             const value = recordValues(record);
             const refs = sourceText[record.id] ?? (record.source_references || []).map(x => String(x.citation || x.title || x.url || '')).filter(Boolean).join('\n');
+            const basis = verificationBasis[record.id] || '';
             return <article key={record.id} className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3 flex flex-col gap-2">
               {record.evidence_image_url && <img src={record.evidence_image_url} alt="Submitted specimen evidence" className="max-h-52 w-full rounded-xl object-cover" />}
               <div className="flex items-center justify-between gap-2">
