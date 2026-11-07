@@ -391,7 +391,10 @@ async function searchKnowledge(request, body, env) {
   let safety_note = null;
   if (safetyAsked && !safetyRecorded) {
     safety_note = 'Safety information is not recorded in the retrieved approved knowledge. Do not assume the plant or treatment is safe.';
-    if (titles.has('safety_first')) {\n      const safetyCheck = reportedChecks.find(check => check.key === 'safety_first');\n      if (safetyCheck) safetyCheck.detail = 'Missing safety information is explicitly flagged.';\n    }
+    if (titles.has('safety_first')) {
+      const safetyCheck = reportedChecks.find(check => check.key === 'safety_first');
+      if (safetyCheck) safetyCheck.detail = 'Missing safety information is explicitly flagged.';
+    }
   }
   const answered = result.data.length > 0;
   return json(200, {
