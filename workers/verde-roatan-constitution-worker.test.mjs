@@ -167,7 +167,7 @@ await t('lessons: repeated common-name corrections from distinct customers creat
     id, ai_scientific_name: 'Hibiscus rosa-sinensis', user_decision: 'confirmed', status: 'pending', submitted_by: 'u' + i
   }));
   const confirmations = ['u1', 'u2', 'u3'].map((user_id, i) => ({
-    id: 'c' + i, review_id: 'r' + (i + 1), user_id, decision: 'corrected',
+    id: 'c' + i, review_id: 'r' + (i + 1), user_id, decision: 'not_my_plant',
     corrected_common_name: 'Chinese hibiscus', corrected_scientific_name: null
   }));
   mock({ entities: [], reviews, confirmations, taxa: [] });
@@ -184,7 +184,7 @@ await t('lessons: corrected scientific names are separately grouped and never au
     id, ai_scientific_name: 'Acalypha wilkesiana', user_decision: 'confirmed', status: 'pending', submitted_by: 'u' + i
   }));
   const confirmations = ['u1', 'u2', 'u3'].map((user_id, i) => ({
-    id: 'sc' + i, review_id: 's' + (i + 1), user_id, decision: 'corrected',
+    id: 'sc' + i, review_id: 's' + (i + 1), user_id, decision: 'not_my_plant',
     corrected_common_name: null, corrected_scientific_name: 'Acalypha hispida'
   }));
   mock({ entities: [], reviews, confirmations, taxa: [] });
@@ -199,7 +199,7 @@ await t('lessons: one customer repeating a correction does not meet the threshol
     id, ai_scientific_name: 'Hibiscus rosa-sinensis', user_decision: 'confirmed', status: 'pending', submitted_by: 'same-user'
   }));
   const confirmations = ['c1', 'c2', 'c3'].map((id, i) => ({
-    id, review_id: reviews[i].id, user_id: 'same-user', decision: 'corrected',
+    id, review_id: reviews[i].id, user_id: 'same-user', decision: 'not_my_plant',
     corrected_common_name: 'Chinese hibiscus', corrected_scientific_name: null
   }));
   mock({ entities: [], reviews, confirmations, taxa: [] });
@@ -211,7 +211,7 @@ await t('scheduled study creates pending proposals only and never edits Constitu
     id, ai_scientific_name: 'Hibiscus rosa-sinensis', user_decision: 'confirmed', status: 'pending', submitted_by: 'u' + i
   }));
   const confirmations = ['u1', 'u2', 'u3'].map((user_id, i) => ({
-    id: 'c' + i, review_id: 'r' + (i + 1), user_id, decision: 'corrected',
+    id: 'c' + i, review_id: 'r' + (i + 1), user_id, decision: 'not_my_plant',
     corrected_common_name: 'Chinese hibiscus', corrected_scientific_name: null
   }));
   const db = mock({ entities: [], reviews, confirmations, taxa: [], existing: [] });
