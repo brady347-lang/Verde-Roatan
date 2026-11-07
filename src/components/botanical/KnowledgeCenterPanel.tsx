@@ -404,7 +404,9 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
   const [res, setRes] = useState<{ answered: boolean; answer: string; sources: KnowledgeSource[] } | null>(null);
   // Where the answer came from: documents + constitution first, Gemini only as the labeled backup.
   const [origin, setOrigin] = useState<'knowledge_core' | 'documents' | 'gemini' | null>(null);
-  const [gate, setGate] = useState<ConstitutionAskResult | null>(null);\n  const [coreSafetyNote, setCoreSafetyNote] = useState<string | null>(null);\n  const [coreChecks, setCoreChecks] = useState<Array<{ key: string; title: string; passed: boolean; detail: string }>>([]);
+  const [gate, setGate] = useState<ConstitutionAskResult | null>(null);
+  const [coreSafetyNote, setCoreSafetyNote] = useState<string | null>(null);
+  const [coreChecks, setCoreChecks] = useState<Array<{ key: string; title: string; passed: boolean; detail: string }>>([]);
 
   const ask = async () => {
     if (!accessToken || q.trim().length < 3) return;
