@@ -14,11 +14,11 @@ const post = (path, body, e = env) => worker.fetch(new Request('https://w.test' 
 let n = 0; const t = async (name, fn) => { calls.length = 0; await fn(); console.log('ok', ++n, name); };
 
 await t('health', async () => { const r = await worker.fetch(new Request('https://w.test/health'), env); assert.equal((await r.json()).status, 'ok'); });
-await t('analyze does not call a retired model when Gemini 3.8 returns 404', async () => {
+await t('if every approved model returns 404, all three are tried in order and the error is readable', async () => {
   mock(() => new Response('model unavailable', { status: 404 }));
   const r = await post('/', { mode: 'plant', image: IMG }); const j = await r.json();
-  assert.equal(r.status, 502); assert.match(j.error, /Gemini gemini-3.8-flash error 404/);
-  assert.deepEqual(calls, ['gemini-3.8-flash']);
+  assert.equal(r.status, 502); assert.match(j.error, /Gemini gemini-3.5-flash-lite error 404/);
+  assert.deepEqual(calls, ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite']);
 });
 await t('analyze accepts fenced JSON', async () => { mock(() => ok(plant, true)); const j = await (await post('/', { image: IMG })).json(); assert.equal(j.status, 'success'); });
 await t('pest mode', async () => { mock(() => ok({ result: { primary_diagnosis: 'Mealybugs' } })); const j = await (await post('/', { mode: 'pest', image: IMG })).json(); assert.equal(j.result.primary_diagnosis, 'Mealybugs'); assert.equal(j.status, 'success'); });
@@ -28,19 +28,32 @@ await t('/api/refine alias + garden advisor', async () => {
   assert.equal((await (await post('/api/refine', { image: IMG, initialResult: plant })).json()).status, 'success');
   const g = await (await post('/garden-advisor', { conditions: 'x', catalogItems: [] })).json(); assert.equal(g.status, 'success'); assert.equal(g.summary, 's');
 });
-await t('a slow Gemini 3.8 answer gets 58s (not 25s), is then aborted, and no retired model or retry is tried', async () => {
-  mock((m, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))));
+await t('a hung model is abandoned after 28s and the next model answers', async () => {
+  let n = 0;
+  mock((m, init) => (++n === 1
+    ? new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' }))))
+    : ok(plant)));
   nodeMock.timers.enable({ apis: ['setTimeout'] });
   try {
     let finished = false;
     const pending = post('/', { image: IMG }).then((r) => { finished = true; return r; });
     await new Promise((r) => setImmediate(r));
-    nodeMock.timers.tick(30000); await new Promise((r) => setImmediate(r));
-    assert.equal(finished, false, 'still waiting after 30s (the old 25s cap would have given up)');
-    nodeMock.timers.tick(30000);
+    nodeMock.timers.tick(20000); await new Promise((r) => setImmediate(r));
+    assert.equal(finished, false, 'still waiting on the first model at 20s');
+    nodeMock.timers.tick(9000);
     const r = await pending; const j = await r.json();
-    assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini gemini-3.8-flash timed out/);
-    assert.deepEqual(calls, ['gemini-3.8-flash']);
+    assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.equal(j.model_used, 'gemini-3.8-flash');
+    assert.deepEqual(calls, ['gemini-3.6-flash', 'gemini-3.8-flash']);
+  } finally { nodeMock.timers.reset(); }
+});
+await t('all models hung -> readable timed-out error, never longer than the app waits', async () => {
+  mock((m, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))));
+  nodeMock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  try {
+    const pending = post('/', { image: IMG });
+    for (let k = 0; k < 8; k++) { await new Promise((r) => setImmediate(r)); nodeMock.timers.tick(9000); }
+    const r = await pending; const j = await r.json();
+    assert.equal(r.status, 502); assert.match(j.error, /timed out/);
   } finally { nodeMock.timers.reset(); }
 });
 await t('asks for low thinking; if Google rejects that setting it retries once without it', async () => {
@@ -50,32 +63,32 @@ await t('asks for low thinking; if Google rejects that setting it retries once w
   assert.equal(j.status, 'success');
   assert.equal(bodies[0].thinking_config.thinking_level, 'low');
   assert.equal(bodies[1].thinking_config, undefined);
-  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+  assert.deepEqual(calls, ['gemini-3.6-flash', 'gemini-3.6-flash']);
 });
-await t('a temporary Gemini 503 is retried once on the SAME model and then succeeds', async () => {
+await t('a temporary Gemini 503 is retried once on the same model and then succeeds', async () => {
   let n = 0; mock(() => (++n === 1 ? new Response('busy', { status: 503 }) : ok(plant)));
   const r = await post('/', { image: IMG }); const j = await r.json();
-  assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+  assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.deepEqual(calls, ['gemini-3.6-flash', 'gemini-3.6-flash']);
 });
-await t('a transient 429 honors Retry-After and retries only the approved model', async () => {
+await t('a transient 429 honors Retry-After and retries the same model', async () => {
   let n = 0;
   mock(() => (++n === 1 ? new Response('slow down', { status: 429, headers: { 'Retry-After': '0' } }) : ok(plant)));
   const r = await post('/', { image: IMG }); const j = await r.json();
   assert.equal(r.status, 200); assert.equal(j.status, 'success');
-  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+  assert.deepEqual(calls, ['gemini-3.6-flash', 'gemini-3.6-flash']);
 });
 await t('an exhausted Gemini quota returns an actionable message without pointless retries', async () => {
   mock(() => new Response(JSON.stringify({ error: { message: 'Quota exceeded for requests per day.' } }), { status: 429 }));
   const r = await post('/', { image: IMG }); const j = await r.json();
   assert.equal(r.status, 502); assert.match(j.error, /quota appears exhausted/i);
   assert.match(j.error, /Google AI Studio quota and billing/i);
-  assert.deepEqual(calls, ['gemini-3.8-flash']);
+  assert.deepEqual(calls, ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite']);
 });
 await t('a persistent transient 429 stops after bounded retries with a readable message', async () => {
   mock(() => new Response('slow down', { status: 429, headers: { 'Retry-After': '0' } }));
   const r = await post('/', { image: IMG }); const j = await r.json();
   assert.equal(r.status, 502); assert.match(j.error, /temporarily rate-limiting/i);
-  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash']);
+  assert.equal(calls.length, 9);
 });
 await t('Gemini 3.8 failure -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
 await t('missing image -> 400', async () => { const r = await post('/', { mode: 'plant' }); assert.equal(r.status, 400); });
