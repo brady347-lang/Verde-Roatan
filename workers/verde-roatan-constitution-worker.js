@@ -131,7 +131,8 @@ async function studySignals(env) {
     const correctedScientific = clean(confirmation.corrected_scientific_name, 160);
     const correctedCommon = clean(confirmation.corrected_common_name, 160);
     if (!correctedScientific && !correctedCommon) continue;
-    if (confirmation.decision !== 'corrected') continue;
+    // Existing feedback UI stores the user's decision (e.g. not_my_plant) in this field;
+    // the corrected_* columns are the actual correction payload and must be read independently.
     const review = reviewById.get(confirmation.review_id);
     if (!review || !confirmation.user_id) continue;
     const originalScientific = clean(review.ai_scientific_name, 160);
@@ -198,7 +199,7 @@ async function studySignals(env) {
       facts_rejected_or_edited: entities.data.filter((e) => ['rejected', 'modified'].includes(e.approval_status)).length,
       identification_submissions: reviews.data.length,
       identification_confirmations: confirmations.data.length,
-      customer_corrections: confirmations.data.filter((c) => c.decision === 'corrected' && (clean(c.corrected_common_name, 160) || clean(c.corrected_scientific_name, 160))).length,
+      customer_corrections: confirmations.data.filter((c) => clean(c.corrected_common_name, 160) || clean(c.corrected_scientific_name, 160)).length,
       identifications_doubted: reviews.data.filter((r) => ['almost', 'not_my_plant'].includes(r.user_decision)).length,
       published_taxa: taxa.data.length,
       scientifically_verified_taxa: taxa.data.filter((t) => t.verification_status === 'scientifically_verified').length
