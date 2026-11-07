@@ -7,6 +7,7 @@ on:
     branches:
       - main
       - safety/supabase-target-hardening
+      - feature/verde-knowledge-core
 
 permissions:
   contents: write
