@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileText, Loader2, RefreshCw, Search, Upload } from 'lucide-react';
 import {
-  KnowledgeDocument, KnowledgeEntity, KnowledgeSource, askKnowledge, extractKnowledgeEntities, getKnowledgeDocument,
+  KnowledgeDocument, KnowledgeEntity, KnowledgeSource, extractKnowledgeEntities, getKnowledgeDocument,
   ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf, BotanicalReferenceImage, listBotanicalReferenceImages, uploadBotanicalReferenceImage, reviewBotanicalReferenceImage, searchBotanicalTaxa, searchVerdeKnowledge
 } from '../../services/api';
 import { extractPdfPages } from '../../lib/pdfText';
@@ -397,13 +397,12 @@ const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, 
 
 const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, accessToken }) => {
   const [q, setQ] = useState('');
-  const [minSim, setMinSim] = useState(0.35);
   const [includePrivate, setIncludePrivate] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [res, setRes] = useState<{ answered: boolean; answer: string; sources: KnowledgeSource[] } | null>(null);
   // Where the answer came from: documents + constitution first, Gemini only as the labeled backup.
-  const [origin, setOrigin] = useState<'knowledge_core' | 'documents' | 'gemini' | null>(null);
+  const [origin, setOrigin] = useState<'knowledge_core' | 'documents' | 'not_recorded' | null>(null);
   const [gate, setGate] = useState<ConstitutionAskResult | null>(null);
   const [coreSafetyNote, setCoreSafetyNote] = useState<string | null>(null);
   const [coreChecks, setCoreChecks] = useState<Array<{ key: string; title: string; passed: boolean; detail: string }>>([]);
@@ -449,9 +448,16 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
         });
         return;
       }
-      // 3) Preserve the existing explicitly labeled Gemini-assisted fallback.
-      setGate(first); setOrigin('gemini');
-      setRes(await askKnowledge(accessToken, q.trim(), { includePrivate, minSimilarity: minSim }));
+      // 3) If neither approved source route has evidence, do not generate an unsupported answer.
+      setGate(first);
+      setOrigin('not_recorded');
+      setRes({
+        answered: false,
+        answer: es
+          ? 'No está registrado en el conocimiento aprobado. Añade una fuente, revísala y apruébala antes de usar esta afirmación.'
+          : 'Not recorded in approved knowledge. Add a source, review it and approve it before using this claim.',
+        sources: []
+      });
     }
     catch (e) { setError(e instanceof Error ? e.message : 'The question failed.'); }
     finally { setBusy(false); }
@@ -461,7 +467,6 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
     <div className="flex flex-col gap-2.5">
       <textarea className={inputCls} rows={2} value={q} onChange={(e) => setQ(e.target.value)} placeholder={es ? 'Pregunta a los documentos aprobados…' : 'Ask the approved documents…'} />
       <label className="text-[12px] text-[var(--ink)] flex items-center gap-2"><input type="checkbox" checked={includePrivate} onChange={(e) => setIncludePrivate(e.target.checked)} />{es ? 'Incluir documentos privados (desmarca para simular el consultor público)' : 'Include private documents (untick to simulate the public consultant)'}</label>
-      <label className="text-[12px] text-[var(--ink)] flex items-center gap-2">{es ? 'Similitud mínima' : 'Minimum similarity'}: {minSim.toFixed(2)}<input type="range" min={0.2} max={0.8} step={0.05} value={minSim} onChange={(e) => setMinSim(Number(e.target.value))} /></label>
       <button type="button" className={btnCls} disabled={busy || q.trim().length < 3 || !accessToken} onClick={ask}>{busy ? <Loader2 className="w-4 h-4 inline animate-spin mr-1" /> : <Search className="w-4 h-4 inline mr-1" />}{es ? 'Preguntar' : 'Ask'}</button>
       {error && <p role="alert" className="text-[12.5px] font-semibold text-red-600">{error}</p>}
       {res && (
@@ -472,7 +477,7 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
                 ? (es ? 'Del Knowledge Core aprobado · sin IA' : 'From approved Knowledge Core · no AI')
                 : origin === 'documents'
                   ? (es ? 'De tus documentos aprobados · sin IA' : 'From your approved documents · no AI')
-                  : (es ? 'Nada en los documentos por búsqueda de texto: búsqueda asistida por Gemini' : 'Nothing found by document text search: Gemini-assisted search')}
+                  : (es ? 'No se encontró evidencia aprobada · no se generó una respuesta con IA' : 'No approved evidence found · no AI-generated answer')}
             </p>
           )}
           <div className={`rounded-2xl p-3 text-[13.5px] whitespace-pre-line ${res.answered ? 'bg-emerald-50 text-[var(--ink)]' : 'bg-amber-50 text-amber-900'}`}>
