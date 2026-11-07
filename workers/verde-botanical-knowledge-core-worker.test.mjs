@@ -213,7 +213,7 @@ test('public knowledge search excludes private data, reports no-AI retrieval and
   assert.equal(j.ai_used, false);
   assert.equal(j.answered, true);
   assert.match(j.answer, /Palm guide.pdf, pages 4/);
-  assert.ok(j.constitution.checks.some(c => c.key === 'approved_sources_only' && c.passed));
+  assert.ok(j.constitution.checks.some(c => c.key === 'approved_sources_only' && c.passed));\n  assert.ok(j.constitution.checks.some(c => c.key === 'community_stays_separate' && c.passed));\n  assert.ok(j.constitution.checks.some(c => c.key === 'humans_decide' && c.passed));\n  assert.ok(j.constitution.checks.some(c => c.key === 'safety_first' && c.passed));
   assert.ok(calls.every(c => !/generativelanguage|gemini/i.test(c.url)));
 });
 
