@@ -48,10 +48,25 @@ await t('a temporary Gemini 503 is retried once on the SAME model and then succe
   const r = await post('/', { image: IMG }); const j = await r.json();
   assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
 });
-await t('a persistent 429 stops after one retry, readable 502, never another model', async () => {
-  mock(() => new Response('slow down', { status: 429 }));
+await t('a transient 429 honors Retry-After and retries only the approved model', async () => {
+  let n = 0;
+  mock(() => (++n === 1 ? new Response('slow down', { status: 429, headers: { 'Retry-After': '0' } }) : ok(plant)));
   const r = await post('/', { image: IMG }); const j = await r.json();
-  assert.equal(r.status, 502); assert.match(j.error, /Gemini gemini-3.8-flash error 429/); assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+  assert.equal(r.status, 200); assert.equal(j.status, 'success');
+  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+});
+await t('an exhausted Gemini quota returns an actionable message without pointless retries', async () => {
+  mock(() => new Response(JSON.stringify({ error: { message: 'Quota exceeded for requests per day.' } }), { status: 429 }));
+  const r = await post('/', { image: IMG }); const j = await r.json();
+  assert.equal(r.status, 502); assert.match(j.error, /quota appears exhausted/i);
+  assert.match(j.error, /Google AI Studio quota and billing/i);
+  assert.deepEqual(calls, ['gemini-3.8-flash']);
+});
+await t('a persistent transient 429 stops after bounded retries with a readable message', async () => {
+  mock(() => new Response('slow down', { status: 429, headers: { 'Retry-After': '0' } }));
+  const r = await post('/', { image: IMG }); const j = await r.json();
+  assert.equal(r.status, 502); assert.match(j.error, /temporarily rate-limiting/i);
+  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash', 'gemini-3.8-flash']);
 });
 await t('Gemini 3.8 failure -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
 await t('missing image -> 400', async () => { const r = await post('/', { mode: 'plant' }); assert.equal(r.status, 400); });
