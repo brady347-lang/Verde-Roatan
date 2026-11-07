@@ -1,0 +1,214 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import worker from './verde-botanical-knowledge-core-worker.js';
+
+const USER = '11111111-1111-4111-8111-111111111111';
+const RECORD = '22222222-2222-4222-8222-222222222222';
+const SUMMARY = '33333333-3333-4333-8333-333333333333';
+const DOC = '44444444-4444-4444-8444-444444444444';
+const env = {
+  VERDE_PRIMARY_SUPABASE_URL: 'https://primary.test',
+  VERDE_PRIMARY_SUPABASE_ANON_KEY: 'public-key',
+  VERDE_REVIEW_SUPABASE_URL: 'https://review.test',
+  VERDE_REVIEW_SUPABASE_SERVICE_ROLE_KEY: 'service-key',
+  VERDE_ADMIN_EMAILS: 'admin@verde.test'
+};
+const ok = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+const user = (email = 'admin@verde.test', appRole) => ({ id: USER, email, app_metadata: appRole ? { role: appRole } : {} });
+function request(path, body = {}, token = 'valid-token') {
+  return new Request('https://worker.test' + path, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+    body: JSON.stringify(body)
+  });
+}
+function setup(handler, currentUser = user()) {
+  const calls = [];
+  globalThis.fetch = async (url, init = {}) => {
+    url = String(url); calls.push({ url, init });
+    if (url === env.VERDE_PRIMARY_SUPABASE_URL + '/auth/v1/user') return currentUser ? ok(currentUser) : ok({ message: 'bad token' }, 401);
+    return handler(url, init, calls);
+  };
+  return calls;
+}
+
+test('health endpoint is available without database bindings and never advertises Gemini', async () => {
+  const r = await worker.fetch(new Request('https://worker.test/health'), {});
+  const j = await r.json();
+  assert.equal(r.status, 200);
+  assert.equal(j.ai_used, false);
+});
+
+test('pest/disease evidence submission is private, pending and community-submitted', async () => {
+  const calls = setup((url, init) => {
+    if (url.includes('/storage/v1/object/botanical-health-evidence/')) return ok({});
+    if (url.includes('/rest/v1/botanical_health_records') && init.method === 'POST') {
+      const row = JSON.parse(init.body);
+      assert.equal(row.record_type, 'pest');
+      assert.equal(row.review_status, 'pending');
+      assert.equal(row.verification_status, 'community_submitted');
+      assert.equal(row.rag_indexed, false);
+      assert.equal(row.visibility, 'private');
+      assert.equal(row.submitted_by, USER);
+      return ok([row], 201);
+    }
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/health/submit', {
+    record_type: 'pest', common_name: 'Scale insect', scientific_name: 'Coccus sp.',
+    symptoms: 'Sticky honeydew on leaves', image: 'data:image/png;base64,YWJj'
+  }), env);
+  const j = await r.json();
+  assert.equal(r.status, 200);
+  assert.equal(j.review_status, 'pending');
+  assert.ok(calls.some(c => c.url.includes('/storage/v1/object/botanical-health-evidence/')));
+  assert.ok(!calls.some(c => /generativelanguage|gemini/i.test(c.url)));
+});
+
+test('health submission rejects invalid record type and malformed images', async () => {
+  setup(() => { throw new Error('No database request expected'); });
+  let r = await worker.fetch(request('/health/submit', { record_type: 'plant', common_name: 'Hibiscus', image: 'data:image/png;base64,YWJj' }), env);
+  assert.equal(r.status, 400);
+  r = await worker.fetch(request('/health/submit', { record_type: 'disease', common_name: 'Leaf spot', image: 'bad' }), env);
+  assert.equal(r.status, 400);
+});
+
+test('health admin queue rejects non-admin users', async () => {
+  setup(() => { throw new Error('No database request expected'); }, user('customer@verde.test'));
+  const r = await worker.fetch(request('/health/admin/list'), env);
+  assert.equal(r.status, 403);
+});
+
+test('health review cannot scientifically verify without a written basis', async () => {
+  setup((url, init) => {
+    if (url.includes('/rest/v1/botanical_health_records?id=eq.' + RECORD) && (!init.method || init.method === 'GET')) {
+      return ok([{ id: RECORD, review_status: 'pending', verification_status: 'community_submitted' }]);
+    }
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/health/admin/review', {
+    record_id: RECORD, status: 'approved', verification_status: 'scientifically_verified'
+  }), env);
+  assert.equal(r.status, 400);
+});
+
+test('health review only indexes approved records and records reviewer identity', async () => {
+  const calls = setup((url, init) => {
+    if (url.includes('/rest/v1/botanical_health_records?id=eq.' + RECORD) && (!init.method || init.method === 'GET')) {
+      return ok([{ id: RECORD, review_status: 'pending', verification_status: 'community_submitted' }]);
+    }
+    if (url.includes('/rest/v1/botanical_health_records?id=eq.' + RECORD) && init.method === 'PATCH') {
+      const patch = JSON.parse(init.body);
+      assert.equal(patch.review_status, 'approved');
+      assert.equal(patch.rag_indexed, true);
+      assert.equal(patch.visibility, 'public');
+      assert.equal(patch.verification_status, 'scientifically_verified');
+      assert.equal(patch.reviewed_by, USER);
+      assert.equal(patch.verification_basis, 'Compared with a peer-reviewed extension bulletin.');
+      return ok([{ id: RECORD, ...patch }]);
+    }
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/health/admin/review', {
+    record_id: RECORD, status: 'approved', visibility: 'public', rag_indexed: true,
+    verification_status: 'scientifically_verified',
+    verification_basis: 'Compared with a peer-reviewed extension bulletin.'
+  }), env);
+  assert.equal(r.status, 200);
+  assert.ok(!calls.some(c => /generativelanguage|gemini/i.test(c.url)));
+});
+
+test('summary creation creates a pending human-authored version', async () => {
+  setup((url, init) => {
+    if (url.includes('/rest/v1/knowledge_documents?id=eq.' + DOC)) return ok([{ id: DOC, status: 'approved', original_name: 'Palm guide.pdf' }]);
+    if (url.includes('/rest/v1/knowledge_document_summaries?document_id=eq.' + DOC)) return ok([{ version: 2 }]);
+    if (url.includes('/rest/v1/knowledge_document_summaries') && init.method === 'POST') {
+      const row = JSON.parse(init.body);
+      assert.equal(row.version, 3);
+      assert.equal(row.review_status, 'pending');
+      assert.equal(row.generation_method, 'human');
+      return ok([row], 201);
+    }
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/knowledge/summaries/create', {
+    document_id: DOC, summary: 'This is a sufficiently detailed summary of a scientific palm document for review.',
+    source_pages: [3, 5]
+  }), env);
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).summary.version, 3);
+});
+
+test('summary approval requires the original document to be approved and RAG-indexed', async () => {
+  setup((url) => {
+    if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY)) return ok([{ id: SUMMARY, document_id: DOC, review_status: 'pending', summary: 'Summary text long enough to make a useful searchable curated passage.', key_facts: [], critical_details: [], source_pages: [2] }]);
+    if (url.includes('/rest/v1/knowledge_documents?id=eq.' + DOC)) return ok([{ id: DOC, status: 'awaiting_review', rag_indexed: false }]);
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/knowledge/summaries/review', { summary_id: SUMMARY, decision: 'approve' }), env);
+  assert.equal(r.status, 409);
+});
+
+test('summary approval builds curated chunks only after source approval', async () => {
+  const calls = setup((url, init) => {
+    if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY) && (!init.method || init.method === 'GET')) {
+      return ok([{ id: SUMMARY, document_id: DOC, review_status: 'pending', summary: 'A reviewed summary about palm nutrition, potassium deficiency, and leaf symptoms.', key_facts: ['Potassium deficiency causes older frond symptoms.'], critical_details: ['Avoid applying fertilizer to dry soil.'], safety_warnings: ['Wear gloves.'], source_pages: [2, 4] }]);
+    }
+    if (url.includes('/rest/v1/knowledge_documents?id=eq.' + DOC)) return ok([{ id: DOC, status: 'approved', rag_indexed: true }]);
+    if (url.includes('/rest/v1/knowledge_curated_chunks') && init.method === 'POST') {
+      const rows = JSON.parse(init.body);
+      assert.ok(rows.length >= 1);
+      assert.equal(rows[0].page_start, 2);
+      assert.equal(rows[0].page_end, 4);
+      return ok(null, 201);
+    }
+    if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY) && init.method === 'PATCH') {
+      const patch = JSON.parse(init.body);
+      assert.equal(patch.review_status, 'approved');
+      assert.equal(patch.reviewed_by_email, 'admin@verde.test');
+      return ok(null, 204);
+    }
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/knowledge/summaries/review', { summary_id: SUMMARY, decision: 'approve' }), env);
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).review_status, 'approved');
+  assert.ok(!calls.some(c => /generativelanguage|gemini/i.test(c.url)));
+});
+
+test('public knowledge search excludes private data and reports no-AI retrieval', async () => {
+  const calls = setup((url, init) => {
+    if (url.includes('/rest/v1/rpc/search_verde_knowledge')) {
+      const body = JSON.parse(init.body);
+      assert.equal(body.include_private, false);
+      return ok([{ source_type: 'research', source_title: 'Palm guide.pdf', page_start: 4, content: 'Potassium deficiency symptoms.' }]);
+    }
+    throw new Error('Unexpected request: ' + url);
+  }, null);
+  const r = await worker.fetch(request('/knowledge/search', { query: 'palm potassium' }, null), env);
+  const j = await r.json();
+  assert.equal(r.status, 200);
+  assert.equal(j.ai_used, false);
+  assert.equal(j.answered, true);
+  assert.match(j.answer, /Palm guide.pdf, pages 4/);
+  assert.ok(calls.every(c => !/generativelanguage|gemini/i.test(c.url)));
+});
+
+test('private knowledge search is allowed only for authenticated admins', async () => {
+  const calls = setup((url, init) => {
+    if (url.includes('/rest/v1/rpc/search_verde_knowledge')) {
+      assert.equal(JSON.parse(init.body).include_private, true);
+      return ok([]);
+    }
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/knowledge/search', { query: 'hibiscus leaf', include_private: true }), env);
+  assert.equal(r.status, 200);
+  assert.ok(calls.some(c => c.url.includes('/auth/v1/user')));
+});
+
+test('unknown route returns 404 and non-POST method returns 405', async () => {
+  let r = await worker.fetch(request('/not-a-route'), env);
+  assert.equal(r.status, 404);
+  r = await worker.fetch(new Request('https://worker.test/knowledge/search'), env);
+  assert.equal(r.status, 405);
+});
