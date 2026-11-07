@@ -6,4 +6,4 @@ compatibility_date = "2025-01-01"
 keep_vars = true
 
 [triggers]
-crons = ["0 3 * * *"] # Daily at 03:00 UTC; creates pending proposals only.
+crons = ["0 9 * * *"] # Daily at 03:00 Honduras time (UTC-6); pending proposals only.
