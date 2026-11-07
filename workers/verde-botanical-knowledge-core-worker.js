@@ -152,7 +152,10 @@ async function submitHealthEvidence(request, body, env) {
   const inserted = await db(env, 'botanical_health_records', {
     method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row)
   });
-  if (!inserted.ok) {\n    await deletePrivateEvidence(env, path);\n    throw new Error('The evidence was uploaded, but the submission record could not be saved.');\n  }
+  if (!inserted.ok) {
+    await deletePrivateEvidence(env, path);
+    throw new Error('The evidence was uploaded, but the submission record could not be saved.');
+  }
   return json(200, { status: 'success', record_id: id, review_status: 'pending', verification_status: 'community_submitted' });
 }
 
@@ -269,7 +272,10 @@ function makeChunks(summary, facts, critical, warnings) {
       else current = next;
     }
   }
-  if (current) chunks.push(current);
+  if (current) {
+    if (current.length < 20 && chunks.length) chunks[chunks.length - 1] += '\n' + current;
+    else chunks.push(current);
+  }
   return chunks.slice(0, 30);
 }
 
