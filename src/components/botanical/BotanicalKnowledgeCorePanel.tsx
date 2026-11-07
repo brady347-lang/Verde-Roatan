@@ -233,7 +233,10 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
                     <b className="text-[11px] text-[var(--ink)]">{section.title} ({values.length})</b>
                     {values.length ? <ul className="mt-1 list-disc pl-4 space-y-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
                       {values.map((item: any, index: number) => {
-                        const value = typeof item === 'string' ? item : item?.text || item?.value || JSON.stringify(item);
+                        const value = typeof item === 'string' ? item
+                          : typeof item?.text === 'string' ? item.text
+                          : typeof item?.value === 'string' ? item.value
+                          : JSON.stringify(item);
                         return <li key={section.key + '-' + index}>{value}</li>;
                       })}
                     </ul> : <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'No se proporcionó contenido.' : 'No content supplied.'}</p>}
