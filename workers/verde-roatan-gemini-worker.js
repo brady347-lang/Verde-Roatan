@@ -48,44 +48,54 @@ function parseModelJson(raw) {
   }
 }
 
-async function callGemini(env, apiKey, parts, { totalMs = 30000, perCallMs = 12000 } = {}) {
+async function callGemini(env, apiKey, parts, { totalMs = 45000, perCallMs = 25000 } = {}) {
+  // Only one model is allowed (see GEMINI_MODELS), so there is no fallback to wait for. The single
+  // attempt gets enough time for a photo on a slow island connection (the app waits up to 70s), and a
+  // temporary Google error (429 / 5xx) is retried ONCE on the same model. Never another model.
   const models = GEMINI_MODELS;
   const deadline = Date.now() + totalMs;
   let lastError = 'No Gemini model responded.';
 
   for (const model of models) {
-    const remaining = deadline - Date.now();
-    if (remaining < 1500) break;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), Math.min(perCallMs, remaining));
-    try {
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          signal: controller.signal,
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts }],
-            generationConfig: { response_mime_type: 'application/json', temperature: 0.2 }
-          })
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const remaining = deadline - Date.now();
+      if (remaining < 1500) break;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), Math.min(perCallMs, remaining));
+      let retry = false;
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            signal: controller.signal,
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts }],
+              generationConfig: { response_mime_type: 'application/json', temperature: 0.2 }
+            })
+          }
+        );
+        if (!res.ok) {
+          lastError = `Gemini ${model} error ${res.status}`;
+          retry = attempt === 0 && (res.status === 429 || res.status >= 500);
+        } else {
+          const data = await res.json();
+          const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!text) {
+            lastError = `Gemini ${model} returned an empty response.`;
+          } else {
+            return { parsed: parseModelJson(text), model };
+          }
         }
-      );
-      if (!res.ok) {
-        lastError = `Gemini ${model} error ${res.status}`;
-        continue;
+      } catch (err) {
+        // A timeout is not retried: a second long wait would only make the person wait longer.
+        lastError = err?.name === 'AbortError' ? `Gemini ${model} timed out.` : (err?.message || lastError);
+      } finally {
+        clearTimeout(timer);
       }
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (!text) {
-        lastError = `Gemini ${model} returned an empty response.`;
-        continue;
-      }
-      return { parsed: parseModelJson(text), model };
-    } catch (err) {
-      lastError = err?.name === 'AbortError' ? `Gemini ${model} timed out.` : (err?.message || lastError);
-    } finally {
-      clearTimeout(timer);
+      if (!retry) break;
+      await new Promise((resolve) => setTimeout(resolve, 800));
     }
   }
   throw new Error(lastError);
@@ -1239,7 +1249,7 @@ async function knowledgeReferenceImageUpload(request, env) {
 async function knowledgeReferenceTaxaSearch(request, body, env) {
   const auth = await requireImportAdmin(request, env);
   if (auth.response) return auth.response;
-  const q = String(body.q || '').trim().replace(/[(),.*%_\\\\]/g, ' ').replace(/\\s+/g, ' ').slice(0, 80);
+  const q = String(body.q || '').trim().replace(/[(),.*%_\\\"]/g, ' ').replace(/\s+/g, ' ').slice(0, 80);
   if (q.length < 2) return jsonResponse(200, { status: 'success', results: [] });
   const tv = reviewDatabaseConfig(env);
   const params = new URLSearchParams({

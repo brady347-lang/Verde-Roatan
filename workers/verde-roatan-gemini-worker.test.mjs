@@ -1,5 +1,6 @@
 import worker from './verde-roatan-gemini-worker.js';
 import assert from 'node:assert/strict';
+import { mock as nodeMock } from 'node:test';
 
 const IMG = 'data:image/jpeg;base64,/9j/4AAQSkZJRg==';
 const env = { GEMINI_API_KEY: 'k' };
@@ -27,11 +28,30 @@ await t('/api/refine alias + garden advisor', async () => {
   assert.equal((await (await post('/api/refine', { image: IMG, initialResult: plant })).json()).status, 'success');
   const g = await (await post('/garden-advisor', { conditions: 'x', catalogItems: [] })).json(); assert.equal(g.status, 'success'); assert.equal(g.summary, 's');
 });
-await t('hung Gemini 3.8 request is aborted without trying a retired model', async () => {
+await t('a slow Gemini 3.8 answer gets 25s (not 12s), is then aborted, and no retired model or retry is tried', async () => {
   mock((m, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))));
-  const t0 = Date.now(); const r = await post('/', { image: IMG }); const j = await r.json();
-  assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini gemini-3.8-flash timed out/);
-  assert.deepEqual(calls, ['gemini-3.8-flash']); assert.ok(Date.now() - t0 < 14000, 'stayed inside client timeout');
+  nodeMock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    let finished = false;
+    const pending = post('/', { image: IMG }).then((r) => { finished = true; return r; });
+    await new Promise((r) => setImmediate(r));
+    nodeMock.timers.tick(13000); await new Promise((r) => setImmediate(r));
+    assert.equal(finished, false, 'still waiting after 13s (the old 12s cap would have given up)');
+    nodeMock.timers.tick(13000);
+    const r = await pending; const j = await r.json();
+    assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini gemini-3.8-flash timed out/);
+    assert.deepEqual(calls, ['gemini-3.8-flash']);
+  } finally { nodeMock.timers.reset(); }
+});
+await t('a temporary Gemini 503 is retried once on the SAME model and then succeeds', async () => {
+  let n = 0; mock(() => (++n === 1 ? new Response('busy', { status: 503 }) : ok(plant)));
+  const r = await post('/', { image: IMG }); const j = await r.json();
+  assert.equal(r.status, 200); assert.equal(j.status, 'success'); assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+});
+await t('a persistent 429 stops after one retry, readable 502, never another model', async () => {
+  mock(() => new Response('slow down', { status: 429 }));
+  const r = await post('/', { image: IMG }); const j = await r.json();
+  assert.equal(r.status, 502); assert.match(j.error, /Gemini gemini-3.8-flash error 429/); assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
 });
 await t('Gemini 3.8 failure -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
 await t('missing image -> 400', async () => { const r = await post('/', { mode: 'plant' }); assert.equal(r.status, 400); });
