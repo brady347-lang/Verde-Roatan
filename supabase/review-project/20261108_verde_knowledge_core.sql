@@ -173,7 +173,8 @@ RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
-AS $$DECLARE
+AS $$
+DECLARE
   s public.knowledge_document_summaries%ROWTYPE;
   d public.knowledge_documents%ROWTYPE;
 BEGIN
