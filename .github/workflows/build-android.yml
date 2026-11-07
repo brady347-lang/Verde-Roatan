@@ -8,6 +8,7 @@ on:
       - main
       - safety/supabase-target-hardening
       - feature/verde-knowledge-core
+      - fix/verde-knowledge-learning
 
 permissions:
   contents: write
