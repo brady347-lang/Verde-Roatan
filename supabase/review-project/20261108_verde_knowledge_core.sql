@@ -198,6 +198,17 @@ BEGIN
     RAISE EXCEPTION 'At least one curated chunk is required';
   END IF;
 
+  IF EXISTS (
+    SELECT 1
+    FROM jsonb_to_recordset(p_chunks) AS x(
+      chunk_index integer, page_start integer, page_end integer, content text
+    )
+    WHERE x.page_start IS NULL OR x.page_start < 1
+       OR (x.page_end IS NOT NULL AND x.page_end < x.page_start)
+  ) THEN
+    RAISE EXCEPTION 'Every curated summary chunk must include valid source page provenance';
+  END IF;
+
   DELETE FROM public.knowledge_curated_chunks WHERE summary_id = s.id;
   INSERT INTO public.knowledge_curated_chunks
     (summary_id, document_id, chunk_index, page_start, page_end, content)
