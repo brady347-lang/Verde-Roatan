@@ -65,7 +65,7 @@ The current app already had the document-ingestion and plant-identification revi
 - `workers/verde-botanical-knowledge-core-worker.test.mjs`: focused tests for authentication, private evidence, review gates, atomic summary approval, private retrieval and no-Gemini behavior. Added to `npm run test:worker`.
 - `src/components/botanical/BotanicalKnowledgeCorePanel.tsx`: admin panel for summary versions and pest/disease records; existing Knowledge Center and Identification Review Queue remain in place.
 - `IdentifyScreen.tsx` and `App.tsx`: pest/disease reports can now be submitted as private, unverified evidence for admin review. Plant feedback remains on its existing workflow.
-- `KnowledgeCenterPanel.tsx`: the new curated Knowledge Core search is attempted first, then the existing Constitution/raw-document route, with the existing clearly labeled Gemini-assisted fallback preserved.
+- `KnowledgeCenterPanel.tsx`: the new curated Knowledge Core search is attempted first, then the existing Constitution/raw-document route, and returns “Not recorded” rather than generating an unsupported Gemini answer when no approved evidence is found.
 - `src/services/api.ts` and `src/data/initialData.ts`: additive client methods and a dedicated Worker URL.
 
 ## Delivery stages
