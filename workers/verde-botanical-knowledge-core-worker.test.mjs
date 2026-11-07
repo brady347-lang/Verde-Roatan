@@ -72,6 +72,27 @@ test('health submission rejects invalid record type and malformed images', async
   assert.equal(r.status, 400);
 });
 
+test('admin can create a first-class pest or disease knowledge record without publishing it', async () => {
+  setup((url, init) => {
+    if (url.includes('/rest/v1/botanical_health_records') && init.method === 'POST') {
+      const row = JSON.parse(init.body);
+      assert.equal(row.record_type, 'disease');
+      assert.equal(row.common_name, 'Anthracnose');
+      assert.equal(row.review_status, 'pending');
+      assert.equal(row.rag_indexed, false);
+      assert.equal(row.visibility, 'private');
+      return ok([row], 201);
+    }
+    throw new Error('Unexpected request: ' + url);
+  });
+  const r = await worker.fetch(request('/health/admin/create', {
+    record_type: 'disease', common_name: 'Anthracnose', symptoms: 'Dark lesions on leaves',
+    treatment: 'Treatment pending source review'
+  }), env);
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).record.review_status, 'pending');
+});
+
 test('health admin queue rejects non-admin users', async () => {
   setup(() => { throw new Error('No database request expected'); }, user('customer@verde.test'));
   const r = await worker.fetch(request('/health/admin/list'), env);
