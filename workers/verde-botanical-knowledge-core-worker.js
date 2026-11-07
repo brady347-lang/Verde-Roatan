@@ -143,6 +143,38 @@ async function submitHealthEvidence(request, body, env) {
   return json(200, { status: 'success', record_id: id, review_status: 'pending', verification_status: 'community_submitted' });
 }
 
+async function createHealthRecord(request, body, env) {
+  const auth = await admin(request, env);
+  if (auth.error) return auth.error;
+  const kind = ['pest', 'disease'].includes(body.record_type) ? body.record_type : '';
+  const name = clean(body.common_name, 180);
+  if (!kind || name.length < 2) return json(400, { status: 'error', error: 'Choose pest or disease and provide a name.' });
+  const row = {
+    record_type: kind, common_name: name,
+    scientific_name: clean(body.scientific_name, 180) || null,
+    aliases: Array.isArray(body.aliases) ? body.aliases.map(v => clean(v, 120)).filter(Boolean).slice(0, 30) : [],
+    description: clean(body.description, 3000) || null,
+    identification_features: clean(body.identification_features, 3000) || null,
+    symptoms: clean(body.symptoms, 3000),
+    causes: clean(body.causes, 3000) || null,
+    treatment: clean(body.treatment, 5000) || null,
+    prevention: clean(body.prevention, 3000) || null,
+    affected_plants: Array.isArray(body.affected_plants) ? body.affected_plants.map(v => clean(v, 120)).filter(Boolean).slice(0, 30) : [],
+    severity_guidance: body.severity_guidance && typeof body.severity_guidance === 'object' ? body.severity_guidance : {},
+    safety_warnings: Array.isArray(body.safety_warnings) ? body.safety_warnings.slice(0, 30) : [],
+    source_references: Array.isArray(body.source_references) ? body.source_references.slice(0, 20) : [],
+    evidence: { created_by_admin: true },
+    visibility: 'private', review_status: 'pending',
+    verification_status: 'community_submitted', rag_indexed: false,
+    submitted_by: auth.user.id, submitted_by_email: clean(auth.user.email, 254) || null
+  };
+  const inserted = await db(env, 'botanical_health_records', {
+    method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row)
+  });
+  if (!inserted.ok || !Array.isArray(inserted.data) || !inserted.data[0]) throw new Error('The health record could not be created.');
+  return json(200, { status: 'success', record: inserted.data[0] });
+}
+
 async function listHealthRecords(request, body, env) {
   const auth = await admin(request, env);
   if (auth.error) return auth.error;
@@ -178,6 +210,14 @@ async function reviewHealthRecord(request, body, env) {
     reviewed_at: now,
     review_note: clean(body.review_note, 1000) || null
   };
+  const fields = body.fields && typeof body.fields === 'object' ? body.fields : {};
+  for (const key of ['common_name', 'scientific_name', 'description', 'identification_features', 'symptoms', 'causes', 'treatment', 'prevention']) {
+    if (fields[key] !== undefined) patch[key] = key === 'common_name' ? clean(fields[key], 180) : clean(fields[key], key === 'treatment' ? 5000 : 3000);
+  }
+  if (fields.aliases !== undefined && Array.isArray(fields.aliases)) patch.aliases = fields.aliases.map(v => clean(v, 120)).filter(Boolean).slice(0, 30);
+  if (fields.affected_plants !== undefined && Array.isArray(fields.affected_plants)) patch.affected_plants = fields.affected_plants.map(v => clean(v, 120)).filter(Boolean).slice(0, 30);
+  if (fields.safety_warnings !== undefined && Array.isArray(fields.safety_warnings)) patch.safety_warnings = fields.safety_warnings.slice(0, 30);
+  if (fields.severity_guidance !== undefined && fields.severity_guidance && typeof fields.severity_guidance === 'object') patch.severity_guidance = fields.severity_guidance;
   const basis = clean(body.verification_basis, 1000);
   if (body.status !== 'approved') {
     patch.rag_indexed = false;
@@ -277,7 +317,7 @@ async function reviewSummary(request, body, env) {
   if (!sourceDoc || sourceDoc.status !== 'approved' || sourceDoc.rag_indexed !== true) {
     return json(409, { status: 'error', error: 'Approve and index the original source document in the existing Knowledge Center before approving its summary.' });
   }
-  const chunks = makeChunks(summary.summary, summary.key_facts, summary.critical_details);
+  const chunks = makeChunks(summary.summary, summary.key_facts, summary.critical_details, summary.safety_warnings);
   if (!chunks.length) return json(400, { status: 'error', error: 'The summary contains no searchable text.' });
   const pageList = Array.isArray(summary.source_pages) ? summary.source_pages : [];
   const pageStart = pageList.length ? Math.min(...pageList) : null;
@@ -328,7 +368,7 @@ export default {
     if (request.method !== 'POST') return json(405, { status: 'error', error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     try {
-      if (path === '/health/submit') return await submitHealthEvidence(request, body, env);
+      if (path === '/health/submit') return await submitHealthEvidence(request, body, env);\n      if (path === '/health/admin/create') return await createHealthRecord(request, body, env);
       if (path === '/health/admin/list') return await listHealthRecords(request, body, env);
       if (path === '/health/admin/review') return await reviewHealthRecord(request, body, env);
       if (path === '/knowledge/summaries/list') return await listSummaries(request, body, env);
