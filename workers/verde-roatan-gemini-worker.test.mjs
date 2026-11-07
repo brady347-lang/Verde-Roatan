@@ -43,6 +43,15 @@ await t('a slow Gemini 3.8 answer gets 58s (not 25s), is then aborted, and no re
     assert.deepEqual(calls, ['gemini-3.8-flash']);
   } finally { nodeMock.timers.reset(); }
 });
+await t('asks for low thinking; if Google rejects that setting it retries once without it', async () => {
+  const bodies = []; let n = 0;
+  mock((m, init) => { bodies.push(JSON.parse(init.body).generationConfig); return ++n === 1 ? new Response(JSON.stringify({ error: { message: 'Invalid value for thinking_level' } }), { status: 400 }) : ok(plant); });
+  const j = await (await post('/', { image: IMG })).json();
+  assert.equal(j.status, 'success');
+  assert.equal(bodies[0].thinking_config.thinking_level, 'low');
+  assert.equal(bodies[1].thinking_config, undefined);
+  assert.deepEqual(calls, ['gemini-3.8-flash', 'gemini-3.8-flash']);
+});
 await t('a temporary Gemini 503 is retried once on the SAME model and then succeeds', async () => {
   let n = 0; mock(() => (++n === 1 ? new Response('busy', { status: 503 }) : ok(plant)));
   const r = await post('/', { image: IMG }); const j = await r.json();

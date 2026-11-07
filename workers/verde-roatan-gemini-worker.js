@@ -81,6 +81,9 @@ async function callGemini(env, apiKey, parts, { totalMs = 62000, perCallMs = 580
   const models = GEMINI_MODELS;
   const deadline = Date.now() + totalMs;
   let lastError = 'No Gemini model responded.';
+  // Ask for quick thinking so photo answers arrive well inside the time limit. If Google rejects the
+  // setting, the same model is retried once without it.
+  let useThinking = true;
 
   for (const model of models) {
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -99,7 +102,11 @@ async function callGemini(env, apiKey, parts, { totalMs = 62000, perCallMs = 580
             signal: controller.signal,
             body: JSON.stringify({
               contents: [{ role: 'user', parts }],
-              generationConfig: { response_mime_type: 'application/json', temperature: 0.2 }
+              generationConfig: {
+                response_mime_type: 'application/json',
+                temperature: 0.2,
+                ...(useThinking ? { thinking_config: { thinking_level: 'low' } } : {})
+              }
             })
           }
         );
@@ -113,6 +120,11 @@ async function callGemini(env, apiKey, parts, { totalMs = 62000, perCallMs = 580
             const quotaExhausted = /quota.*exceeded|exceeded.*quota|current quota|daily.*limit|billing.*disabled|limit:\s*0|requests per day/i.test(detail);
             lastError = describeGemini429(model, detail, retryDelay, quotaExhausted);
             retry = !quotaExhausted && attempt < 2 && retryDelay <= 8000 && (Date.now() + retryDelay + 1500 < deadline);
+          } else if (res.status === 400 && useThinking && /thinking/i.test(detail)) {
+            useThinking = false;
+            lastError = `Gemini ${model} error 400: ${detail.slice(0, 240)}`;
+            retry = true;
+            retryDelay = 0;
           } else {
             lastError = `Gemini ${model} error ${res.status}${detail ? `: ${detail.slice(0, 240)}` : ''}`;
             retry = res.status >= 500 && attempt === 0;
