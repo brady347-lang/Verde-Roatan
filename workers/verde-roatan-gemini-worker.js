@@ -29,11 +29,12 @@ const CORS_HEADERS = {
 // scientific-name match in the separate botanical reference database.
 
 /**
- * Model policy: use the supported Gemini 3.8 Flash model only. No environment override or
- * retired-model fallback is permitted. When the supported model changes, update this list
- * deliberately and validate it before deployment.
+ * Model policy (owner decision, Nov 7 2026): fastest approved model first, then the others in order.
+ * 3.6 Flash answers photos fastest; 3.8 Flash is the newest; 3.5 Flash-Lite is the last resort.
+ * No environment override. A model that is slow, rate-limited or missing is skipped for the next one.
+ * Update this list deliberately and validate it before deployment.
  */
-const GEMINI_MODELS = ['gemini-3.8-flash'];
+const GEMINI_MODELS = ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash-lite'];
 
 function parseModelJson(raw) {
   let text = String(raw || '').trim();
@@ -75,9 +76,9 @@ function describeGemini429(model, detail, delayMs, quotaExhausted) {
   return `Gemini ${model} is temporarily rate-limiting requests (HTTP 429). Please wait a moment and try again. If this keeps happening, check the Google AI Studio API quota.${context}`;
 }
 
-async function callGemini(env, apiKey, parts, { totalMs = 62000, perCallMs = 58000 } = {}) {
-  // Gemini 3.8 Flash is the sole approved model. Retry transient rate limits with bounded
-  // exponential backoff, honoring Google's Retry-After / RetryInfo when it is safe to wait.
+async function callGemini(env, apiKey, parts, { totalMs = 62000, perCallMs = 28000 } = {}) {
+  // Try each approved model in order (see GEMINI_MODELS). Retry transient rate limits on the same
+  // model with bounded backoff, honoring Google's Retry-After / RetryInfo when it is safe to wait.
   const models = GEMINI_MODELS;
   const deadline = Date.now() + totalMs;
   let lastError = 'No Gemini model responded.';
