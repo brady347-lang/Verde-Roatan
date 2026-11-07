@@ -293,7 +293,7 @@ AS $$
       h.id AS source_id,
       NULL::uuid AS document_id,
       h.common_name AS source_title,
-      CASE WHEN jsonb_array_length(h.source_references) > 0 THEN h.source_references::text ELSE NULL END AS citation,
+      CASE WHEN jsonb_array_length(h.source_references) > 0 THEN h.source_references::text ELSE 'Community submission record ' || h.id::text END AS citation,
       NULL::integer AS page_start,
       NULL::integer AS page_end,
       concat_ws(E'\n',
