@@ -87,7 +87,10 @@ CREATE TABLE IF NOT EXISTS public.botanical_health_records (
   review_note text,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  CONSTRAINT health_record_source_supported_requires_citation CHECK (\n    verification_status <> 'source_supported' OR jsonb_array_length(source_references) > 0\n  ),\n  CONSTRAINT health_record_verified_requires_basis CHECK (
+  CONSTRAINT health_record_source_supported_requires_citation CHECK (
+    verification_status <> 'source_supported' OR jsonb_array_length(source_references) > 0
+  ),
+  CONSTRAINT health_record_verified_requires_basis CHECK (
     verification_status <> 'scientifically_verified'
     OR (review_status = 'approved' AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL
         AND length(btrim(coalesce(verification_basis, ''))) >= 20
