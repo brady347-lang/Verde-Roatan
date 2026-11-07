@@ -686,39 +686,6 @@ export default function App() {
       setIdentifyResult(res);
       setIdentifyLoading(false);
 
-      // Trigger continuous accuracy refinement after the 8-second search / initial diagnosis
-      if (res && res.status === 'success' && (res.verified_botanical_record || res.result || res.candidates)) {
-        setIsRefiningSpecimen(true);
-        refineBotanicalIdentification(
-          identifyMode,
-          base64Photo,
-          res,
-          lang,
-          session?.access_token
-        )
-          .then((refined) => {
-            if (refined && refined.status === 'success') {
-              setIdentifyResult((prev) => {
-                if (!prev) return refined;
-                return {
-                  ...prev,
-                  ...refined,
-                  is_refined: true,
-                  refinement_stage: 'verified',
-                  verified_botanical_record: refined.verified_botanical_record || prev.verified_botanical_record,
-                  result: refined.result || prev.result,
-                  candidates: refined.candidates || prev.candidates
-                };
-              });
-            }
-          })
-          .catch((err) => {
-            console.warn('Continuous refinement background notice:', err);
-          })
-          .finally(() => {
-            setIsRefiningSpecimen(false);
-          });
-      }
     } catch (err: any) {
       setIdentifyError(err.message || 'Analysis could not be completed.');
       setIdentifyLoading(false);
