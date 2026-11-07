@@ -415,6 +415,8 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
       // 1) Search the new curated Knowledge Core first: approved summaries and reviewed pest/disease records, no AI.
       try {
         const core = await searchVerdeKnowledge(accessToken, q.trim(), includePrivate);
+        setCoreSafetyNote(core.safety_note || null);
+        setCoreChecks(core.constitution?.checks || []);
         if (core.answered) {
           setOrigin('knowledge_core');
           setRes({
