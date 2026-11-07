@@ -1768,6 +1768,15 @@ export default function App() {
           onOpenZonePicker={() => setActiveModal({ type: 'zone-picker' })}
           rateHnl={rateData?.hnlPerUsd || null}
           onToggleCurrencyWidget={() => setIsCurrencyWidgetOpen((prev) => !prev)}
+          onHomeClick={() => {
+            if (plantModal.isOpen || productModal.isOpen || landscaperModal.isOpen) {
+              showToast(lang === 'es' ? 'Guarde o cancele la edición antes de volver al inicio.' : 'Save or cancel your current edit before returning home.');
+              return;
+            }
+            setActiveModal(null);
+            setIsGardenAdvisorOpen(false);
+            setTab('home');
+          }}
         />
 
         {/* Scrollable Screens Viewport with Ultra-Smooth Slide Motion Transitions */}
@@ -1806,6 +1815,12 @@ export default function App() {
               {tab === 'home' && (
             <HomeScreen
               lang={lang}
+              isSignedIn={Boolean(session?.user)}
+              isAdmin={isAdmin}
+              displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
+              gardenCount={garden.length}
+              cartCount={cartCount}
+              activeOrdersCount={activeOrders.length}
               onNavigate={(nextTab) => setTab(nextTab)}
               onStartIdentify={(mode) => {
                 setIdentifyMode(mode);
