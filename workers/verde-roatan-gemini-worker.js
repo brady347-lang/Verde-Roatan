@@ -1656,10 +1656,19 @@ Question: ${question}
 Sources:
 ${context}
 Respond ONLY with JSON: {"answer": "...", "used": [1]}`;
-    const { parsed } = await callGemini(env, apiKey, [{ text: prompt }], { totalMs: 20000, perCallMs: 15000 });
-    const used = Array.isArray(parsed?.used) ? parsed.used.filter((n) => Number.isInteger(n) && n >= 1 && n <= hits.length) : [];
+    // Documents first: the matching passages ARE the answer. Gemini only tidies the wording, and if it
+    // is slow or down the person still gets the approved passages instead of an error.
+    let aiAnswer = null; let aiUsed = [];
+    try {
+      const { parsed } = await callGemini(env, apiKey, [{ text: prompt }], { totalMs: 20000, perCallMs: 15000 });
+      aiAnswer = String(parsed?.answer || '').trim().slice(0, 4000) || null;
+      aiUsed = Array.isArray(parsed?.used) ? parsed.used.filter((n) => Number.isInteger(n) && n >= 1 && n <= hits.length) : [];
+    } catch { /* fall back to the document passages below */ }
+    const used = aiAnswer ? aiUsed : hits.slice(0, 3).map((_, i) => i + 1);
+    const answer = aiAnswer || ('Gemini was not available, so these are the matching passages from your approved documents:\n\n'
+      + hits.slice(0, 3).map((h, i) => `[${i + 1}] ${h.content.replace(/\s+/g, ' ').trim().slice(0, 500)} (${h.original_name}${h.page_number ? `, page ${h.page_number}` : ''})`).join('\n\n'));
     return jsonResponse(200, {
-      status: 'success', answered: true, answer: String(parsed?.answer || '').slice(0, 4000),
+      status: 'success', answered: true, ai_assisted: Boolean(aiAnswer), answer,
       sources: hits.map((h, i) => ({
         n: i + 1, document_id: h.document_id, document: h.original_name, citation: h.citation, page: h.page_number,
         similarity: Math.round(h.similarity * 1000) / 1000, snippet: h.content.slice(0, 400), used: used.includes(i + 1)
