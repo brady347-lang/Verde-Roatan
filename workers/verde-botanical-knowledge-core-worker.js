@@ -118,9 +118,14 @@ async function submitHealthEvidence(request, body, env) {
   await uploadPrivateEvidence(env, path, image);
   const evidence = {
     ai_identification: {
+      primary_diagnosis: clean(body.primary_diagnosis, 180) || null,
       scientific_name: clean(body.scientific_name, 180) || null,
       confidence: Number.isFinite(Number(body.confidence)) ? Math.max(0, Math.min(1, Number(body.confidence))) : null,
-      model: clean(body.model, 80) || null
+      model: clean(body.model, 80) || null,
+      likely_cause: clean(body.likely_cause, 2000) || null,
+      suggested_treatment: Array.isArray(body.suggested_treatment) ? body.suggested_treatment.map(v => clean(v, 600)).slice(0, 20) : [],
+      suggested_prevention: Array.isArray(body.suggested_prevention) ? body.suggested_prevention.map(v => clean(v, 600)).slice(0, 20) : [],
+      severity: clean(body.severity, 80) || null
     },
     submitter_notes: clean(body.notes, 1200) || null,
     source_app: 'verde-roatan'
