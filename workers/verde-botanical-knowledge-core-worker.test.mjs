@@ -142,7 +142,7 @@ test('health review only indexes approved records and records reviewer identity'
 
 test('summary creation creates a pending human-authored version', async () => {
   setup((url, init) => {
-    if (url.includes('/rest/v1/knowledge_documents?id=eq.' + DOC)) return ok([{ id: DOC, status: 'approved', original_name: 'Palm guide.pdf' }]);
+    if (url.includes('/rest/v1/knowledge_documents?id=eq.' + DOC)) return ok([{ id: DOC, status: 'approved', rag_indexed: true, original_name: 'Palm guide.pdf' }]);
     if (url.includes('/rest/v1/knowledge_document_summaries?document_id=eq.' + DOC)) return ok([{ version: 2 }]);
     if (url.includes('/rest/v1/knowledge_document_summaries') && init.method === 'POST') {
       const row = JSON.parse(init.body);
