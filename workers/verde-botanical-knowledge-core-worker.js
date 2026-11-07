@@ -294,9 +294,11 @@ async function createSummary(request, body, env) {
   if (!isUuid(body.document_id)) return json(400, { status: 'error', error: 'Choose a source document.' });
   const summary = clean(body.summary, 12000);
   if (summary.length < 40) return json(400, { status: 'error', error: 'The summary must contain at least 40 characters.' });
-  const doc = await db(env, 'knowledge_documents?id=eq.' + body.document_id + '&select=id,status,original_name,citation&limit=1');
+  const doc = await db(env, 'knowledge_documents?id=eq.' + body.document_id + '&select=id,status,rag_indexed,original_name,citation&limit=1');
   if (!doc.ok || !Array.isArray(doc.data) || !doc.data[0]) return json(404, { status: 'error', error: 'The source document was not found.' });
+  if (doc.data[0].status !== 'approved' || doc.data[0].rag_indexed !== true) return json(409, { status: 'error', error: 'Approve and index the original source document before creating its curated summary.' });
   const latest = await db(env, 'knowledge_document_summaries?document_id=eq.' + body.document_id + '&select=version&order=version.desc&limit=1');
+  if (!latest.ok || !Array.isArray(latest.data)) throw new Error('The next summary version could not be determined safely.');
   const version = (latest.ok && Array.isArray(latest.data) && latest.data[0] ? Number(latest.data[0].version) : 0) + 1;
   const row = {
     document_id: body.document_id, version, summary,
