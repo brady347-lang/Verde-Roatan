@@ -219,7 +219,8 @@ $;
 REVOKE ALL ON FUNCTION public.approve_knowledge_document_summary(uuid, text, text, jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.approve_knowledge_document_summary(uuid, text, text, jsonb) TO service_role;
 
--- A new, additive retrieval RPC. Safety warnings and severity guidance are indexed and returned.\n-- It never reads pending/rejected material. Existing
+-- A new, additive retrieval RPC. Safety warnings and severity guidance are indexed and returned.
+-- It never reads pending/rejected material. Existing
 -- match_knowledge_chunks() and search_knowledge_text() remain unchanged for compatibility.
 CREATE OR REPLACE FUNCTION public.search_verde_knowledge(
   q text,
