@@ -110,7 +110,7 @@ async function callGemini(env, apiKey, parts, { totalMs = 45000, perCallMs = 250
           const detail = String(errorPayload?.error?.message || rawError || '').replace(/\s+/g, ' ').trim();
           if (res.status === 429) {
             retryDelay = geminiRetryDelayMs(res.headers, errorPayload, attempt);
-            const quotaExhausted = /quota exceeded|daily quota|billing.*disabled|limit:\s*0|requests per day/i.test(detail);
+            const quotaExhausted = /quota.*exceeded|exceeded.*quota|current quota|daily.*limit|billing.*disabled|limit:\s*0|requests per day/i.test(detail);
             lastError = describeGemini429(model, detail, retryDelay, quotaExhausted);
             retry = !quotaExhausted && attempt < 2 && retryDelay <= 8000 && (Date.now() + retryDelay + 1500 < deadline);
           } else {
