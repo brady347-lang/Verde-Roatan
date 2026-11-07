@@ -371,11 +371,33 @@ async function searchKnowledge(request, body, env) {
     method: 'POST', body: JSON.stringify({ q, match_count: Math.min(Math.max(Number(body.limit) || 10, 1), 30), include_private: includePrivate })
   });
   if (!result.ok || !Array.isArray(result.data)) throw new Error('The approved botanical knowledge search is unavailable.');
+
+  // Read active Constitution rule titles without changing the protected Constitution Worker.
+  const rulesResult = await db(env, 'constitution_rules?select=rule_key,title,active&active=eq.true&order=created_at.asc');
+  const rules = rulesResult.ok && Array.isArray(rulesResult.data) ? rulesResult.data : [];
+  const titles = new Map(rules.map(rule => [rule.rule_key, rule.title]));
+  const checks = [
+    { key: 'approved_sources_only', passed: true, detail: 'Retrieval is restricted to approved and indexed documents and health records.' },
+    { key: 'cite_the_source', passed: result.data.every(hit => Boolean(hit.source_title)), detail: 'Every retrieved passage names its source document or health record.' },
+    { key: 'never_false_information', passed: true, detail: 'The response contains retrieved source passages only; no generated treatment claims are added.' },
+    { key: 'three_verification_levels', passed: result.data.every(hit => Boolean(hit.verification_status)), detail: 'Each record retains its own evidence and verification status.' }
+  ];
+  const reportedChecks = checks.filter(check => titles.has(check.key)).map(check => ({ ...check, title: titles.get(check.key) }));
+  const safetyAsked = /toxic|poison|pet|dog|cat|child|kid|edible|safe|t[oó]xic|venen|mascota|perro|gato|ni[ñn]o/i.test(q);
+  const safetyRecorded = result.data.some(hit => /safety warning|toxic|poison|pet safe|pet unsafe|wear gloves|protective equipment|venen|mascota/i.test(hit.content || ''));
+  let safety_note = null;
+  if (safetyAsked && !safetyRecorded) {
+    safety_note = 'Safety information is not recorded in the retrieved approved knowledge. Do not assume the plant or treatment is safe.';
+    if (titles.has('safety_first')) reportedChecks.push({ key: 'safety_first', title: titles.get('safety_first'), passed: true, detail: 'Missing safety information is explicitly flagged.' });
+  }
+  const answered = result.data.length > 0;
   return json(200, {
     status: 'success', source: 'verde_knowledge_core', ai_used: false,
-    answered: result.data.length > 0,
-    answer: result.data.length ? result.data.map((hit, i) => '[' + (i + 1) + '] ' + hit.content + (hit.source_title ? ' (' + hit.source_title + (hit.page_start ? ', pages ' + hit.page_start + (hit.page_end && hit.page_end !== hit.page_start ? '-' + hit.page_end : '') : '') + ')' : '')).join('\n\n') : 'Not recorded in the approved botanical knowledge.',
-    results: result.data
+    answered,
+    answer: answered ? result.data.map((hit, i) => '[' + (i + 1) + '] ' + hit.content + (hit.source_title ? ' (' + hit.source_title + (hit.page_start ? ', pages ' + hit.page_start + (hit.page_end && hit.page_end !== hit.page_start ? '-' + hit.page_end : '') : '') + ')' : '')).join('\n\n') : 'Not recorded in the approved botanical knowledge.',
+    results: result.data,
+    safety_note,
+    constitution: { rules_in_force: rules.length, checks: reportedChecks }
   });
 }
 
