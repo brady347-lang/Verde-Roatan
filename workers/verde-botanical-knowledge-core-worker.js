@@ -182,7 +182,7 @@ async function createHealthRecord(request, body, env) {
     evidence: { created_by_admin: true },
     visibility: 'private', review_status: 'pending',
     verification_status: 'community_submitted', rag_indexed: false,
-    submitted_by: auth.user.id, submitted_by_email: clean(auth.user.email, 254) || null
+    submitted_by: auth.user.id, submitted_by_email: clean(auth.user.email || auth.user.id, 254) || null
   };
   const inserted = await db(env, 'botanical_health_records', {
     method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row)
@@ -306,7 +306,7 @@ async function createSummary(request, body, env) {
     source_pages: Array.isArray(body.source_pages) ? [...new Set(body.source_pages.map(Number).filter(n => Number.isInteger(n) && n > 0))].slice(0, 300) : [],
     generation_method: body.generation_method === 'ai_assisted' ? 'ai_assisted' : 'human',
     model_name: clean(body.model_name, 80) || null,
-    review_status: 'pending', created_by_email: clean(auth.user.email, 254) || null
+    review_status: 'pending', created_by_email: clean(auth.user.email || auth.user.id, 254) || null
   };
   const inserted = await db(env, 'knowledge_document_summaries', {
     method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row)
