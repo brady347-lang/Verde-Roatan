@@ -300,8 +300,8 @@ AS $$
         h.common_name, h.scientific_name, array_to_string(h.aliases, ', '),
         h.description, h.identification_features, h.symptoms, h.causes,
         h.treatment, h.prevention, array_to_string(h.affected_plants, ', '),
-        'Severity guidance: ' || h.severity_guidance::text,
-        'Safety warnings: ' || h.safety_warnings::text
+        CASE WHEN jsonb_object_length(h.severity_guidance) > 0 THEN 'Severity guidance: ' || h.severity_guidance::text END,
+        CASE WHEN jsonb_array_length(h.safety_warnings) > 0 THEN 'Safety warnings: ' || h.safety_warnings::text END
       ) AS content,
       h.verification_status,
       ts_rank(
