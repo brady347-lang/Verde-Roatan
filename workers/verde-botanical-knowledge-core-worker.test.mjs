@@ -13,7 +13,7 @@ const env = {
   VERDE_REVIEW_SUPABASE_SERVICE_ROLE_KEY: 'service-key',
   VERDE_ADMIN_EMAILS: 'admin@verde.test'
 };
-const ok = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
+const ok = (data, status = 200) => new Response(status === 204 ? null : JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 const user = (email = 'admin@verde.test', appRole) => ({ id: USER, email, app_metadata: appRole ? { role: appRole } : {} });
 function request(path, body = {}, token = 'valid-token') {
   return new Request('https://worker.test' + path, {
