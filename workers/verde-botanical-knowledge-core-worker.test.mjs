@@ -6,6 +6,15 @@ const USER = '11111111-1111-4111-8111-111111111111';
 const RECORD = '22222222-2222-4222-8222-222222222222';
 const SUMMARY = '33333333-3333-4333-8333-333333333333';
 const DOC = '44444444-4444-4444-8444-444444444444';
+const ACTIVE_RULES = [
+  { rule_key: 'approved_sources_only', title: 'Approved sources only' },
+  { rule_key: 'cite_the_source', title: 'Cite the source' },
+  { rule_key: 'never_false_information', title: 'Never give false information' },
+  { rule_key: 'three_verification_levels', title: 'Three verification levels' },
+  { rule_key: 'community_stays_separate', title: 'Community data stays separate' },
+  { rule_key: 'humans_decide', title: 'Humans decide' },
+  { rule_key: 'safety_first', title: 'Safety first' }
+];
 const env = {
   VERDE_PRIMARY_SUPABASE_URL: 'https://primary.test',
   VERDE_PRIMARY_SUPABASE_ANON_KEY: 'public-key',
@@ -227,15 +236,7 @@ test('public knowledge search excludes private data, reports no-AI retrieval and
       assert.equal(body.include_private, false);
       return ok([{ source_type: 'research', source_title: 'Palm guide.pdf', citation: 'University extension', page_start: 4, content: 'Potassium deficiency symptoms.', verification_status: 'source_supported', rank: 0.2 }]);
     }
-    if (url.includes('/rest/v1/constitution_rules')) return ok([
-      { rule_key: 'approved_sources_only', title: 'Approved sources only' },
-      { rule_key: 'cite_the_source', title: 'Cite the source' },
-      { rule_key: 'never_false_information', title: 'Never give false information' },
-      { rule_key: 'three_verification_levels', title: 'Three verification levels' },
-      { rule_key: 'community_stays_separate', title: 'Community data stays separate' },
-      { rule_key: 'humans_decide', title: 'Humans decide' },
-      { rule_key: 'safety_first', title: 'Safety first' }
-    ]);
+    if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
     throw new Error('Unexpected request: ' + url);
   }, null);
   const r = await worker.fetch(request('/knowledge/search', { query: 'palm potassium' }, null), env);
@@ -254,7 +255,7 @@ test('public knowledge search excludes private data, reports no-AI retrieval and
 test('safety questions without approved safety data return an explicit warning and no invented answer', async () => {
   setup((url) => {
     if (url.includes('/rest/v1/rpc/search_verde_knowledge')) return ok([]);
-    if (url.includes('/rest/v1/constitution_rules')) return ok([{ rule_key: 'safety_first', title: 'Safety first' }]);
+    if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
     throw new Error('Unexpected request: ' + url);
   }, null);
   const r = await worker.fetch(request('/knowledge/search', { query: 'Is this plant toxic to cats?' }, null), env);
@@ -272,7 +273,7 @@ test('private knowledge search is allowed only for authenticated admins', async 
       assert.equal(JSON.parse(init.body).include_private, true);
       return ok([]);
     }
-    if (url.includes('/rest/v1/constitution_rules')) return ok([{ rule_key: 'approved_sources_only', title: 'Approved sources only' }]);
+    if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
     throw new Error('Unexpected request: ' + url);
   });
   const r = await worker.fetch(request('/knowledge/search', { query: 'hibiscus leaf', include_private: true }), env);
