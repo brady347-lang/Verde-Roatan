@@ -15,7 +15,7 @@ Keep a private backup of the upload keystore. Use **Play App Signing** (default)
 
 ## Play Console items only the owner can complete
 - Developer account ($25 one-time) and identity verification. Personal accounts created after Nov 2023 must run a closed test with 12+ testers for 14 days before Production.
-- Privacy policy URL (draft in `docs/PRIVACY_POLICY.md`; it must be hosted on a public web page).
+- Privacy policy URL: https://verde-roatan-legal.brady347.workers.dev/privacy (live once the Legal Pages worker deploys). Account deletion URL: .../delete-account. Listing text: `docs/GOOGLE_PLAY_LISTING.md`.
 - Data safety form (see `docs/PRIVACY_POLICY.md`, bottom), content rating questionnaire, target audience, app category.
 - Store listing: 512×512 icon, 1024×500 feature graphic, 2–8 phone screenshots, short and full description.
 - Account deletion: Play requires an in-app path and a web link to request deletion of an account and its data.
