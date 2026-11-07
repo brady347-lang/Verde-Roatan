@@ -387,7 +387,8 @@ export default {
     if (request.method !== 'POST') return json(405, { status: 'error', error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     try {
-      if (path === '/health/submit') return await submitHealthEvidence(request, body, env);\n      if (path === '/health/admin/create') return await createHealthRecord(request, body, env);
+      if (path === '/health/submit') return await submitHealthEvidence(request, body, env);
+      if (path === '/health/admin/create') return await createHealthRecord(request, body, env);
       if (path === '/health/admin/list') return await listHealthRecords(request, body, env);
       if (path === '/health/admin/review') return await reviewHealthRecord(request, body, env);
       if (path === '/knowledge/summaries/list') return await listSummaries(request, body, env);
