@@ -33,7 +33,7 @@ Make Verde's approved botanical knowledge, retrieval and Constitution the primar
 - Source supported
 - Scientifically verified
 
-Approval for public/RAG use and scientific verification are separate. Scientific verification requires an administrator, a written evidence basis and an approved record. A community confirmation cannot become scientific verification.
+Approval for public/RAG use and scientific verification are separate. Scientific verification requires an administrator, a written evidence basis and an approved record. A community confirmation cannot become scientific verification backed by a written basis and source reference.
 
 ## Retrieval behavior
 - Only approved + indexed content is eligible.
