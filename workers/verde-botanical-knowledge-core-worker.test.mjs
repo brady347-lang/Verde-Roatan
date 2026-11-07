@@ -299,6 +299,25 @@ test('plant names containing cat or dog do not count as safety evidence', async 
   assert.match(j.safety_note, /Do not assume/);
 });
 
+test('Spanish safety questions also warn when evidence only contains a plant name', async () => {
+  setup((url) => {
+    if (url.includes('/rest/v1/rpc/search_verde_knowledge')) {
+      return ok([{
+        source_type: 'research', source_title: 'Guía de palmas.pdf', citation: 'Manual botánico',
+        page_start: 5, content: 'La palma de gato crece bien en sombra parcial y suelo húmedo.',
+        verification_status: 'source_supported', rank: 0.3
+      }]);
+    }
+    if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
+    throw new Error('Unexpected request: ' + url);
+  }, null);
+  const r = await worker.fetch(request('/knowledge/search', { query: '¿La palma de gato es segura para mascotas?' }, null), env);
+  const j = await r.json();
+  assert.equal(r.status, 200);
+  assert.equal(j.answered, true);
+  assert.match(j.safety_note, /Do not assume/);
+});
+
 test('private knowledge search is allowed only for authenticated admins', async () => {
   const calls = setup((url, init) => {
     if (url.includes('/rest/v1/rpc/search_verde_knowledge')) {
