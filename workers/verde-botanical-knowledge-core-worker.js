@@ -92,6 +92,14 @@ async function uploadPrivateEvidence(env, path, image) {
   if (!response.ok) throw new Error('The private evidence image could not be stored.');
 }
 
+async function deletePrivateEvidence(env, path) {
+  const c = config(env);
+  await fetch(c.reviewUrl + '/storage/v1/object/botanical-health-evidence/' + path, {
+    method: 'DELETE',
+    headers: { apikey: c.serviceKey, Authorization: 'Bearer ' + c.serviceKey }
+  }).catch(() => null);
+}
+
 async function signedEvidenceUrl(env, path) {
   if (!path) return null;
   const c = config(env);
@@ -144,7 +152,7 @@ async function submitHealthEvidence(request, body, env) {
   const inserted = await db(env, 'botanical_health_records', {
     method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row)
   });
-  if (!inserted.ok) throw new Error('The evidence was uploaded, but the submission record could not be saved.');
+  if (!inserted.ok) {\n    await deletePrivateEvidence(env, path);\n    throw new Error('The evidence was uploaded, but the submission record could not be saved.');\n  }
   return json(200, { status: 'success', record_id: id, review_status: 'pending', verification_status: 'community_submitted' });
 }
 
