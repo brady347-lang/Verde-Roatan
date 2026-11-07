@@ -318,6 +318,16 @@ test('Spanish safety questions also warn when evidence only contains a plant nam
   assert.match(j.safety_note, /Do not assume/);
 });
 
+test('a refused sign-in check explains why, without leaking any secret', async () => {
+  setup(() => { throw new Error('unexpected'); }, null);
+  const res = await worker.fetch(request('/knowledge/summaries/list', {}, 'stale'), env);
+  const body = await res.json();
+  assert.equal(res.status, 401);
+  assert.match(body.error, /could not be verified/);
+  assert.match(body.error, /answered 401: bad token/);
+  assert.ok(!JSON.stringify(body).includes(String(env.VERDE_PRIMARY_SUPABASE_ANON_KEY)));
+});
+
 test('private knowledge search is allowed only for authenticated admins', async () => {
   const calls = setup((url, init) => {
     if (url.includes('/rest/v1/rpc/search_verde_knowledge')) {
