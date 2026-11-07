@@ -730,7 +730,53 @@ export default function App() {
     if (!session?.access_token) {
       throw new Error('Please sign in before submitting pest or disease evidence.');
     }
-    await submitBotanicalHealthEvidence(recordType, identifyPhoto, identifyResult, notes, session.access_token);
+
+    // Access tokens can expire while the app remains open. Refresh before submission
+    // when close to expiry, and retry once if the Worker rejects an expired token.
+    let activeSession = session;
+    const refreshAccessToken = async (): Promise<string> => {
+      if (!activeSession.refresh_token) {
+        throw new Error('Your session has expired. Please sign in again.');
+      }
+      const refreshed = await refreshSupabaseSession(activeSession.refresh_token);
+      if (!refreshed?.access_token) {
+        throw new Error('Your session could not be refreshed. Please sign in again.');
+      }
+      const verifiedUser = await verifySupabaseUser(refreshed.access_token);
+      activeSession = {
+        ...activeSession,
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token || activeSession.refresh_token,
+        expires_at: Math.floor(Date.now() / 1000) + Number(refreshed.expires_in || 3600),
+        user: {
+          ...activeSession.user,
+          id: verifiedUser.id || activeSession.user.id,
+          email: verifiedUser.email || activeSession.user.email,
+          full_name: verifiedUser.user_metadata?.full_name || activeSession.user.full_name
+        }
+      };
+      setSession(activeSession);
+      safeSetItem('verde_auth_session', JSON.stringify(activeSession));
+      return activeSession.access_token;
+    };
+
+    let accessToken = activeSession.access_token;
+    const expiresAt = Number(activeSession.expires_at || 0);
+    if (activeSession.refresh_token && (!expiresAt || expiresAt <= Math.floor(Date.now() / 1000) + 90)) {
+      accessToken = await refreshAccessToken();
+    }
+
+    try {
+      await submitBotanicalHealthEvidence(recordType, identifyPhoto, identifyResult, notes, accessToken);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error || '');
+      if (!/session could not be verified|session has expired|invalid.*token/i.test(message) || !activeSession.refresh_token) {
+        throw error;
+      }
+      accessToken = await refreshAccessToken();
+      await submitBotanicalHealthEvidence(recordType, identifyPhoto, identifyResult, notes, accessToken);
+    }
+
     showToast(
       lang === 'es'
         ? 'Reporte enviado y pendiente de revisión. No está verificado científicamente.'
