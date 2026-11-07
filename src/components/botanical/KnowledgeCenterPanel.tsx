@@ -5,6 +5,7 @@ import {
   ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf, BotanicalReferenceImage, listBotanicalReferenceImages, uploadBotanicalReferenceImage, reviewBotanicalReferenceImage, searchBotanicalTaxa
 } from '../../services/api';
 import { extractPdfPages } from '../../lib/pdfText';
+import { askConstitution, ConstitutionAskResult } from '../../lib/constitutionApi';
 import { Language } from '../../types';
 
 interface Props { lang: Language; accessToken?: string }
@@ -401,11 +402,29 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [res, setRes] = useState<{ answered: boolean; answer: string; sources: KnowledgeSource[] } | null>(null);
+  // Where the answer came from: documents + constitution first, Gemini only as the labeled backup.
+  const [origin, setOrigin] = useState<'documents' | 'gemini' | null>(null);
+  const [gate, setGate] = useState<ConstitutionAskResult | null>(null);
 
   const ask = async () => {
     if (!accessToken || q.trim().length < 3) return;
-    setBusy(true); setError(''); setRes(null);
-    try { setRes(await askKnowledge(accessToken, q.trim(), { includePrivate, minSimilarity: minSim })); }
+    setBusy(true); setError(''); setRes(null); setOrigin(null); setGate(null);
+    try {
+      // 1) Approved documents and published records, held to the constitution (no AI).
+      let first: ConstitutionAskResult | null = null;
+      try { first = await askConstitution(accessToken, q.trim(), includePrivate); } catch { first = null; }
+      if (first?.answered) {
+        setGate(first); setOrigin('documents');
+        setRes({
+          answered: true, answer: first.answer,
+          sources: first.passages.map((p) => ({ n: p.n, document_id: p.document_id, document: p.document, citation: p.citation, page: p.page, similarity: p.rank, snippet: p.snippet, used: true }))
+        });
+        return;
+      }
+      // 2) Nothing found there: ask Gemini-assisted search, and say so on screen.
+      setGate(first); setOrigin('gemini');
+      setRes(await askKnowledge(accessToken, q.trim(), { includePrivate, minSimilarity: minSim }));
+    }
     catch (e) { setError(e instanceof Error ? e.message : 'The question failed.'); }
     finally { setBusy(false); }
   };
@@ -419,9 +438,22 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
       {error && <p role="alert" className="text-[12.5px] font-semibold text-red-600">{error}</p>}
       {res && (
         <div className="flex flex-col gap-2">
-          <div className={`rounded-2xl p-3 text-[13.5px] ${res.answered ? 'bg-emerald-50 text-[var(--ink)]' : 'bg-amber-50 text-amber-900'}`}>
+          {origin && (
+            <p className="text-[11.5px] font-extrabold text-[var(--ink-soft)]">
+              {origin === 'documents'
+                ? (es ? 'De tus documentos aprobados · sin IA' : 'From your approved documents · no AI')
+                : (es ? 'Nada en los documentos por búsqueda de texto: búsqueda asistida por Gemini' : 'Nothing found by document text search: Gemini-assisted search')}
+            </p>
+          )}
+          <div className={`rounded-2xl p-3 text-[13.5px] whitespace-pre-line ${res.answered ? 'bg-emerald-50 text-[var(--ink)]' : 'bg-amber-50 text-amber-900'}`}>
             {!res.answered && <AlertTriangle className="w-4 h-4 inline mr-1" />}{res.answer}
           </div>
+          {gate?.safety_note && <p className="text-[12.5px] font-bold text-amber-800 bg-amber-50 rounded-xl p-2.5"><AlertTriangle className="w-4 h-4 inline mr-1" />{gate.safety_note}</p>}
+          {origin === 'documents' && gate && (
+            <p className="text-[11.5px] text-[var(--ink-soft)]">
+              {es ? 'Constitución' : 'Constitution'}: {gate.constitution.checks.filter((c) => c.passed).map((c) => c.title).join(' · ')}
+            </p>
+          )}
           {res.sources.map((s) => (
             <div key={s.n} className={`border rounded-xl p-2.5 text-[12px] ${s.used ? 'border-emerald-300' : 'border-[var(--line)]'}`}>
               <b>[{s.n}] {s.document}</b> · {es ? 'pág.' : 'page'} {s.page ?? '?'} · {es ? 'similitud' : 'similarity'} {s.similarity}{s.citation ? ` · ${s.citation}` : ''}

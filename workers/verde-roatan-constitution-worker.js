@@ -277,6 +277,74 @@ async function editRule(request, body, env) {
   return json(200, { status: 'success', rule: upd.data[0] });
 }
 
+// ---- Constitution-first answers: approved documents and published records, no AI needed. ----
+const ASK_STOPWORDS = new Set(('the and for are was were with that this from have has had not but you your what when where which who how why can does did into about on in of to is it a an or as at by be if ' +
+  'los las del una uno unos unas que con por para como cual cuando donde sobre este esta estos estas son fue ser hay mas pero sin muy').split(' '));
+const SAFETY_WORDS = /toxic|poison|pet|dog|cat|child|kid|edible|safe|t[oó]xic|venen|mascota|perro|gato|ni[ñn]o/i;
+
+function questionWords(question) {
+  const found = String(question).toLowerCase().match(/[\p{L}]{3,}/gu) || [];
+  return [...new Set(found.filter((w) => !ASK_STOPWORDS.has(w)))].slice(0, 8);
+}
+
+async function ask(request, body, env) {
+  const auth = await requireAdmin(request, env); if (auth.response) return auth.response;
+  const question = clean(body.question, 300);
+  if (question.length < 3) return json(400, { status: 'error', error: 'Ask a question first.' });
+  const words = questionWords(question);
+  const rules = (await listRules(env)).filter((r) => r.active);
+  const includePrivate = body.include_private !== false;
+
+  const nameFilter = words.slice(0, 4).flatMap((w) => [`common_name.ilike.*${w}*`, `scientific_name.ilike.*${w}*`]).join(',');
+  const [chunkRes, taxaRes] = await Promise.all([
+    words.length
+      ? rest(env, 'rpc/search_knowledge_text', { method: 'POST', body: JSON.stringify({ q: words.join(' '), match_count: 6, include_private: includePrivate }) })
+      : Promise.resolve({ ok: true, data: [] }),
+    words.length
+      ? rest(env, `botanical_taxa?select=scientific_name,common_name,family,description,toxicity,toxicity_level,verification_status,scientific_references&record_status=eq.published&or=(${nameFilter})&limit=3`)
+      : Promise.resolve({ ok: true, data: [] })
+  ]);
+  if (!chunkRes.ok || !Array.isArray(chunkRes.data) || !taxaRes.ok || !Array.isArray(taxaRes.data)) {
+    throw new Error('The knowledge base could not be searched.');
+  }
+  // Rule: cite the source. A passage without a document name is dropped, never shown.
+  const passages = chunkRes.data.filter((c) => c.original_name && c.content).map((c, i) => ({
+    n: i + 1, document_id: c.document_id, document: c.original_name, citation: c.citation || null, page: c.page_number ?? null,
+    snippet: clean(c.content, 700).replace(/\s+/g, ' '), rank: Math.round(Number(c.rank) * 1000) / 1000
+  }));
+  const records = taxaRes.data.map((t) => ({
+    scientific_name: t.scientific_name, common_name: t.common_name, family: t.family, description: clean(t.description, 500) || null,
+    toxicity: clean(t.toxicity, 300) || null, verification_status: t.verification_status || 'unverified'
+  }));
+
+  const toxicityRecorded = records.some((r) => r.toxicity);
+  const safetyAsked = SAFETY_WORDS.test(question) || passages.some((p) => SAFETY_WORDS.test(p.snippet));
+  const checks = [
+    { key: 'approved_sources_only', passed: true, detail: 'Only approved documents and published records were searched.' },
+    { key: 'cite_the_source', passed: passages.every((p) => p.document), detail: 'Every passage names its document and page.' },
+    { key: 'never_false_information', passed: true, detail: 'The answer is the documents\' own words, not generated text.' },
+    { key: 'three_verification_levels', passed: records.every((r) => r.verification_status), detail: 'Records keep their own verification level; nothing is called verified here.' }
+  ];
+  const titles = new Map(rules.map((r) => [r.rule_key, r.title]));
+  const reported = checks.filter((c) => titles.has(c.key)).map((c) => ({ ...c, title: titles.get(c.key) }));
+  let safety_note = null;
+  if (safetyAsked && titles.has('safety_first') && !toxicityRecorded) {
+    safety_note = 'Safety information (toxicity, pets, children) is not recorded for this plant. Do not assume it is safe.';
+    reported.push({ key: 'safety_first', title: titles.get('safety_first'), passed: true, detail: 'Missing safety information is flagged, not played down.' });
+  }
+
+  const answered = passages.length > 0 || records.length > 0;
+  const top = passages.slice(0, 3);
+  const answer = answered
+    ? top.map((p) => `[${p.n}] ${p.snippet.slice(0, 500)} (${p.document}${p.page ? `, page ${p.page}` : ''})`).join('\n\n') ||
+      records.map((r) => `${r.common_name || r.scientific_name} (${r.scientific_name}): ${r.description || 'no description recorded'}`).join('\n\n')
+    : 'Not recorded in the approved documents.';
+  return json(200, {
+    status: 'success', answered, source: 'documents', ai_assisted: false, answer, passages, records, safety_note,
+    constitution: { rules_in_force: rules.length, checks: reported }
+  });
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -294,6 +362,7 @@ export default {
         const auth = await requireAdmin(request, env); if (auth.response) return auth.response;
         return json(200, { status: 'success', rules: await listRules(env) });
       }
+      if (path === '/constitution/ask') return await ask(request, body, env);
       if (path === '/constitution/lessons') return await lessons(request, env);
       if (path === '/constitution/propose') return await propose(request, env);
       if (path === '/constitution/amendments') return await amendments(request, body, env);

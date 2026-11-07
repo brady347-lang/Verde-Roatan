@@ -17,6 +17,7 @@ function mock(db) {
       return new Response('{}', { status: 401 });
     }
     const ok = (d, s = 200) => new Response(JSON.stringify(d), { status: s });
+    if (url.includes('/rpc/search_knowledge_text')) return ok(db.chunks || []);
     if (url.includes('/knowledge_entities?')) return ok(db.entities || []);
     if (url.includes('/identification_reviews?')) return ok(db.reviews || []);
     if (url.includes('/botanical_taxa?')) return ok(db.taxa || []);
@@ -47,7 +48,7 @@ await t('public rules show only active rules, no sign-in needed, no secrets', as
 });
 await t('every admin route rejects signed-out users and customers', async () => {
   mock({});
-  for (const p of ['/constitution/rules', '/constitution/lessons', '/constitution/propose', '/constitution/amendments', '/constitution/decide', '/constitution/edit-rule']) {
+  for (const p of ['/constitution/rules', '/constitution/lessons', '/constitution/propose', '/constitution/amendments', '/constitution/decide', '/constitution/edit-rule', '/constitution/ask']) {
     assert.equal((await call(p, {}, { token: null })).status, 401, p);
     assert.equal((await call(p, {}, { token: 'cust' })).status, 403, p);
   }
@@ -123,4 +124,41 @@ await t('editing an unlocked rule bumps the version and keeps history', async ()
   assert.equal(j.rule.version, 3);
   assert.ok(db.log.some((c) => c.url.includes('constitution_rule_versions') && c.body.version === 3));
 });
+const RULES = [
+  { rule_key: 'approved_sources_only', title: 'Approved sources only', body: 'b', locked: true, active: true },
+  { rule_key: 'cite_the_source', title: 'Show the source', body: 'b', locked: true, active: true },
+  { rule_key: 'never_false_information', title: 'Never give false information', body: 'b', locked: true, active: true },
+  { rule_key: 'three_verification_levels', title: 'Three levels', body: 'b', locked: true, active: true },
+  { rule_key: 'safety_first', title: 'Safety first', body: 'b', locked: true, active: true }];
+await t('ask: answers from approved documents with sources, searches with the question words only, no AI', async () => {
+  const db = mock({ rules: RULES, chunks: [{ chunk_id: 'c1', document_id: A, original_name: 'PD-72.pdf', citation: 'UH-CTAHR 2011', page_number: 4, content: 'Bacterial leaf spot of hibiscus: manage moisture.', rank: 0.08 }] });
+  const j = await (await call('/constitution/ask', { question: 'What is the bacteria on the hibiscus?', include_private: true })).json();
+  assert.equal(j.answered, true); assert.equal(j.ai_assisted, false); assert.equal(j.source, 'documents');
+  assert.match(j.answer, /PD-72\.pdf, page 4/); assert.equal(j.passages[0].page, 4);
+  const rpc = db.log.find((c) => c.url.includes('search_knowledge_text'));
+  assert.equal(rpc.body.q, 'bacteria hibiscus'); assert.equal(rpc.body.include_private, true);
+  assert.ok(j.constitution.checks.some((c) => c.key === 'cite_the_source' && c.passed));
+  assert.ok(!db.log.some((c) => /generativelanguage|gemini/i.test(c.url)));
+});
+await t('ask: nothing found -> "Not recorded", not answered, so the app can fall back to Gemini', async () => {
+  mock({ rules: RULES, chunks: [] });
+  const j = await (await call('/constitution/ask', { question: 'How do I grow dragonfruit?' })).json();
+  assert.equal(j.answered, false); assert.match(j.answer, /Not recorded/);
+});
+await t('ask: a passage with no document name is never shown (cite the source)', async () => {
+  mock({ rules: RULES, chunks: [{ chunk_id: 'c9', document_id: A, original_name: '', content: 'orphan text about hibiscus', page_number: 1, rank: 1 }] });
+  const j = await (await call('/constitution/ask', { question: 'hibiscus care' })).json();
+  assert.equal(j.answered, false);
+});
+await t('ask: safety question with no recorded toxicity is flagged, never played down', async () => {
+  mock({ rules: RULES, chunks: [{ chunk_id: 'c1', document_id: A, original_name: 'PD-72.pdf', page_number: 2, content: 'Hibiscus leaf lesions.', rank: 0.1 }] });
+  const j = await (await call('/constitution/ask', { question: 'Is hibiscus safe for my dog?' })).json();
+  assert.match(j.safety_note, /not recorded/i); assert.ok(j.constitution.checks.some((c) => c.key === 'safety_first'));
+});
+await t('ask: published records are listed with their own verification level', async () => {
+  mock({ rules: RULES, chunks: [], taxa: [{ scientific_name: 'Hibiscus rosa-sinensis', common_name: 'Hibiscus', description: 'Shrub.', toxicity: 'Non-toxic to pets', verification_status: 'ai_identified' }] });
+  const j = await (await call('/constitution/ask', { question: 'hibiscus' })).json();
+  assert.equal(j.answered, true); assert.equal(j.records[0].verification_status, 'ai_identified'); assert.equal(j.safety_note, null);
+});
+await t('ask: too-short question rejected', async () => { mock({ rules: RULES }); assert.equal((await call('/constitution/ask', { question: 'hi' })).status, 400); });
 console.log(`ALL ${n} PASSED`);
