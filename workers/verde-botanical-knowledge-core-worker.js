@@ -24,10 +24,10 @@ const clean = (value, max = 2000) => String(value ?? '').replace(/[\u0000-\u0008
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''));
 
 function config(env) {
-  const primaryUrl = clean(env.VERDE_PRIMARY_SUPABASE_URL || env.PRIMARY_SUPABASE_URL, 300).replace(/\/$/, '');
-  const primaryKey = env.VERDE_PRIMARY_SUPABASE_ANON_KEY || env.PRIMARY_SUPABASE_ANON_KEY;
-  const reviewUrl = clean(env.VERDE_REVIEW_SUPABASE_URL || env.REVIEW_SUPABASE_URL, 300).replace(/\/$/, '');
-  const serviceKey = env.VERDE_REVIEW_SUPABASE_SERVICE_ROLE_KEY || env.REVIEW_SUPABASE_SERVICE_ROLE_KEY;
+  const primaryUrl = clean(env.VERDE_PRIMARY_SUPABASE_URL, 300).replace(/\/$/, '');
+  const primaryKey = env.VERDE_PRIMARY_SUPABASE_ANON_KEY;
+  const reviewUrl = clean(env.VERDE_REVIEW_SUPABASE_URL, 300).replace(/\/$/, '');
+  const serviceKey = env.VERDE_REVIEW_SUPABASE_SERVICE_ROLE_KEY;
   if (!primaryUrl || !primaryKey || !reviewUrl || !serviceKey) throw new Error('The Knowledge Core database bindings are not configured.');
   return { primaryUrl, primaryKey, reviewUrl, serviceKey };
 }
