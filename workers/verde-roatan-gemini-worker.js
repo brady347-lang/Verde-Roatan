@@ -48,20 +48,47 @@ function parseModelJson(raw) {
   }
 }
 
+function geminiRetryDelayMs(headers, errorPayload, attempt) {
+  const header = headers?.get?.('retry-after');
+  if (header) {
+    const seconds = Number(header);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds * 1000);
+    const dateMs = Date.parse(header);
+    if (Number.isFinite(dateMs)) return Math.max(0, dateMs - Date.now());
+  }
+  const retryInfo = Array.isArray(errorPayload?.error?.details)
+    ? errorPayload.error.details.find((detail) => /RetryInfo$/.test(String(detail['@type'] || '')))
+    : null;
+  const match = String(retryInfo?.retryDelay || '').match(/^(\d+(?:\.\d+)?)s$/);
+  if (match) return Math.ceil(Number(match[1]) * 1000);
+  return 1000 * (2 ** attempt);
+}
+
+function describeGemini429(model, detail, delayMs, quotaExhausted) {
+  const context = detail ? ` Google says: ${detail.slice(0, 240)}` : '';
+  if (quotaExhausted) {
+    return `Gemini API quota appears exhausted for this project. Check the Google AI Studio quota and billing for the API key, then try again.${context}`;
+  }
+  if (delayMs > 8000) {
+    return `Gemini ${model} is rate-limiting requests (HTTP 429). Please wait about ${Math.ceil(delayMs / 1000)} seconds before trying again.${context}`;
+  }
+  return `Gemini ${model} is temporarily rate-limiting requests (HTTP 429). Please wait a moment and try again. If this keeps happening, check the Google AI Studio API quota.${context}`;
+}
+
 async function callGemini(env, apiKey, parts, { totalMs = 45000, perCallMs = 25000 } = {}) {
-  // Only one model is allowed (see GEMINI_MODELS), so there is no fallback to wait for. The single
-  // attempt gets enough time for a photo on a slow island connection (the app waits up to 70s), and a
-  // temporary Google error (429 / 5xx) is retried ONCE on the same model. Never another model.
+  // Gemini 3.8 Flash is the sole approved model. Retry transient rate limits with bounded
+  // exponential backoff, honoring Google's Retry-After / RetryInfo when it is safe to wait.
   const models = GEMINI_MODELS;
   const deadline = Date.now() + totalMs;
   let lastError = 'No Gemini model responded.';
 
   for (const model of models) {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 3; attempt++) {
       const remaining = deadline - Date.now();
       if (remaining < 1500) break;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), Math.min(perCallMs, remaining));
+      let retryDelay = 0;
       let retry = false;
       try {
         const res = await fetch(
@@ -77,8 +104,20 @@ async function callGemini(env, apiKey, parts, { totalMs = 45000, perCallMs = 250
           }
         );
         if (!res.ok) {
-          lastError = `Gemini ${model} error ${res.status}`;
-          retry = attempt === 0 && (res.status === 429 || res.status >= 500);
+          const rawError = await res.text().catch(() => '');
+          let errorPayload = null;
+          try { errorPayload = JSON.parse(rawError); } catch { /* Google may return plain text. */ }
+          const detail = String(errorPayload?.error?.message || rawError || '').replace(/\s+/g, ' ').trim();
+          if (res.status === 429) {
+            retryDelay = geminiRetryDelayMs(res.headers, errorPayload, attempt);
+            const quotaExhausted = /quota exceeded|daily quota|billing.*disabled|limit:\s*0|requests per day/i.test(detail);
+            lastError = describeGemini429(model, detail, retryDelay, quotaExhausted);
+            retry = !quotaExhausted && attempt < 2 && retryDelay <= 8000 && (Date.now() + retryDelay + 1500 < deadline);
+          } else {
+            lastError = `Gemini ${model} error ${res.status}${detail ? `: ${detail.slice(0, 240)}` : ''}`;
+            retry = res.status >= 500 && attempt === 0;
+            retryDelay = 800;
+          }
         } else {
           const data = await res.json();
           const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -95,7 +134,8 @@ async function callGemini(env, apiKey, parts, { totalMs = 45000, perCallMs = 250
         clearTimeout(timer);
       }
       if (!retry) break;
-      await new Promise((resolve) => setTimeout(resolve, 800));
+      const waitMs = Math.min(retryDelay, Math.max(0, deadline - Date.now() - 1500));
+      if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
   }
   throw new Error(lastError);
