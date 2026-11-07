@@ -184,7 +184,7 @@ BEGIN
     RAISE EXCEPTION 'The summary is missing or is no longer pending review';
   END IF;
 
-  SELECT * INTO d FROM public.knowledge_documents WHERE id = s.document_id;
+  SELECT * INTO d FROM public.knowledge_documents WHERE id = s.document_id FOR UPDATE;
   IF NOT FOUND OR d.status <> 'approved' OR d.rag_indexed IS NOT TRUE THEN
     RAISE EXCEPTION 'The original source document must be approved and indexed first';
   END IF;
