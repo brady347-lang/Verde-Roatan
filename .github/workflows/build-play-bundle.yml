@@ -7,8 +7,6 @@ name: Verde Roatan - Google Play Bundle (AAB)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [feat/google-play-bundle]   # test trigger; removed before merge
 
 permissions:
   contents: read
@@ -88,7 +86,7 @@ jobs:
         run: |
           AAB=$(ls android/app/build/outputs/bundle/release/*.aab)
           echo "Bundle: $AAB"
-          jarsigner -verify "$AAB" >/dev/null 2>&1 && echo "SIGNED" || echo "UNSIGNED (add the 4 secrets before uploading to Google Play)"
+          jarsigner -verify "$AAB" 2>&1 | grep -q "jar verified" && echo "SIGNED" || echo "UNSIGNED (add the 4 secrets before uploading to Google Play)"
           unzip -p "$AAB" base/manifest/AndroidManifest.xml | strings | grep -i -m3 "targetSdk\|36" || true
 
       - uses: actions/upload-artifact@v4
