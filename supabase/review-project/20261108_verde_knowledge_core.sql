@@ -173,8 +173,7 @@ RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public', 'pg_temp'
-AS $
-DECLARE
+AS $$DECLARE
   s public.knowledge_document_summaries%ROWTYPE;
   d public.knowledge_documents%ROWTYPE;
 BEGIN
@@ -215,7 +214,7 @@ BEGIN
       review_note = nullif(btrim(p_review_note), '')
   WHERE id = s.id;
 END;
-$;
+$$;
 REVOKE ALL ON FUNCTION public.approve_knowledge_document_summary(uuid, text, text, jsonb) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.approve_knowledge_document_summary(uuid, text, text, jsonb) TO service_role;
 
