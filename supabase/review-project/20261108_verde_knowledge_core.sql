@@ -103,7 +103,8 @@ CREATE INDEX IF NOT EXISTS botanical_health_records_fts_idx
       coalesce(array_to_string(aliases,' '),'') || ' ' || coalesce(description,'') || ' ' ||
       coalesce(identification_features,'') || ' ' || coalesce(symptoms,'') || ' ' ||
       coalesce(causes,'') || ' ' || coalesce(treatment,'') || ' ' ||
-      coalesce(prevention,'') || ' ' || coalesce(array_to_string(affected_plants,' '),'') || ' ' ||\n      coalesce(severity_guidance::text,'') || ' ' || coalesce(safety_warnings::text,'')
+      coalesce(prevention,'') || ' ' || coalesce(array_to_string(affected_plants,' '),'') || ' ' ||
+      coalesce(severity_guidance::text,'') || ' ' || coalesce(safety_warnings::text,'')
     )
   );
 
@@ -224,17 +225,19 @@ AS $$
       CASE WHEN jsonb_array_length(h.source_references) > 0 THEN h.source_references::text ELSE NULL END AS citation,
       NULL::integer AS page_start,
       NULL::integer AS page_end,
-      concat_ws(E'\n',
+      concat_ws(E'\\n',
         h.common_name, h.scientific_name, array_to_string(h.aliases, ', '),
         h.description, h.identification_features, h.symptoms, h.causes,
-        h.treatment, h.prevention, array_to_string(h.affected_plants, ', '),\n        h.severity_guidance::text, h.safety_warnings::text
+        h.treatment, h.prevention, array_to_string(h.affected_plants, ', '),
+        h.severity_guidance::text, h.safety_warnings::text
       ) AS content,
       h.verification_status,
       ts_rank(
         to_tsvector('simple', concat_ws(' ',
           h.common_name, h.scientific_name, array_to_string(h.aliases, ' '),
           h.description, h.identification_features, h.symptoms, h.causes,
-          h.treatment, h.prevention, array_to_string(h.affected_plants, ' '),\n        h.severity_guidance::text, h.safety_warnings::text,\n          h.severity_guidance::text, h.safety_warnings::text
+          h.treatment, h.prevention, array_to_string(h.affected_plants, ' '),
+          h.severity_guidance::text, h.safety_warnings::text
         )), t.tsq
       ) AS rank
     FROM public.botanical_health_records h
@@ -245,7 +248,8 @@ AS $$
       AND to_tsvector('simple', concat_ws(' ',
         h.common_name, h.scientific_name, array_to_string(h.aliases, ' '),
         h.description, h.identification_features, h.symptoms, h.causes,
-        h.treatment, h.prevention, array_to_string(h.affected_plants, ' ')
+        h.treatment, h.prevention, array_to_string(h.affected_plants, ' '),
+        h.severity_guidance::text, h.safety_warnings::text
       )) @@ t.tsq
   )
   SELECT * FROM (
