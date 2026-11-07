@@ -125,6 +125,7 @@ test('health review only indexes approved records and records reviewer identity'
       assert.equal(patch.verification_status, 'scientifically_verified');
       assert.equal(patch.reviewed_by, USER);
       assert.equal(patch.verification_basis, 'Compared with a peer-reviewed extension bulletin.');
+      assert.deepEqual(patch.source_references, [{ citation: 'University extension bulletin' }]);
       return ok([{ id: RECORD, ...patch }]);
     }
     throw new Error('Unexpected request: ' + url);
@@ -132,7 +133,8 @@ test('health review only indexes approved records and records reviewer identity'
   const r = await worker.fetch(request('/health/admin/review', {
     record_id: RECORD, status: 'approved', visibility: 'public', rag_indexed: true,
     verification_status: 'scientifically_verified',
-    verification_basis: 'Compared with a peer-reviewed extension bulletin.'
+    verification_basis: 'Compared with a peer-reviewed extension bulletin.',
+    source_references: [{ citation: 'University extension bulletin' }]
   }), env);
   assert.equal(r.status, 200);
   assert.ok(!calls.some(c => /generativelanguage|gemini/i.test(c.url)));
