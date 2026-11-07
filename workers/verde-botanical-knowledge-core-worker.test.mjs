@@ -171,6 +171,18 @@ test('summary approval requires the original document to be approved and RAG-ind
   assert.equal(r.status, 409);
 });
 
+test('summary approval refuses to publish a summary without page provenance', async () => {
+  setup((url) => {
+    if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY)) {
+      return ok([{ id: SUMMARY, document_id: DOC, review_status: 'pending', summary: 'A long enough summary to be searchable, but no page citations were provided.', key_facts: [], critical_details: [], safety_warnings: [], source_pages: [] }]);
+    }
+    throw new Error('No approval RPC should run without source pages: ' + url);
+  });
+  const r = await worker.fetch(request('/knowledge/summaries/review', { summary_id: SUMMARY, decision: 'approve' }), env);
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /source page/);
+});
+
 test('summary approval atomically indexes summary, critical details and safety warnings', async () => {
   const calls = setup((url, init) => {
     if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY)) {
