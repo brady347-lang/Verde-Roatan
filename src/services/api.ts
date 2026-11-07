@@ -1110,6 +1110,8 @@ export interface VerdeKnowledgeSearchResult {
   answered: boolean;
   answer: string;
   results: VerdeKnowledgeHit[];
+  safety_note?: string | null;
+  constitution?: { rules_in_force: number; checks: Array<{ key: string; title: string; passed: boolean; detail: string }> };
 }
 
 async function knowledgeCoreCall<T = any>(path: string, payload: Record<string, unknown>, token?: string): Promise<T> {
