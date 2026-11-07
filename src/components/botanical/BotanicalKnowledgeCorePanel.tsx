@@ -293,10 +293,11 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
                 <option value="private">{es ? 'Privado' : 'Private'}</option><option value="public">{es ? 'Público' : 'Public'}</option>
               </select>
               {record.review_status !== 'rejected' && <div className="grid grid-cols-2 gap-2">
-                <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || value.common_name.trim().length < 2} onClick={() => void decideRecord(record, 'approved')}>{es ? 'Aprobar e indexar' : 'Approve & index'}</button>
+                <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || value.common_name.trim().length < 2 || (basis.trim().length >= 20 && !refs.length)} onClick={() => void decideRecord(record, 'approved')}>{es ? 'Aprobar e indexar' : 'Approve & index'}</button>
                 <button type="button" className={buttonClass + ' border border-red-500/40 text-red-600'} disabled={!!busy} onClick={() => void decideRecord(record, 'rejected')}>{es ? 'Rechazar' : 'Reject'}</button>
               </div>}
               {verificationBasis[record.id]?.trim().length > 0 && verificationBasis[record.id].trim().length < 20 && <p className="text-[10px] text-amber-700">{es ? 'La base científica necesita al menos 20 caracteres; el registro no se marcará como verificado.' : 'Scientific basis needs at least 20 characters; the record will not be marked verified.'}</p>}
+              {basis.trim().length >= 20 && !refs.length && <p className="text-[10px] text-amber-700">{es ? 'Para verificar científicamente también debes agregar al menos una referencia.' : 'Scientific verification also requires at least one source reference.'}</p>}
             </article>;
           })}
         </>
