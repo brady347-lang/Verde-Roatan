@@ -134,7 +134,7 @@ async function submitHealthEvidence(request, body, env) {
     evidence, evidence_storage_path: path,
     visibility: 'private', review_status: 'pending',
     verification_status: 'community_submitted', rag_indexed: false,
-    submitted_by: auth.user.id, submitted_by_email: clean(auth.user.email, 254) || null
+    submitted_by: auth.user.id, submitted_by_email: clean(auth.user.email || auth.user.id, 254) || null
   };
   const inserted = await db(env, 'botanical_health_records', {
     method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(row)
@@ -242,8 +242,8 @@ async function reviewHealthRecord(request, body, env) {
   return json(200, { status: 'success', record: Array.isArray(updated.data) ? updated.data[0] : null });
 }
 
-function makeChunks(summary, facts, critical) {
-  const source = [summary, ...(Array.isArray(facts) ? facts : []), ...(Array.isArray(critical) ? critical : [])]
+function makeChunks(summary, facts, critical, warnings) {
+  const source = [summary, ...(Array.isArray(facts) ? facts : []), ...(Array.isArray(critical) ? critical : []), ...(Array.isArray(warnings) ? warnings.map(v => 'Safety warning: ' + (typeof v === 'string' ? v : v?.text || JSON.stringify(v))) : [])]
     .map(v => typeof v === 'string' ? clean(v, 5000) : clean(v?.text || v?.value || JSON.stringify(v), 1200))
     .filter(Boolean);
   const chunks = [];
