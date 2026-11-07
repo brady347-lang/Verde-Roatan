@@ -112,6 +112,21 @@ test('health review cannot scientifically verify without a written basis', async
   assert.equal(r.status, 400);
 });
 
+test('scientific verification also requires a source reference', async () => {
+  setup((url, init) => {
+    if (url.includes('/rest/v1/botanical_health_records?id=eq.' + RECORD) && (!init.method || init.method === 'GET')) {
+      return ok([{ id: RECORD, review_status: 'pending', verification_status: 'community_submitted' }]);
+    }
+    throw new Error('No update should run without a source reference: ' + url);
+  });
+  const r = await worker.fetch(request('/health/admin/review', {
+    record_id: RECORD, status: 'approved', verification_status: 'scientifically_verified',
+    verification_basis: 'Compared with a peer-reviewed university extension bulletin.'
+  }), env);
+  assert.equal(r.status, 400);
+  assert.match((await r.json()).error, /source reference/);
+});
+
 test('health review only indexes approved records and records reviewer identity', async () => {
   const calls = setup((url, init) => {
     if (url.includes('/rest/v1/botanical_health_records?id=eq.' + RECORD) && (!init.method || init.method === 'GET')) {
