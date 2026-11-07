@@ -75,7 +75,7 @@ function describeGemini429(model, detail, delayMs, quotaExhausted) {
   return `Gemini ${model} is temporarily rate-limiting requests (HTTP 429). Please wait a moment and try again. If this keeps happening, check the Google AI Studio API quota.${context}`;
 }
 
-async function callGemini(env, apiKey, parts, { totalMs = 45000, perCallMs = 25000 } = {}) {
+async function callGemini(env, apiKey, parts, { totalMs = 62000, perCallMs = 58000 } = {}) {
   // Gemini 3.8 Flash is the sole approved model. Retry transient rate limits with bounded
   // exponential backoff, honoring Google's Retry-After / RetryInfo when it is safe to wait.
   const models = GEMINI_MODELS;

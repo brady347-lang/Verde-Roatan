@@ -28,16 +28,16 @@ await t('/api/refine alias + garden advisor', async () => {
   assert.equal((await (await post('/api/refine', { image: IMG, initialResult: plant })).json()).status, 'success');
   const g = await (await post('/garden-advisor', { conditions: 'x', catalogItems: [] })).json(); assert.equal(g.status, 'success'); assert.equal(g.summary, 's');
 });
-await t('a slow Gemini 3.8 answer gets 25s (not 12s), is then aborted, and no retired model or retry is tried', async () => {
+await t('a slow Gemini 3.8 answer gets 58s (not 25s), is then aborted, and no retired model or retry is tried', async () => {
   mock((m, init) => new Promise((_, rej) => init.signal.addEventListener('abort', () => rej(Object.assign(new Error('x'), { name: 'AbortError' })))));
   nodeMock.timers.enable({ apis: ['setTimeout'] });
   try {
     let finished = false;
     const pending = post('/', { image: IMG }).then((r) => { finished = true; return r; });
     await new Promise((r) => setImmediate(r));
-    nodeMock.timers.tick(13000); await new Promise((r) => setImmediate(r));
-    assert.equal(finished, false, 'still waiting after 13s (the old 12s cap would have given up)');
-    nodeMock.timers.tick(13000);
+    nodeMock.timers.tick(30000); await new Promise((r) => setImmediate(r));
+    assert.equal(finished, false, 'still waiting after 30s (the old 25s cap would have given up)');
+    nodeMock.timers.tick(30000);
     const r = await pending; const j = await r.json();
     assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini gemini-3.8-flash timed out/);
     assert.deepEqual(calls, ['gemini-3.8-flash']);
