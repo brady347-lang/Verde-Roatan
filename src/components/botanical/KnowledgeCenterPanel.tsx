@@ -481,7 +481,7 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
           {(coreSafetyNote || gate?.safety_note) && <p className="text-[12.5px] font-bold text-amber-800 bg-amber-50 rounded-xl p-2.5"><AlertTriangle className="w-4 h-4 inline mr-1" />{coreSafetyNote || gate?.safety_note}</p>}
           {origin === 'knowledge_core' && coreChecks.length > 0 && (
             <p className="text-[11.5px] text-[var(--ink-soft)]">
-              {es ? 'Constitución' : 'Constitution'}: {coreChecks.filter(c => c.passed).map(c => c.title).join(' · ')}
+              {es ? 'Constitución' : 'Constitution'}: {coreChecks.map(c => (c.passed ? '✓ ' : '⚠ ') + c.title).join(' · ')}
             </p>
           )}
           {origin === 'documents' && gate && (
