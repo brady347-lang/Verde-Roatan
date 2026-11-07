@@ -37,3 +37,15 @@ export const decideConstitutionAmendment = (token: string, id: string, decision:
   call<{ decision: string }>('/constitution/decide', token, { amendment_id: id, decision, ...edits });
 export const editConstitutionRule = (token: string, id: string, edits: { title?: string; body?: string; active?: boolean; note?: string }) =>
   call<{ rule: ConstitutionRule }>('/constitution/edit-rule', token, { rule_id: id, ...edits });
+
+export interface ConstitutionAskPassage { n: number; document_id: string; document: string; citation?: string | null; page?: number | null; snippet: string; rank: number }
+export interface ConstitutionAskResult {
+  answered: boolean; answer: string; ai_assisted: false; source: 'documents';
+  passages: ConstitutionAskPassage[];
+  records: Array<{ scientific_name: string; common_name?: string | null; verification_status: string; description?: string | null; toxicity?: string | null }>;
+  safety_note: string | null;
+  constitution: { rules_in_force: number; checks: Array<{ key: string; title: string; passed: boolean; detail: string }> };
+}
+// Documents first: searches approved documents and published records, held to the constitution. No AI.
+export const askConstitution = (token: string, question: string, includePrivate: boolean) =>
+  call<ConstitutionAskResult>('/constitution/ask', token, { question, include_private: includePrivate });
