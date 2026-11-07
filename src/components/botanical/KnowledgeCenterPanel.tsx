@@ -133,7 +133,8 @@ export const KnowledgeCenterPanel: React.FC<Props> = ({ lang, accessToken }) => 
           </div>
         </>
       )}
-      {tab === 'reference_photos' && <ReferencePhotos es={es} accessToken={accessToken} />}\n      {tab === 'playground' && <Playground es={es} accessToken={accessToken} />}
+      {tab === 'reference_photos' && <ReferencePhotos es={es} accessToken={accessToken} />}
+      {tab === 'playground' && <Playground es={es} accessToken={accessToken} />}
     </div>
   );
 };
