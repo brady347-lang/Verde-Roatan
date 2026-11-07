@@ -17,6 +17,12 @@ import { STRINGS } from '../data/initialData';
 
 interface HomeScreenProps {
   lang: Language;
+  isSignedIn: boolean;
+  isAdmin: boolean;
+  displayName: string;
+  gardenCount: number;
+  cartCount: number;
+  activeOrdersCount: number;
   onNavigate: (tab: any) => void;
   onStartIdentify: (mode: 'plant' | 'pest') => void;
   catalog: CatalogItem[];
@@ -30,6 +36,12 @@ interface HomeScreenProps {
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   lang,
+  isSignedIn,
+  isAdmin,
+  displayName,
+  gardenCount,
+  cartCount,
+  activeOrdersCount,
   onNavigate,
   onStartIdentify,
   catalog,
@@ -63,7 +75,69 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <h1 className="text-[27px] font-extrabold text-[var(--ink)] leading-tight tracking-tight">
           {t('homeTitle')}
         </h1>
+
       </header>
+
+      {/* Shared Rootwise welcome with account-aware shortcuts */}
+      <section className="rounded-3xl border border-[var(--palm)]/25 bg-gradient-to-br from-[#073d28] via-[#10563a] to-[#0c3440] p-4 text-white shadow-md overflow-hidden relative">
+        <div className="absolute -right-8 -top-10 w-36 h-36 rounded-full border border-white/10" />
+        <div className="absolute -right-2 -top-4 w-24 h-24 rounded-full border border-white/10" />
+        <div className="relative flex flex-col gap-3">
+          <div className="flex items-center gap-2">
+            <img src="/rootwise-mark.svg" alt="" aria-hidden="true" className="w-9 h-9 rounded-xl object-cover border border-white/20" />
+            <div className="min-w-0">
+              <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-emerald-200">ROOTWISE · PLANT INTELLIGENCE</p>
+              <p className="text-[12px] text-white/75">{isSignedIn ? (lang === 'es' ? 'Tu espacio de cultivo' : 'Your growing space') : (lang === 'es' ? 'Explora. Identifica. Aprende. Cultiva.' : 'Explore. Identify. Learn. Grow.')}</p>
+            </div>
+          </div>
+          <div>
+            <h2 className="text-[23px] leading-tight font-extrabold tracking-tight">
+              {isSignedIn
+                ? `${lang === 'es' ? '¡Bienvenido de nuevo' : 'Welcome back'}${displayName ? `, ${displayName.split(' ')[0]}` : ''}.`
+                : (lang === 'es' ? 'Todo empieza con una raíz.' : 'Every great garden starts at the roots.')}
+            </h2>
+            <p className="text-[12.5px] leading-relaxed text-white/80 mt-1 max-w-[34rem]">
+              {isAdmin
+                ? (lang === 'es' ? 'Tu espacio de administración está listo. Gestiona el catálogo, pedidos y conocimiento botánico.' : 'Your administrator workspace is ready. Manage the catalog, orders and botanical knowledge.')
+                : isSignedIn
+                  ? (lang === 'es' ? 'Continúa explorando plantas, guarda tus descubrimientos y mantén tus pedidos al día.' : 'Keep exploring plants, save your discoveries and stay on top of your orders.')
+                  : (lang === 'es' ? 'Descubre plantas, identifica especies y encuentra conocimiento botánico confiable.' : 'Discover plants, identify species and explore trusted botanical knowledge.')}
+            </p>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl bg-white/10 border border-white/10 px-2.5 py-2">
+              <b className="block text-[18px] leading-none tabular-nums">{catalog.filter((c) => c.t === 'plant').length}</b>
+              <span className="text-[10px] text-white/75">{lang === 'es' ? 'Plantas' : 'Plants'}</span>
+            </div>
+            <div className="rounded-xl bg-white/10 border border-white/10 px-2.5 py-2">
+              <b className="block text-[18px] leading-none tabular-nums">{gardenCount}</b>
+              <span className="text-[10px] text-white/75">{lang === 'es' ? 'Mi jardín' : 'My garden'}</span>
+            </div>
+            <div className="rounded-xl bg-white/10 border border-white/10 px-2.5 py-2">
+              <b className="block text-[18px] leading-none tabular-nums">{activeOrdersCount || cartCount}</b>
+              <span className="text-[10px] text-white/75">{activeOrdersCount ? (lang === 'es' ? 'Pedidos activos' : 'Active orders') : (lang === 'es' ? 'En carrito' : 'In cart')}</span>
+            </div>
+          </div>
+          {isAdmin ? (
+            <button type="button" onClick={() => onNavigate('account')} className="self-start inline-flex items-center gap-2 rounded-xl bg-[#f4c94d] px-4 py-2.5 text-[13px] font-extrabold text-[#153a29] shadow-sm active:scale-95 transition-transform">
+              {lang === 'es' ? 'Abrir panel de administración' : 'Open administrator workspace'} <ChevronRight className="w-4 h-4" />
+            </button>
+          ) : isSignedIn ? (
+            <div className="flex gap-2">
+              <button type="button" onClick={() => onNavigate('account')} className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-[12px] font-extrabold text-[#12422f] active:scale-95 transition-transform">
+                {lang === 'es' ? 'Mi jardín' : 'My garden'} <ChevronRight className="w-4 h-4" />
+              </button>
+              <button type="button" onClick={() => onNavigate('request')} className="inline-flex items-center gap-2 rounded-xl border border-white/35 bg-white/10 px-3.5 py-2.5 text-[12px] font-bold text-white active:scale-95 transition-transform">
+                {lang === 'es' ? 'Mis pedidos' : 'My orders'} <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => onNavigate('account')} className="self-start inline-flex items-center gap-2 rounded-xl bg-[#f4c94d] px-4 py-2.5 text-[13px] font-extrabold text-[#153a29] shadow-sm active:scale-95 transition-transform">
+              {lang === 'es' ? 'Crear cuenta o iniciar sesión' : 'Create account or sign in'} <ChevronRight className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+      </section>
 
       {/* Global Search Bar */}
       <form onSubmit={handleSearch} className="relative flex items-center">
