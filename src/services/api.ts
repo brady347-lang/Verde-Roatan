@@ -3,6 +3,7 @@ import {
   AI_WORKER_URL,
   API_URL,
   CURRENCY_WORKER_URL,
+  KNOWLEDGE_CORE_WORKER_URL,
   INITIAL_CATALOG,
   ROATAN_DELIVERY_ZONES,
   SUPABASE_PUBLISHABLE_KEY,
@@ -1050,6 +1051,151 @@ export async function reviewBotanicalReferenceImage(token: string, image_id: str
 export async function searchBotanicalTaxa(token: string, q: string): Promise<Array<{id:string; scientific_name:string; common_name?:string}>> {
   const data = await knowledgeCall('reference-images/taxa-search', { q }, token);
   return data.results || [];
+}
+
+export interface BotanicalHealthRecord {
+  id: string;
+  record_type: 'pest' | 'disease';
+  common_name: string;
+  scientific_name?: string | null;
+  aliases?: string[];
+  description?: string | null;
+  identification_features?: string | null;
+  symptoms?: string;
+  causes?: string | null;
+  treatment?: string | null;
+  prevention?: string | null;
+  affected_plants?: string[];
+  severity_guidance?: Record<string, unknown>;
+  safety_warnings?: string[];
+  source_references?: Array<Record<string, unknown>>;
+  evidence?: Record<string, any>;
+  evidence_image_url?: string | null;
+  visibility: 'private' | 'public';
+  review_status: 'pending' | 'approved' | 'rejected' | 'archived';
+  verification_status: 'ai_identified' | 'community_submitted' | 'source_supported' | 'scientifically_verified';
+  rag_indexed: boolean;
+  created_at?: string;
+}
+export interface KnowledgeDocumentSummary {
+  id: string;
+  document_id: string;
+  version: number;
+  summary: string;
+  key_facts: any[];
+  critical_details: any[];
+  safety_warnings: any[];
+  source_pages: number[];
+  generation_method: 'human' | 'ai_assisted' | 'imported';
+  review_status: 'pending' | 'approved' | 'rejected' | 'superseded';
+  reviewed_at?: string | null;
+  created_at?: string;
+}
+export interface VerdeKnowledgeHit {
+  source_type: 'research' | 'pest' | 'disease';
+  source_id: string;
+  document_id?: string | null;
+  source_title: string;
+  citation?: string | null;
+  page_start?: number | null;
+  page_end?: number | null;
+  content: string;
+  verification_status: string;
+  rank: number;
+}
+export interface VerdeKnowledgeSearchResult {
+  status: string;
+  source: string;
+  ai_used: false;
+  answered: boolean;
+  answer: string;
+  results: VerdeKnowledgeHit[];
+}
+
+async function knowledgeCoreCall<T = any>(path: string, payload: Record<string, unknown>, token?: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(`${KNOWLEDGE_CORE_WORKER_URL}${path}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch {
+    throw new Error('The Botanical Knowledge Core is not reachable yet. The new Worker must be deployed before this feature can be used.');
+  }
+  const data = await response.json().catch(() => ({}));
+  if (response.status === 404 || response.status === 405) {
+    throw new Error('The Botanical Knowledge Core Worker is not deployed yet.');
+  }
+  if (!response.ok || data.status !== 'success') {
+    throw new Error(data.error || data.message || 'The Botanical Knowledge Core request failed.');
+  }
+  return data as T;
+}
+
+export async function submitBotanicalHealthEvidence(
+  recordType: 'pest' | 'disease',
+  image: string,
+  result: AIAnalysisResult,
+  notes: string,
+  accessToken: string
+): Promise<{ record_id: string; review_status: string; verification_status: string }> {
+  if (!accessToken) throw new Error('Please sign in before submitting a pest or disease report.');
+  if (!image?.startsWith('data:image/')) throw new Error('The original evidence photo is missing.');
+  const diagnosis = result.result || {};
+  if (!diagnosis.primary_diagnosis) throw new Error('The diagnosis is missing. Analyze the photo again.');
+  return knowledgeCoreCall('/health/submit', {
+    record_type: recordType,
+    common_name: diagnosis.primary_diagnosis,
+    scientific_name: diagnosis.scientific_name || '',
+    description: diagnosis.likely_cause || '',
+    symptoms: Array.isArray(diagnosis.symptoms) ? diagnosis.symptoms.join('; ') : '',
+    likely_cause: diagnosis.likely_cause || '',
+    suggested_treatment: diagnosis.treatment || [],
+    suggested_prevention: diagnosis.prevention || [],
+    severity: diagnosis.severity || '',
+    confidence: result.candidates?.[0]?.confidence_score,
+    model: result.model_used || '',
+    notes: notes.trim(),
+    image
+  }, accessToken);
+}
+
+export async function listBotanicalHealthRecords(
+  token: string,
+  status: 'pending' | 'approved' | 'rejected' | 'archived' = 'pending',
+  recordType?: 'pest' | 'disease'
+): Promise<BotanicalHealthRecord[]> {
+  const data = await knowledgeCoreCall<{ records: BotanicalHealthRecord[] }>('/health/admin/list', {
+    status, ...(recordType ? { record_type: recordType } : {})
+  }, token);
+  return data.records || [];
+}
+export async function createBotanicalHealthRecord(token: string, payload: Record<string, unknown>): Promise<BotanicalHealthRecord> {
+  const data = await knowledgeCoreCall<{ record: BotanicalHealthRecord }>('/health/admin/create', payload, token);
+  return data.record;
+}
+export async function reviewBotanicalHealthRecord(token: string, payload: Record<string, unknown>): Promise<void> {
+  await knowledgeCoreCall('/health/admin/review', payload, token);
+}
+export async function listKnowledgeDocumentSummaries(token: string): Promise<KnowledgeDocumentSummary[]> {
+  const data = await knowledgeCoreCall<{ summaries: KnowledgeDocumentSummary[] }>('/knowledge/summaries/list', {}, token);
+  return data.summaries || [];
+}
+export async function createKnowledgeDocumentSummary(token: string, payload: Record<string, unknown>): Promise<KnowledgeDocumentSummary> {
+  const data = await knowledgeCoreCall<{ summary: KnowledgeDocumentSummary }>('/knowledge/summaries/create', payload, token);
+  return data.summary;
+}
+export async function reviewKnowledgeDocumentSummary(token: string, summaryId: string, decision: 'approve' | 'reject', reviewNote = ''): Promise<void> {
+  await knowledgeCoreCall('/knowledge/summaries/review', { summary_id: summaryId, decision, review_note: reviewNote }, token);
+}
+export async function searchVerdeKnowledge(token: string | undefined, query: string, includePrivate = false): Promise<VerdeKnowledgeSearchResult> {
+  return knowledgeCoreCall('/knowledge/search', { query, include_private: includePrivate }, token);
 }
 
 export const askKnowledge = async (token: string, question: string, opts: { includePrivate: boolean; minSimilarity: number }): Promise<{ answered: boolean; answer: string; sources: KnowledgeSource[] }> => knowledgeCall('ask', { question, include_private: opts.includePrivate, min_similarity: opts.minSimilarity }, token);
