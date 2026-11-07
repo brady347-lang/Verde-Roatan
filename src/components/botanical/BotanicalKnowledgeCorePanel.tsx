@@ -206,7 +206,7 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
               {es ? 'Páginas fuente (ej. 2, 4, 7)' : 'Source pages (e.g. 2, 4, 7)'}
               <input className={fieldClass} value={summaryForm.source_pages} onChange={e => setSummaryForm(v => ({ ...v, source_pages: e.target.value }))} />
             </label>
-            <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || !summaryForm.document_id || summaryForm.summary.trim().length < 40} onClick={() => void saveSummary()}>
+            <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || !summaryForm.document_id || summaryForm.summary.trim().length < 40 || !summaryForm.source_pages.split(/[ ,;]+/).some(v => Number.isInteger(Number(v)) && Number(v) > 0)} onClick={() => void saveSummary()}>
               {busy === 'summary-save' ? (es ? 'Guardando…' : 'Saving…') : (es ? 'Guardar como pendiente' : 'Save as pending')}
             </button>
           </section>
