@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileText, Loader2, RefreshCw, Search, Upload } from 'lucide-react';
 import {
   KnowledgeDocument, KnowledgeEntity, KnowledgeSource, askKnowledge, extractKnowledgeEntities, getKnowledgeDocument,
-  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf, BotanicalReferenceImage, listBotanicalReferenceImages, uploadBotanicalReferenceImage, reviewBotanicalReferenceImage, searchBotanicalTaxa
+  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf, BotanicalReferenceImage, listBotanicalReferenceImages, uploadBotanicalReferenceImage, reviewBotanicalReferenceImage, searchBotanicalTaxa, searchVerdeKnowledge
 } from '../../services/api';
 import { extractPdfPages } from '../../lib/pdfText';
 import { askConstitution, ConstitutionAskResult } from '../../lib/constitutionApi';
@@ -403,14 +403,38 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
   const [error, setError] = useState('');
   const [res, setRes] = useState<{ answered: boolean; answer: string; sources: KnowledgeSource[] } | null>(null);
   // Where the answer came from: documents + constitution first, Gemini only as the labeled backup.
-  const [origin, setOrigin] = useState<'documents' | 'gemini' | null>(null);
+  const [origin, setOrigin] = useState<'knowledge_core' | 'documents' | 'gemini' | null>(null);
   const [gate, setGate] = useState<ConstitutionAskResult | null>(null);
 
   const ask = async () => {
     if (!accessToken || q.trim().length < 3) return;
     setBusy(true); setError(''); setRes(null); setOrigin(null); setGate(null);
     try {
-      // 1) Approved documents and published records, held to the constitution (no AI).
+      // 1) Search the new curated Knowledge Core first: approved summaries and reviewed pest/disease records, no AI.
+      try {
+        const core = await searchVerdeKnowledge(accessToken, q.trim(), includePrivate);
+        if (core.answered) {
+          setOrigin('knowledge_core');
+          setRes({
+            answered: true,
+            answer: core.answer,
+            sources: core.results.map((p, index) => ({
+              n: index + 1,
+              document_id: p.document_id || p.source_id,
+              document: `${p.source_type.toUpperCase()}: ${p.source_title}`,
+              citation: p.citation,
+              page: p.page_start,
+              similarity: p.rank,
+              snippet: p.content,
+              used: true
+            }))
+          });
+          return;
+        }
+      } catch {
+        // The existing approved-document and Constitution route remains available until the new Worker is deployed.
+      }
+      // 2) Search the existing raw approved documents and published plant reference records.
       let first: ConstitutionAskResult | null = null;
       try { first = await askConstitution(accessToken, q.trim(), includePrivate); } catch { first = null; }
       if (first?.answered) {
@@ -421,7 +445,7 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
         });
         return;
       }
-      // 2) Nothing found there: ask Gemini-assisted search, and say so on screen.
+      // 3) Preserve the existing explicitly labeled Gemini-assisted fallback.
       setGate(first); setOrigin('gemini');
       setRes(await askKnowledge(accessToken, q.trim(), { includePrivate, minSimilarity: minSim }));
     }
@@ -440,9 +464,11 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
         <div className="flex flex-col gap-2">
           {origin && (
             <p className="text-[11.5px] font-extrabold text-[var(--ink-soft)]">
-              {origin === 'documents'
-                ? (es ? 'De tus documentos aprobados · sin IA' : 'From your approved documents · no AI')
-                : (es ? 'Nada en los documentos por búsqueda de texto: búsqueda asistida por Gemini' : 'Nothing found by document text search: Gemini-assisted search')}
+              {origin === 'knowledge_core'
+                ? (es ? 'Del Knowledge Core aprobado · sin IA' : 'From approved Knowledge Core · no AI')
+                : origin === 'documents'
+                  ? (es ? 'De tus documentos aprobados · sin IA' : 'From your approved documents · no AI')
+                  : (es ? 'Nada en los documentos por búsqueda de texto: búsqueda asistida por Gemini' : 'Nothing found by document text search: Gemini-assisted search')}
             </p>
           )}
           <div className={`rounded-2xl p-3 text-[13.5px] whitespace-pre-line ${res.answered ? 'bg-emerald-50 text-[var(--ink)]' : 'bg-amber-50 text-amber-900'}`}>
