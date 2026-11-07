@@ -164,6 +164,63 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON public.knowledge_document_summaries,
   public.knowledge_curated_chunks, public.botanical_health_records,
   public.botanical_health_record_taxa TO service_role;
 
+-- Atomic summary approval: chunk creation, superseding the previous version and approval
+-- happen in one transaction so retrieval never sees a partially published version.
+CREATE OR REPLACE FUNCTION public.approve_knowledge_document_summary(
+  p_summary_id uuid,
+  p_reviewed_by_email text,
+  p_review_note text,
+  p_chunks jsonb
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public', 'pg_temp'
+AS $
+DECLARE
+  s public.knowledge_document_summaries%ROWTYPE;
+  d public.knowledge_documents%ROWTYPE;
+BEGIN
+  SELECT * INTO s FROM public.knowledge_document_summaries
+  WHERE id = p_summary_id FOR UPDATE;
+  IF NOT FOUND OR s.review_status <> 'pending' THEN
+    RAISE EXCEPTION 'The summary is missing or is no longer pending review';
+  END IF;
+
+  SELECT * INTO d FROM public.knowledge_documents WHERE id = s.document_id;
+  IF NOT FOUND OR d.status <> 'approved' OR d.rag_indexed IS NOT TRUE THEN
+    RAISE EXCEPTION 'The original source document must be approved and indexed first';
+  END IF;
+
+  IF length(btrim(coalesce(p_reviewed_by_email, ''))) = 0
+     OR jsonb_typeof(p_chunks) <> 'array'
+     OR jsonb_array_length(p_chunks) < 1 THEN
+    RAISE EXCEPTION 'Reviewer identity and at least one curated chunk are required';
+  END IF;
+
+  DELETE FROM public.knowledge_curated_chunks WHERE summary_id = s.id;
+  INSERT INTO public.knowledge_curated_chunks
+    (summary_id, document_id, chunk_index, page_start, page_end, content)
+  SELECT s.id, s.document_id, x.chunk_index, x.page_start, x.page_end, x.content
+  FROM jsonb_to_recordset(p_chunks) AS x(
+    chunk_index integer, page_start integer, page_end integer, content text
+  );
+
+  UPDATE public.knowledge_document_summaries
+  SET review_status = 'superseded'
+  WHERE document_id = s.document_id AND review_status = 'approved' AND id <> s.id;
+
+  UPDATE public.knowledge_document_summaries
+  SET review_status = 'approved',
+      reviewed_by_email = p_reviewed_by_email,
+      reviewed_at = now(),
+      review_note = nullif(btrim(p_review_note), '')
+  WHERE id = s.id;
+END;
+$;
+REVOKE ALL ON FUNCTION public.approve_knowledge_document_summary(uuid, text, text, jsonb) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.approve_knowledge_document_summary(uuid, text, text, jsonb) TO service_role;
+
 -- A new, additive retrieval RPC. Safety warnings and severity guidance are indexed and returned.\n-- It never reads pending/rejected material. Existing
 -- match_knowledge_chunks() and search_knowledge_text() remain unchanged for compatibility.
 CREATE OR REPLACE FUNCTION public.search_verde_knowledge(
