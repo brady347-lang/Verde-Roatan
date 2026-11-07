@@ -191,13 +191,20 @@ test('summary approval atomically indexes summary, critical details and safety w
   assert.ok(!calls.some(c => /generativelanguage|gemini/i.test(c.url)));
 });
 
-test('public knowledge search excludes private data and reports no-AI retrieval', async () => {
+test('public knowledge search excludes private data, reports no-AI retrieval and applies Constitution checks', async () => {
   const calls = setup((url, init) => {
     if (url.includes('/rest/v1/rpc/search_verde_knowledge')) {
       const body = JSON.parse(init.body);
       assert.equal(body.include_private, false);
-      return ok([{ source_type: 'research', source_title: 'Palm guide.pdf', page_start: 4, content: 'Potassium deficiency symptoms.' }]);
+      return ok([{ source_type: 'research', source_title: 'Palm guide.pdf', citation: 'University extension', page_start: 4, content: 'Potassium deficiency symptoms.', verification_status: 'source_supported', rank: 0.2 }]);
     }
+    if (url.includes('/rest/v1/constitution_rules')) return ok([
+      { rule_key: 'approved_sources_only', title: 'Approved sources only' },
+      { rule_key: 'cite_the_source', title: 'Cite the source' },
+      { rule_key: 'never_false_information', title: 'Never give false information' },
+      { rule_key: 'three_verification_levels', title: 'Three verification levels' },
+      { rule_key: 'safety_first', title: 'Safety first' }
+    ]);
     throw new Error('Unexpected request: ' + url);
   }, null);
   const r = await worker.fetch(request('/knowledge/search', { query: 'palm potassium' }, null), env);
@@ -206,6 +213,7 @@ test('public knowledge search excludes private data and reports no-AI retrieval'
   assert.equal(j.ai_used, false);
   assert.equal(j.answered, true);
   assert.match(j.answer, /Palm guide.pdf, pages 4/);
+  assert.ok(j.constitution.checks.some(c => c.key === 'approved_sources_only' && c.passed));
   assert.ok(calls.every(c => !/generativelanguage|gemini/i.test(c.url)));
 });
 
@@ -215,6 +223,7 @@ test('private knowledge search is allowed only for authenticated admins', async 
       assert.equal(JSON.parse(init.body).include_private, true);
       return ok([]);
     }
+    if (url.includes('/rest/v1/constitution_rules')) return ok([{ rule_key: 'approved_sources_only', title: 'Approved sources only' }]);
     throw new Error('Unexpected request: ' + url);
   });
   const r = await worker.fetch(request('/knowledge/search', { query: 'hibiscus leaf', include_private: true }), env);
