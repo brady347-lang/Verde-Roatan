@@ -242,6 +242,7 @@ async function reviewHealthRecord(request, body, env) {
     patch.verification_status = 'community_submitted';
   } else if (body.verification_status === 'scientifically_verified') {
     if (basis.length < 20) return json(400, { status: 'error', error: 'Scientific verification requires a written evidence basis of at least 20 characters.' });
+    if (!Array.isArray(body.source_references) || !body.source_references.length) return json(400, { status: 'error', error: 'Scientific verification also requires at least one source reference.' });
     patch.verification_status = 'scientifically_verified';
     patch.verification_basis = basis;
   } else if (body.verification_status === 'source_supported') {
