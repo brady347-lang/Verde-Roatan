@@ -160,37 +160,29 @@ test('summary creation creates a pending human-authored version', async () => {
 });
 
 test('summary approval requires the original document to be approved and RAG-indexed', async () => {
-  setup((url) => {
+  setup((url, init) => {
     if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY)) return ok([{ id: SUMMARY, document_id: DOC, review_status: 'pending', summary: 'Summary text long enough to make a useful searchable curated passage.', key_facts: [], critical_details: [], source_pages: [2] }]);
-    if (url.includes('/rest/v1/knowledge_documents?id=eq.' + DOC)) return ok([{ id: DOC, status: 'awaiting_review', rag_indexed: false }]);
+    if (url.includes('/rest/v1/rpc/approve_knowledge_document_summary')) return ok({ message: 'The original source document must be approved and indexed first' }, 409);
     throw new Error('Unexpected request: ' + url);
   });
   const r = await worker.fetch(request('/knowledge/summaries/review', { summary_id: SUMMARY, decision: 'approve' }), env);
   assert.equal(r.status, 409);
 });
 
-test('summary approval builds curated chunks only after source approval', async () => {
+test('summary approval atomically indexes summary, critical details and safety warnings', async () => {
   const calls = setup((url, init) => {
-    if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY) && (!init.method || init.method === 'GET')) {
+    if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY)) {
       return ok([{ id: SUMMARY, document_id: DOC, review_status: 'pending', summary: 'A reviewed summary about palm nutrition, potassium deficiency, and leaf symptoms.', key_facts: ['Potassium deficiency causes older frond symptoms.'], critical_details: ['Avoid applying fertilizer to dry soil.'], safety_warnings: ['Wear gloves.'], source_pages: [2, 4] }]);
     }
-    if (url.includes('/rest/v1/knowledge_documents?id=eq.' + DOC)) return ok([{ id: DOC, status: 'approved', rag_indexed: true }]);
-    if (url.includes('/rest/v1/knowledge_curated_chunks') && init.method === 'DELETE') return ok(null, 204);
-    if (url.includes('/rest/v1/knowledge_curated_chunks') && init.method === 'POST') {
-      const rows = JSON.parse(init.body);
-      assert.ok(rows.length >= 1);
-      assert.equal(rows[0].page_start, 2);
-      assert.equal(rows[0].page_end, 4);
-      assert.ok(rows.some(row => row.content.includes('Safety warning: Wear gloves.')));
-      return ok(null, 201);
-    }
-    if (url.includes('/rest/v1/knowledge_document_summaries?id=eq.' + SUMMARY) && init.method === 'PATCH') {
-      const patch = JSON.parse(init.body);
-      assert.equal(patch.review_status, 'approved');
-      assert.equal(patch.reviewed_by_email, 'admin@verde.test');
+    if (url.includes('/rest/v1/rpc/approve_knowledge_document_summary')) {
+      const body = JSON.parse(init.body);
+      assert.equal(body.p_summary_id, SUMMARY);
+      assert.equal(body.p_reviewed_by_email, 'admin@verde.test');
+      assert.equal(body.p_chunks[0].page_start, 2);
+      assert.equal(body.p_chunks[0].page_end, 4);
+      assert.ok(body.p_chunks.some(row => row.content.includes('Safety warning: Wear gloves.')));
       return ok(null, 204);
     }
-    if (url.includes('/rest/v1/knowledge_document_summaries?document_id=eq.' + DOC) && init.method === 'PATCH') return ok(null, 204);
     throw new Error('Unexpected request: ' + url);
   });
   const r = await worker.fetch(request('/knowledge/summaries/review', { summary_id: SUMMARY, decision: 'approve' }), env);
