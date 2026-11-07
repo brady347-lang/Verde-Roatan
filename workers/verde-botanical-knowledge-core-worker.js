@@ -227,6 +227,8 @@ async function reviewHealthRecord(request, body, env) {
     review_note: clean(body.review_note, 1000) || null
   };
   const fields = body.fields && typeof body.fields === 'object' ? body.fields : {};
+  if (fields.common_name !== undefined && clean(fields.common_name, 180).length < 2) return json(400, { status: 'error', error: 'A common name of at least two characters is required.' });
+  if (body.status === 'approved' && Array.isArray(body.source_references)) patch.source_references = body.source_references.slice(0, 20);
   for (const key of ['common_name', 'scientific_name', 'description', 'identification_features', 'symptoms', 'causes', 'treatment', 'prevention']) {
     if (fields[key] !== undefined) patch[key] = key === 'common_name' ? clean(fields[key], 180) : clean(fields[key], key === 'treatment' ? 5000 : 3000);
   }
@@ -247,7 +249,6 @@ async function reviewHealthRecord(request, body, env) {
       return json(400, { status: 'error', error: 'Add at least one source reference before marking this record source-supported.' });
     }
     patch.verification_status = 'source_supported';
-    patch.source_references = body.source_references.slice(0, 20);
   } else {
     patch.verification_status = 'community_submitted';
   }
