@@ -300,7 +300,8 @@ AS $$
         h.common_name, h.scientific_name, array_to_string(h.aliases, ', '),
         h.description, h.identification_features, h.symptoms, h.causes,
         h.treatment, h.prevention, array_to_string(h.affected_plants, ', '),
-        h.severity_guidance::text, h.safety_warnings::text
+        'Severity guidance: ' || h.severity_guidance::text,
+        'Safety warnings: ' || h.safety_warnings::text
       ) AS content,
       h.verification_status,
       ts_rank(
