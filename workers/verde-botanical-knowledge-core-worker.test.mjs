@@ -252,6 +252,19 @@ test('public knowledge search excludes private data, reports no-AI retrieval and
   assert.ok(calls.every(c => !/generativelanguage|gemini/i.test(c.url)));
 });
 
+test('Knowledge Core fails closed when any required Constitution rule is missing', async () => {
+  setup((url) => {
+    if (url.includes('/rest/v1/rpc/search_verde_knowledge')) return ok([{ source_type: 'research', source_title: 'Palm guide.pdf', page_start: 2, content: 'Some source text.', verification_status: 'source_supported' }]);
+    if (url.includes('/rest/v1/constitution_rules')) return ok([{ rule_key: 'approved_sources_only', title: 'Approved sources only' }]);
+    throw new Error('Unexpected request: ' + url);
+  }, null);
+  const r = await worker.fetch(request('/knowledge/search', { query: 'palm care' }, null), env);
+  const j = await r.json();
+  assert.equal(r.status, 503);
+  assert.match(j.error, /Constitution rules are unavailable/);
+  assert.equal(j.answered, undefined);
+});
+
 test('safety questions without approved safety data return an explicit warning and no invented answer', async () => {
   setup((url) => {
     if (url.includes('/rest/v1/rpc/search_verde_knowledge')) return ok([]);
