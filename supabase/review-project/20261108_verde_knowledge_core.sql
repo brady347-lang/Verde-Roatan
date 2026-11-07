@@ -90,7 +90,7 @@ CREATE TABLE IF NOT EXISTS public.botanical_health_records (
   CONSTRAINT health_record_verified_requires_basis CHECK (
     verification_status <> 'scientifically_verified'
     OR (review_status = 'approved' AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL
-        AND length(btrim(coalesce(verification_basis, ''))) >= 20)
+        AND length(btrim(coalesce(verification_basis, ''))) >= 20\n        AND jsonb_array_length(source_references) > 0)
   ),
   CONSTRAINT health_record_rag_requires_approval CHECK (NOT rag_indexed OR review_status = 'approved')
 );
@@ -138,7 +138,7 @@ BEGIN
   END IF;
   IF NEW.verification_status = 'scientifically_verified'
      AND (NEW.review_status <> 'approved' OR NEW.reviewed_by IS NULL OR NEW.reviewed_at IS NULL
-          OR length(btrim(coalesce(NEW.verification_basis, ''))) < 20) THEN
+          OR length(btrim(coalesce(NEW.verification_basis, ''))) < 20\n           OR jsonb_array_length(NEW.source_references) < 1) THEN
     RAISE EXCEPTION 'Scientific verification requires administrator approval and a written evidence basis';
   END IF;
   IF NEW.rag_indexed AND NEW.review_status <> 'approved' THEN
