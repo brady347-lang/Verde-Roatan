@@ -397,8 +397,14 @@ async function searchKnowledge(request, body, env) {
     { key: 'safety_first', passed: true, detail: 'Safety warnings are indexed; missing safety information is explicitly flagged when relevant.' }
   ];
   const reportedChecks = checks.filter(check => titles.has(check.key)).map(check => ({ ...check, title: titles.get(check.key) }));
-  const safetyAsked = /toxic|poison|pet|dog|cat|child|kid|edible|safe|t[oó]xic|venen|mascota|perro|gato|ni[ñn]o/i.test(q);
-  const safetyRecorded = result.data.some(hit => /safety warning|toxic|poison|pet safe|pet unsafe|wear gloves|protective equipment|venen|mascota/i.test(hit.content || ''));
+  const specificSafetyQuestion = /toxic|poison|pet|dog|cat|child|kid|edible|venen|mascota|perro|gato|ni[ñn]o/i.test(q);
+  const safetyAsked = specificSafetyQuestion || /safe|safety|segur/i.test(q);
+  const safetyRecorded = result.data.some(hit => {
+    const content = hit.content || '';
+    return specificSafetyQuestion
+      ? /toxic|poison|pet|dog|cat|child|kid|edible|venen|mascota|perro|gato|ni[ñn]o/i.test(content)
+      : /safety warning|wear gloves|protective equipment|seguridad|precauci[oó]n/i.test(content);
+  });
   let safety_note = null;
   if (safetyAsked && !safetyRecorded) {
     safety_note = 'Safety information is not recorded in the retrieved approved knowledge. Do not assume the plant or treatment is safe.';
