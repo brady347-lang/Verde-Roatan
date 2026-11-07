@@ -7,6 +7,8 @@ name: Verde Roatan - Google Play Bundle (AAB)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [feat/google-play-bundle]   # test trigger; removed before merge
 
 permissions:
   contents: read
