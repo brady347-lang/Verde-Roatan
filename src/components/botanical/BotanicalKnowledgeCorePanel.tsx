@@ -199,9 +199,9 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
               {docs.filter(d => d.status === 'approved' && d.rag_indexed).map(d => <option key={d.id} value={d.id}>{d.original_name}</option>)}
             </select>
             {input(es ? 'Resumen' : 'Summary', summaryForm.summary, v => setSummaryForm(x => ({ ...x, summary: v })), 5)}
-            {input(es ? 'Hechos clave (uno por línea)' : 'Key facts (one per line)', summaryForm.key_facts, v => setSummaryForm(x => ({ ...x, key_facts: v }))}
-            {input(es ? 'Detalles críticos / aplicación (uno por línea)' : 'Critical details / application (one per line)', summaryForm.critical_details, v => setSummaryForm(x => ({ ...x, critical_details: v }))}
-            {input(es ? 'Advertencias de seguridad (uno por línea)' : 'Safety warnings (one per line)', summaryForm.safety_warnings, v => setSummaryForm(x => ({ ...x, safety_warnings: v }))}
+            {input(es ? 'Hechos clave (uno por línea)' : 'Key facts (one per line)', summaryForm.key_facts, v => setSummaryForm(x => ({ ...x, key_facts: v })))) }
+            {input(es ? 'Detalles críticos / aplicación (uno por línea)' : 'Critical details / application (one per line)', summaryForm.critical_details, v => setSummaryForm(x => ({ ...x, critical_details: v })))) }
+            {input(es ? 'Advertencias de seguridad (uno por línea)' : 'Safety warnings (one per line)', summaryForm.safety_warnings, v => setSummaryForm(x => ({ ...x, safety_warnings: v })))) }
             <label className="flex flex-col gap-1 text-[11px] font-bold text-[var(--ink)]">
               {es ? 'Páginas fuente (ej. 2, 4, 7)' : 'Source pages (e.g. 2, 4, 7)'}
               <input className={fieldClass} value={summaryForm.source_pages} onChange={e => setSummaryForm(v => ({ ...v, source_pages: e.target.value }))} />
@@ -246,12 +246,12 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
               <input className={fieldClass} placeholder={es ? 'Nombre común' : 'Common name'} value={recordForm.common_name} onChange={e => setRecordForm(v => ({ ...v, common_name: e.target.value }))} />
             </div>
             <input className={fieldClass} placeholder={es ? 'Nombre científico (opcional)' : 'Scientific name (optional)'} value={recordForm.scientific_name} onChange={e => setRecordForm(v => ({ ...v, scientific_name: e.target.value }))} />
-            {input(es ? 'Síntomas' : 'Symptoms', recordForm.symptoms, v => setRecordForm(x => ({ ...x, symptoms: v }))}
-            {input(es ? 'Descripción / identificación' : 'Description / identification', recordForm.description, v => setRecordForm(x => ({ ...x, description: v }))}
-            {input(es ? 'Tratamiento (con fuente)' : 'Treatment (with source)', recordForm.treatment, v => setRecordForm(x => ({ ...x, treatment: v }))}
-            {input(es ? 'Prevención' : 'Prevention', recordForm.prevention, v => setRecordForm(x => ({ ...x, prevention: v }))}
-            {input(es ? 'Advertencias de seguridad' : 'Safety warnings', recordForm.safety_warnings, v => setRecordForm(x => ({ ...x, safety_warnings: v }))}
-            {input(es ? 'Referencias (una por línea)' : 'References (one per line)', recordForm.source_references, v => setRecordForm(x => ({ ...x, source_references: v }))}
+            {input(es ? 'Síntomas' : 'Symptoms', recordForm.symptoms, v => setRecordForm(x => ({ ...x, symptoms: v })))) }
+            {input(es ? 'Descripción / identificación' : 'Description / identification', recordForm.description, v => setRecordForm(x => ({ ...x, description: v })))) }
+            {input(es ? 'Tratamiento (con fuente)' : 'Treatment (with source)', recordForm.treatment, v => setRecordForm(x => ({ ...x, treatment: v })))) }
+            {input(es ? 'Prevención' : 'Prevention', recordForm.prevention, v => setRecordForm(x => ({ ...x, prevention: v })))) }
+            {input(es ? 'Advertencias de seguridad' : 'Safety warnings', recordForm.safety_warnings, v => setRecordForm(x => ({ ...x, safety_warnings: v })))) }
+            {input(es ? 'Referencias (una por línea)' : 'References (one per line)', recordForm.source_references, v => setRecordForm(x => ({ ...x, source_references: v })))) }
             <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || recordForm.common_name.trim().length < 2} onClick={() => void saveRecord()}>{es ? 'Crear pendiente' : 'Create pending record'}</button>
           </section>
 
@@ -270,11 +270,11 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
               </div>
               {record.evidence?.ai_identification && <p className="text-[10px] text-[var(--ink-soft)]">AI suggestion (unverified): {record.evidence.ai_identification.primary_diagnosis || record.common_name}</p>}
               {input(es ? 'Nombre común' : 'Common name', value.common_name, v => setEdits(old => ({ ...old, [record.id]: { ...value, common_name: v } })), 1)}
-              {input(es ? 'Síntomas' : 'Symptoms', value.symptoms, v => setEdits(old => ({ ...old, [record.id]: { ...value, symptoms: v } }))}
-              {input(es ? 'Descripción' : 'Description', value.description, v => setEdits(old => ({ ...old, [record.id]: { ...value, description: v } }))}
-              {input(es ? 'Tratamiento' : 'Treatment', value.treatment, v => setEdits(old => ({ ...old, [record.id]: { ...value, treatment: v } }))}
-              {input(es ? 'Prevención' : 'Prevention', value.prevention, v => setEdits(old => ({ ...old, [record.id]: { ...value, prevention: v } }))}
-              {input(es ? 'Advertencias de seguridad' : 'Safety warnings', value.safety_warnings, v => setEdits(old => ({ ...old, [record.id]: { ...value, safety_warnings: v } }))}
+              {input(es ? 'Síntomas' : 'Symptoms', value.symptoms, v => setEdits(old => ({ ...old, [record.id]: { ...value, symptoms: v } })))) }
+              {input(es ? 'Descripción' : 'Description', value.description, v => setEdits(old => ({ ...old, [record.id]: { ...value, description: v } })))) }
+              {input(es ? 'Tratamiento' : 'Treatment', value.treatment, v => setEdits(old => ({ ...old, [record.id]: { ...value, treatment: v } })))) }
+              {input(es ? 'Prevención' : 'Prevention', value.prevention, v => setEdits(old => ({ ...old, [record.id]: { ...value, prevention: v } })))) }
+              {input(es ? 'Advertencias de seguridad' : 'Safety warnings', value.safety_warnings, v => setEdits(old => ({ ...old, [record.id]: { ...value, safety_warnings: v } })))) }
               <label className="flex flex-col gap-1 text-[11px] font-bold text-[var(--ink)]">{es ? 'Referencias' : 'Source references'}
                 <textarea className={fieldClass} rows={2} value={refs} onChange={e => setSourceText(old => ({ ...old, [record.id]: e.target.value }))} />
               </label>
