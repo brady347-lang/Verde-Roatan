@@ -46,7 +46,8 @@ interface IdentifyScreenProps {
   currentPhoto: string | null;
   onReset: () => void;
   onSaveToGarden: () => void;
-  onSubmitFeedback: (decision: 'confirmed' | 'almost' | 'not_my_plant', correctedCommonName?: string, correctedScientificName?: string, notes?: string) => Promise<void>;\n  onSubmitHealthEvidence: (recordType: 'pest' | 'disease', notes: string) => Promise<void>;
+  onSubmitFeedback: (decision: 'confirmed' | 'almost' | 'not_my_plant', correctedCommonName?: string, correctedScientificName?: string, notes?: string) => Promise<void>;
+  onSubmitHealthEvidence: (recordType: 'pest' | 'disease', notes: string) => Promise<void>;
   onAddToCart: (storeProductId: string, qty: number) => void;
   formatMoney: (val: number, cur: string) => React.ReactNode;
   catalog: CatalogItem[];
@@ -68,6 +69,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   onReset,
   onSaveToGarden,
   onSubmitFeedback,
+  onSubmitHealthEvidence,
   onAddToCart,
   formatMoney,
   catalog,
@@ -91,7 +93,11 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   const [correctedScientificName, setCorrectedScientificName] = useState('');
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [feedbackChoice, setFeedbackChoice] = useState<'almost' | 'not_my_plant' | null>(null);
-  const [feedbackOutcome, setFeedbackOutcome] = useState<'confirmed' | 'almost' | 'not_my_plant' | null>(null);\n  const [healthRecordType, setHealthRecordType] = useState<'pest' | 'disease'>('pest');\n  const [healthSubmitBusy, setHealthSubmitBusy] = useState(false);\n  const [healthSubmitted, setHealthSubmitted] = useState(false);\n  const [healthSubmitError, setHealthSubmitError] = useState<string | null>(null);
+  const [feedbackOutcome, setFeedbackOutcome] = useState<'confirmed' | 'almost' | 'not_my_plant' | null>(null);
+  const [healthRecordType, setHealthRecordType] = useState<'pest' | 'disease'>('pest');
+  const [healthSubmitBusy, setHealthSubmitBusy] = useState(false);
+  const [healthSubmitted, setHealthSubmitted] = useState(false);
+  const [healthSubmitError, setHealthSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     let interval: any;
@@ -117,6 +123,10 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
     setFeedbackNotes('');
     setFeedbackChoice(null);
     setFeedbackOutcome(null);
+    setHealthRecordType('pest');
+    setHealthSubmitBusy(false);
+    setHealthSubmitted(false);
+    setHealthSubmitError(null);
   }, [currentPhoto]);
 
   const submitFeedback = async (decision: 'confirmed' | 'almost' | 'not_my_plant') => {
