@@ -36,8 +36,13 @@ async function authenticate(request, env) {
   const c = config(env);
   const token = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
   if (!token) return { error: json(401, { status: 'error', error: 'Sign in is required.' }) };
+  // The mobile app already sends the publishable key for the same Supabase project.
+  // Prefer that request key so a stale Worker-side copy cannot break session verification.
+  // Supabase still validates the key and the user's bearer token against the fixed primary URL.
+  const requestApiKey = clean(request.headers.get('apikey'), 512);
+  const apiKey = requestApiKey || c.primaryKey;
   const response = await fetch(c.primaryUrl + '/auth/v1/user', {
-    headers: { apikey: c.primaryKey, Authorization: 'Bearer ' + token }
+    headers: { apikey: apiKey, Authorization: 'Bearer ' + token }
   });
   const user = await response.json().catch(() => null);
   if (!response.ok || !user?.id) return { error: json(401, { status: 'error', error: 'Your session could not be verified.' }) };
