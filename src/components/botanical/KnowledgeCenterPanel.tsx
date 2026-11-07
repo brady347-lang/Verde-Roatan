@@ -401,7 +401,7 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [res, setRes] = useState<{ answered: boolean; answer: string; sources: KnowledgeSource[] } | null>(null);
-  // Where the answer came from: documents + constitution first, Gemini only as the labeled backup.
+  // Where the retrieved evidence came from; no AI-generated fallback is used.
   const [origin, setOrigin] = useState<'knowledge_core' | 'documents' | 'not_recorded' | null>(null);
   const [gate, setGate] = useState<ConstitutionAskResult | null>(null);
   const [coreSafetyNote, setCoreSafetyNote] = useState<string | null>(null);
