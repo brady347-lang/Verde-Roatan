@@ -218,6 +218,7 @@ test('summary approval atomically indexes summary, critical details and safety w
       assert.equal(body.p_reviewed_by_email, 'admin@verde.test');
       assert.equal(body.p_chunks[0].page_start, 2);
       assert.equal(body.p_chunks[0].page_end, 4);
+      assert.ok(body.p_chunks.every(row => row.page_start > 0 && row.page_end >= row.page_start));
       assert.ok(body.p_chunks.some(row => row.content.includes('Safety warning: Wear gloves.')));
       return ok(null, 204);
     }
