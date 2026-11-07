@@ -70,10 +70,10 @@ The current app already had the document-ingestion and plant-identification revi
 
 ## Delivery stages
 - Stage 1: migration draft + schema review — drafted; not applied.
-- Stage 2: independent no-Gemini Worker and regression tests — implemented in this branch; test execution still required.
+- Stage 2: independent no-Gemini Worker and regression tests — implemented; all worker regression tests pass in GitHub Actions.
 - Stage 3: document summary review UI and pest/disease review UI — implemented in this branch.
 - Stage 4: curated retrieval + active Constitution rule checks — implemented in the new Worker and connected to the admin playground.
-- Stage 5: run worker tests, TypeScript/build checks, review migration against the live schema, and complete Android regression validation.
+- Stage 5: worker tests, TypeScript check and production build pass in GitHub Actions; SQL migration still needs a separate schema/live-database review and Android regression validation.
 - Deployment and production migration remain separate approval gates.
 ## Runtime and provenance notes
 - Summary chunks inherit the complete source-page range supplied for the summary; they do not claim a more precise page mapping than the reviewer entered.
