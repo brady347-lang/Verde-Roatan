@@ -380,6 +380,12 @@ async function searchKnowledge(request, body, env) {
   // Read active Constitution rule titles without changing the protected Constitution Worker.
   const rulesResult = await db(env, 'constitution_rules?select=rule_key,title,active&active=eq.true&order=created_at.asc');
   const rules = rulesResult.ok && Array.isArray(rulesResult.data) ? rulesResult.data : [];
+  const requiredRules = ['approved_sources_only', 'cite_the_source', 'never_false_information', 'three_verification_levels', 'community_stays_separate', 'humans_decide', 'safety_first'];
+  const availableRules = new Set(rules.map(rule => rule.rule_key));
+  const missingRules = requiredRules.filter(key => !availableRules.has(key));
+  if (!rulesResult.ok || missingRules.length) {
+    return json(503, { status: 'error', error: 'Active Verde Constitution rules are unavailable or incomplete. No knowledge answer was returned.', missing_rules: missingRules });
+  }
   const titles = new Map(rules.map(rule => [rule.rule_key, rule.title]));
   const checks = [
     { key: 'approved_sources_only', passed: true, detail: 'Retrieval is restricted to approved and indexed documents and health records.' },
