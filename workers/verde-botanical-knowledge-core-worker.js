@@ -40,7 +40,12 @@ async function authenticate(request, env) {
     headers: { apikey: c.primaryKey, Authorization: 'Bearer ' + token }
   });
   const user = await response.json().catch(() => null);
-  if (!response.ok || !user?.id) return { error: json(401, { status: 'error', error: 'Your session could not be verified.' }) };
+  if (!response.ok || !user?.id) {
+    // Non-secret hint so a wrong binding can be told apart from an expired sign-in.
+    const upstream = String(user?.msg || user?.message || user?.error_description || user?.error || '').slice(0, 120);
+    let host = ''; try { host = new URL(c.primaryUrl).hostname; } catch { host = 'invalid URL'; }
+    return { error: json(401, { status: 'error', error: 'Your session could not be verified.' + ` (sign-in check: ${host} answered ${response.status}${upstream ? ': ' + upstream : ''})` }) };
+  }
   return { user, config: c };
 }
 
