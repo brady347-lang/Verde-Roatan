@@ -136,6 +136,8 @@ async function studySignals(env) {
     const review = reviewById.get(confirmation.review_id);
     if (!review || !confirmation.user_id) continue;
     const originalScientific = clean(review.ai_scientific_name, 160);
+    // Do not combine unrelated corrections when the original AI suggestion is absent.
+    if (!originalScientific) continue;
     const corrected = correctedScientific || correctedCommon;
     const kind = correctedScientific ? 'scientific_name' : 'common_name';
     const key = [kind, foldName(originalScientific), foldName(corrected)].join(':');
