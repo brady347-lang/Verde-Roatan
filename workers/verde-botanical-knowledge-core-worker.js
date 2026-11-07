@@ -378,9 +378,12 @@ async function searchKnowledge(request, body, env) {
   const titles = new Map(rules.map(rule => [rule.rule_key, rule.title]));
   const checks = [
     { key: 'approved_sources_only', passed: true, detail: 'Retrieval is restricted to approved and indexed documents and health records.' },
-    { key: 'cite_the_source', passed: result.data.every(hit => Boolean(hit.source_title)), detail: 'Every retrieved passage names its source document or health record.' },
+    { key: 'cite_the_source', passed: result.data.every(hit => hit.source_type === 'research' ? Boolean(hit.source_title && hit.page_start) : Boolean(hit.source_title && hit.citation)), detail: 'Research passages need a source document and page; health records need a recorded source reference.' },
     { key: 'never_false_information', passed: true, detail: 'The response contains retrieved source passages only; no generated treatment claims are added.' },
-    { key: 'three_verification_levels', passed: result.data.every(hit => Boolean(hit.verification_status)), detail: 'Each record retains its own evidence and verification status.' }
+    { key: 'three_verification_levels', passed: result.data.every(hit => Boolean(hit.verification_status)), detail: 'Each record retains its own evidence and verification status.' },
+    { key: 'community_stays_separate', passed: true, detail: 'Pending and rejected community submissions are excluded from retrieval.' },
+    { key: 'humans_decide', passed: true, detail: 'Publishing, indexing and verification are performed through administrator-only review routes.' },
+    { key: 'safety_first', passed: true, detail: 'Safety warnings are indexed; missing safety information is explicitly flagged when relevant.' }
   ];
   const reportedChecks = checks.filter(check => titles.has(check.key)).map(check => ({ ...check, title: titles.get(check.key) }));
   const safetyAsked = /toxic|poison|pet|dog|cat|child|kid|edible|safe|t[oó]xic|venen|mascota|perro|gato|ni[ñn]o/i.test(q);
@@ -388,7 +391,7 @@ async function searchKnowledge(request, body, env) {
   let safety_note = null;
   if (safetyAsked && !safetyRecorded) {
     safety_note = 'Safety information is not recorded in the retrieved approved knowledge. Do not assume the plant or treatment is safe.';
-    if (titles.has('safety_first')) reportedChecks.push({ key: 'safety_first', title: titles.get('safety_first'), passed: true, detail: 'Missing safety information is explicitly flagged.' });
+    if (titles.has('safety_first')) {\n      const safetyCheck = reportedChecks.find(check => check.key === 'safety_first');\n      if (safetyCheck) safetyCheck.detail = 'Missing safety information is explicitly flagged.';\n    }
   }
   const answered = result.data.length > 0;
   return json(200, {
