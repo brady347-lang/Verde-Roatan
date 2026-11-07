@@ -404,11 +404,11 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
   const [res, setRes] = useState<{ answered: boolean; answer: string; sources: KnowledgeSource[] } | null>(null);
   // Where the answer came from: documents + constitution first, Gemini only as the labeled backup.
   const [origin, setOrigin] = useState<'knowledge_core' | 'documents' | 'gemini' | null>(null);
-  const [gate, setGate] = useState<ConstitutionAskResult | null>(null);
+  const [gate, setGate] = useState<ConstitutionAskResult | null>(null);\n  const [coreSafetyNote, setCoreSafetyNote] = useState<string | null>(null);\n  const [coreChecks, setCoreChecks] = useState<Array<{ key: string; title: string; passed: boolean; detail: string }>>([]);
 
   const ask = async () => {
     if (!accessToken || q.trim().length < 3) return;
-    setBusy(true); setError(''); setRes(null); setOrigin(null); setGate(null);
+    setBusy(true); setError(''); setRes(null); setOrigin(null); setGate(null); setCoreSafetyNote(null); setCoreChecks([]);
     try {
       // 1) Search the new curated Knowledge Core first: approved summaries and reviewed pest/disease records, no AI.
       try {
@@ -474,7 +474,12 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
           <div className={`rounded-2xl p-3 text-[13.5px] whitespace-pre-line ${res.answered ? 'bg-emerald-50 text-[var(--ink)]' : 'bg-amber-50 text-amber-900'}`}>
             {!res.answered && <AlertTriangle className="w-4 h-4 inline mr-1" />}{res.answer}
           </div>
-          {gate?.safety_note && <p className="text-[12.5px] font-bold text-amber-800 bg-amber-50 rounded-xl p-2.5"><AlertTriangle className="w-4 h-4 inline mr-1" />{gate.safety_note}</p>}
+          {(coreSafetyNote || gate?.safety_note) && <p className="text-[12.5px] font-bold text-amber-800 bg-amber-50 rounded-xl p-2.5"><AlertTriangle className="w-4 h-4 inline mr-1" />{coreSafetyNote || gate?.safety_note}</p>}
+          {origin === 'knowledge_core' && coreChecks.length > 0 && (
+            <p className="text-[11.5px] text-[var(--ink-soft)]">
+              {es ? 'Constitución' : 'Constitution'}: {coreChecks.filter(c => c.passed).map(c => c.title).join(' · ')}
+            </p>
+          )}
           {origin === 'documents' && gate && (
             <p className="text-[11.5px] text-[var(--ink-soft)]">
               {es ? 'Constitución' : 'Constitution'}: {gate.constitution.checks.filter((c) => c.passed).map((c) => c.title).join(' · ')}
