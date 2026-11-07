@@ -389,7 +389,7 @@ async function searchKnowledge(request, body, env) {
   const titles = new Map(rules.map(rule => [rule.rule_key, rule.title]));
   const checks = [
     { key: 'approved_sources_only', passed: true, detail: 'Retrieval is restricted to approved and indexed documents and health records.' },
-    { key: 'cite_the_source', passed: result.data.every(hit => hit.source_type === 'research' ? Boolean(hit.source_title && hit.page_start) : Boolean(hit.source_title && (hit.citation || hit.verification_status === 'community_submitted'))), detail: 'Research passages need a source document and page; health records need a recorded source reference.' },
+    { key: 'cite_the_source', passed: result.data.every(hit => hit.source_type === 'research' ? Boolean(hit.source_title && hit.page_start) : Boolean(hit.source_title && hit.citation)), detail: 'Research passages need a source document and page; health records need a recorded source reference.' },
     { key: 'never_false_information', passed: true, detail: 'The response contains retrieved source passages only; no generated treatment claims are added.' },
     { key: 'three_verification_levels', passed: result.data.every(hit => Boolean(hit.verification_status)), detail: 'Each record retains its own evidence and verification status.' },
     { key: 'community_stays_separate', passed: true, detail: 'Pending and rejected community submissions are excluded from retrieval.' },
