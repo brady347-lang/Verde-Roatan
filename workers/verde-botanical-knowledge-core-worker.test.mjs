@@ -332,6 +332,22 @@ test('private knowledge search is allowed only for authenticated admins', async 
   assert.ok(calls.some(c => c.url.includes('/auth/v1/user')));
 });
 
+test('health evidence session verification uses the app-supplied production publishable key', async () => {
+  const calls = setup((url, init) => {
+    if (url.includes('/storage/v1/object/botanical-health-evidence/')) return ok({});
+    if (url.includes('/rest/v1/botanical_health_records') && init.method === 'POST') return ok([{ id: RECORD }], 201);
+    throw new Error('Unexpected request: ' + url);
+  });
+  const req = request('/health/submit', {
+    record_type: 'pest', common_name: 'Scale insect', image: 'data:image/png;base64,YWJj'
+  });
+  req.headers.set('apikey', 'app-publishable-key');
+  const r = await worker.fetch(req, env);
+  assert.equal(r.status, 200);
+  const authCall = calls.find(c => c.url.endsWith('/auth/v1/user'));
+  assert.equal(authCall.init.headers.apikey, 'app-publishable-key');
+});
+
 test('unknown route returns 404 and non-POST method returns 405', async () => {
   let r = await worker.fetch(request('/not-a-route'), env);
   assert.equal(r.status, 404);
