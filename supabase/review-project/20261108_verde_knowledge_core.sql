@@ -105,14 +105,14 @@ CREATE INDEX IF NOT EXISTS botanical_health_records_fts_idx
     to_tsvector('simple',
       coalesce(common_name, '') || ' ' ||
       coalesce(scientific_name, '') || ' ' ||
-      coalesce(array_to_string(aliases, ' '), '') || ' ' ||
+      coalesce(aliases::text, '') || ' ' ||
       coalesce(description, '') || ' ' ||
       coalesce(identification_features, '') || ' ' ||
       coalesce(symptoms, '') || ' ' ||
       coalesce(causes, '') || ' ' ||
       coalesce(treatment, '') || ' ' ||
       coalesce(prevention, '') || ' ' ||
-      coalesce(array_to_string(affected_plants, ' '), '') || ' ' ||
+      coalesce(affected_plants::text, '') || ' ' ||
       coalesce(severity_guidance::text, '') || ' ' ||
       coalesce(safety_warnings::text, '')
     )
