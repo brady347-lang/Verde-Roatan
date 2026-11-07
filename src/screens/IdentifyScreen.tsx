@@ -46,7 +46,7 @@ interface IdentifyScreenProps {
   currentPhoto: string | null;
   onReset: () => void;
   onSaveToGarden: () => void;
-  onSubmitFeedback: (decision: 'confirmed' | 'almost' | 'not_my_plant', correctedCommonName?: string, correctedScientificName?: string, notes?: string) => Promise<void>;
+  onSubmitFeedback: (decision: 'confirmed' | 'almost' | 'not_my_plant', correctedCommonName?: string, correctedScientificName?: string, notes?: string) => Promise<void>;\n  onSubmitHealthEvidence: (recordType: 'pest' | 'disease', notes: string) => Promise<void>;
   onAddToCart: (storeProductId: string, qty: number) => void;
   formatMoney: (val: number, cur: string) => React.ReactNode;
   catalog: CatalogItem[];
@@ -91,7 +91,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   const [correctedScientificName, setCorrectedScientificName] = useState('');
   const [feedbackNotes, setFeedbackNotes] = useState('');
   const [feedbackChoice, setFeedbackChoice] = useState<'almost' | 'not_my_plant' | null>(null);
-  const [feedbackOutcome, setFeedbackOutcome] = useState<'confirmed' | 'almost' | 'not_my_plant' | null>(null);
+  const [feedbackOutcome, setFeedbackOutcome] = useState<'confirmed' | 'almost' | 'not_my_plant' | null>(null);\n  const [healthRecordType, setHealthRecordType] = useState<'pest' | 'disease'>('pest');\n  const [healthSubmitBusy, setHealthSubmitBusy] = useState(false);\n  const [healthSubmitted, setHealthSubmitted] = useState(false);\n  const [healthSubmitError, setHealthSubmitError] = useState<string | null>(null);
 
   useEffect(() => {
     let interval: any;
@@ -130,6 +130,19 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
       setFeedbackError(error instanceof Error ? error.message : 'Feedback could not be saved.');
     } finally {
       setFeedbackBusy(false);
+    }
+  };
+
+  const submitHealthEvidence = async () => {
+    setHealthSubmitBusy(true);
+    setHealthSubmitError(null);
+    try {
+      await onSubmitHealthEvidence(healthRecordType, feedbackNotes);
+      setHealthSubmitted(true);
+    } catch (error) {
+      setHealthSubmitError(error instanceof Error ? error.message : 'The report could not be submitted.');
+    } finally {
+      setHealthSubmitBusy(false);
     }
   };
 
@@ -611,6 +624,39 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {mode === 'pest' && result?.result?.primary_diagnosis && (
+            <div className="mt-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3 flex flex-col gap-2">
+              <div>
+                <b className="text-[13px] text-[var(--ink)]">{lang === 'es' ? 'Enviar para revisión botánica' : 'Submit for botanical review'}</b>
+                <p className="mt-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                  {lang === 'es'
+                    ? 'Este diagnóstico de IA es una sugerencia, no una verificación científica. El equipo puede revisar la foto y las fuentes antes de aprobarlo.'
+                    : 'This AI diagnosis is a suggestion, not scientific verification. The team can review the photo and evidence before approving it.'}
+                </p>
+              </div>
+              {healthSubmitted ? (
+                <div className="rounded-xl bg-[var(--palm)]/10 p-3 text-[12px] font-bold text-[var(--palm)]">
+                  {lang === 'es' ? 'Reporte enviado. Está pendiente de revisión y no se añadirá al conocimiento aprobado todavía.' : 'Report submitted. It is pending review and will not enter approved knowledge yet.'}
+                </div>
+              ) : (
+                <>
+                  <label className="text-[11px] font-bold text-[var(--ink)]">
+                    {lang === 'es' ? 'Tipo de reporte' : 'Report type'}
+                    <select value={healthRecordType} onChange={(e) => setHealthRecordType(e.target.value as 'pest' | 'disease')} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[12px]">
+                      <option value="pest">{lang === 'es' ? 'Plaga' : 'Pest'}</option>
+                      <option value="disease">{lang === 'es' ? 'Enfermedad' : 'Disease'}</option>
+                    </select>
+                  </label>
+                  <textarea value={feedbackNotes} onChange={(e) => setFeedbackNotes(e.target.value)} rows={2} maxLength={1200} placeholder={lang === 'es' ? 'Notas adicionales (opcional)' : 'Additional notes (optional)'} className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[12px] text-[var(--ink)]" />
+                  {healthSubmitError && <p role="alert" className="text-[11px] text-red-600">{healthSubmitError}</p>}
+                  <button type="button" onClick={() => void submitHealthEvidence()} disabled={healthSubmitBusy || !currentPhoto} className="min-h-[42px] rounded-xl bg-[var(--palm)] px-3 text-[12px] font-extrabold text-white disabled:opacity-50">
+                    {healthSubmitBusy ? (lang === 'es' ? 'Enviando…' : 'Submitting…') : (lang === 'es' ? 'Enviar foto y diagnóstico para revisión' : 'Submit photo and diagnosis for review')}
+                  </button>
+                </>
+              )}
             </div>
           )}
 
