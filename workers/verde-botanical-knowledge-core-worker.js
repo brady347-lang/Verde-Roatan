@@ -397,14 +397,12 @@ async function searchKnowledge(request, body, env) {
     { key: 'safety_first', passed: true, detail: 'Safety warnings are indexed; missing safety information is explicitly flagged when relevant.' }
   ];
   const reportedChecks = checks.filter(check => titles.has(check.key)).map(check => ({ ...check, title: titles.get(check.key) }));
-  const specificSafetyQuestion = /toxic|poison|pet|dog|cat|child|kid|edible|venen|mascota|perro|gato|ni[ñn]o/i.test(q);
-  const safetyAsked = specificSafetyQuestion || /safe|safety|segur/i.test(q);
-  const safetyRecorded = result.data.some(hit => {
-    const content = hit.content || '';
-    return specificSafetyQuestion
-      ? /toxic|poison|pet|dog|cat|child|kid|edible|venen|mascota|perro|gato|ni[ñn]o/i.test(content)
-      : /safety warning|wear gloves|protective equipment|seguridad|precauci[oó]n/i.test(content);
-  });
+  // Match whole safety terms in questions; never treat a plant name such as "Cat Palm"
+  // or "Dogwood" as safety evidence merely because it contains "cat" or "dog".
+  const safetyQuestionPattern = /\\b(toxic(?:ity)?|poison(?:ous)?|pet|pets|dog|dogs|cat|cats|child|children|kid|kids|edible|safe|safety|unsafe|harmful|irritant|ingest(?:ion|ed)?)\\b|venen\\w*|mascota\\w*|perro\\w*|gato\\w*|niñ[oa]s?/i;
+  const safetyEvidencePattern = /\\b(toxic(?:ity)?|poison(?:ous)?|non-toxic|safe|unsafe|harmful|harmed|irritant|irritation|edible|inedible|ingest(?:ion|ed|ible)?|safety warning|wear gloves|protective equipment|precaution(?:s)?)\\b|t[oó]xic\\w*|venen\\w*|segur[oa]s?|peligros[oa]s?|irritant\\w*|ingesti[oó]n|comestible\\w*|guantes|protecci[oó]n|precauci[oó]n\\w*/i;
+  const safetyAsked = safetyQuestionPattern.test(q);
+  const safetyRecorded = result.data.some(hit => safetyEvidencePattern.test(hit.content || ''));
   let safety_note = null;
   if (safetyAsked && !safetyRecorded) {
     safety_note = 'Safety information is not recorded in the retrieved approved knowledge. Do not assume the plant or treatment is safe.';
