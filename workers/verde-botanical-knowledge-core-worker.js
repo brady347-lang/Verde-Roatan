@@ -310,43 +310,37 @@ async function reviewSummary(request, body, env) {
   const summary = found.ok && Array.isArray(found.data) ? found.data[0] : null;
   if (!summary) return json(404, { status: 'error', error: 'The summary was not found.' });
   if (summary.review_status !== 'pending') return json(409, { status: 'error', error: 'This summary has already been reviewed.' });
+  const reviewer = clean(auth.user.email || auth.user.id, 254);
   if (body.decision === 'reject') {
-    await db(env, 'knowledge_document_summaries?id=eq.' + summary.id, {
+    const rejected = await db(env, 'knowledge_document_summaries?id=eq.' + summary.id, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ review_status: 'rejected', reviewed_by_email: clean(auth.user.email, 254), reviewed_at: new Date().toISOString(), review_note: clean(body.review_note, 1000) || null })
+      body: JSON.stringify({ review_status: 'rejected', reviewed_by_email: reviewer, reviewed_at: new Date().toISOString(), review_note: clean(body.review_note, 1000) || null })
     });
+    if (!rejected.ok) throw new Error('The summary rejection could not be saved.');
     return json(200, { status: 'success', review_status: 'rejected' });
-  }
-  const doc = await db(env, 'knowledge_documents?id=eq.' + summary.document_id + '&select=id,status,rag_indexed&limit=1');
-  const sourceDoc = doc.ok && Array.isArray(doc.data) ? doc.data[0] : null;
-  if (!sourceDoc || sourceDoc.status !== 'approved' || sourceDoc.rag_indexed !== true) {
-    return json(409, { status: 'error', error: 'Approve and index the original source document in the existing Knowledge Center before approving its summary.' });
   }
   const chunks = makeChunks(summary.summary, summary.key_facts, summary.critical_details, summary.safety_warnings);
   if (!chunks.length) return json(400, { status: 'error', error: 'The summary contains no searchable text.' });
   const pageList = Array.isArray(summary.source_pages) ? summary.source_pages : [];
   const pageStart = pageList.length ? Math.min(...pageList) : null;
   const pageEnd = pageList.length ? Math.max(...pageList) : null;
-  const rows = chunks.map((content, chunk_index) => ({
-    summary_id: summary.id, document_id: summary.document_id, chunk_index,
-    page_start: pageStart, page_end: pageEnd, content
-  }));
-  const cleared = await db(env, 'knowledge_curated_chunks?summary_id=eq.' + summary.id, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
-  if (!cleared.ok) throw new Error('Existing pending summary chunks could not be cleared safely.');
-  const inserted = await db(env, 'knowledge_curated_chunks', {
-    method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(rows)
+  const rows = chunks.map((content, chunk_index) => ({ chunk_index, page_start: pageStart, page_end: pageEnd, content }));
+  const approved = await db(env, 'rpc/approve_knowledge_document_summary', {
+    method: 'POST',
+    body: JSON.stringify({
+      p_summary_id: summary.id,
+      p_reviewed_by_email: reviewer,
+      p_review_note: clean(body.review_note, 1000) || null,
+      p_chunks: rows
+    })
   });
-  if (!inserted.ok) throw new Error('The curated search passages could not be created.');
-  const now = new Date().toISOString();
-  const updated = await db(env, 'knowledge_document_summaries?id=eq.' + summary.id, {
-    method: 'PATCH', headers: { Prefer: 'return=representation' },
-    body: JSON.stringify({ review_status: 'approved', reviewed_by_email: clean(auth.user.email, 254), reviewed_at: now, review_note: clean(body.review_note, 1000) || null })
-  });
-  if (!updated.ok) throw new Error('The summary chunks were saved, but approval could not be completed.');
-  const superseded = await db(env, 'knowledge_document_summaries?document_id=eq.' + summary.document_id + '&review_status=eq.approved&id=neq.' + summary.id, {
-    method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ review_status: 'superseded' })
-  });
-  if (!superseded.ok) throw new Error('The new summary was approved, but older versions could not be superseded.');
+  if (!approved.ok) {
+    const message = approved.data?.message || approved.data?.hint;
+    if (String(message || '').includes('original source document')) {
+      return json(409, { status: 'error', error: 'Approve and index the original source document in the existing Knowledge Center before approving its summary.' });
+    }
+    throw new Error('The summary could not be approved atomically with its curated chunks.');
+  }
   return json(200, { status: 'success', review_status: 'approved', chunks_created: rows.length });
 }
 
