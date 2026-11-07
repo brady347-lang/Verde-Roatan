@@ -220,8 +220,10 @@ await t('scheduled study creates pending proposals only and never edits Constitu
   await scheduledTask;
   const post = db.log.find((entry) => entry.url.includes('/constitution_amendments') && entry.m === 'POST');
   assert.ok(post);
-  assert.equal(post.body[0].status, 'pending');
-  assert.equal(post.body[0].evidence.distinct_customers, 3);
+  const correctionProposal = post.body.find((row) => row.signal_key.startsWith('customer_correction:'));
+  assert.ok(correctionProposal);
+  assert.equal(correctionProposal.status, 'pending');
+  assert.equal(correctionProposal.evidence.distinct_customers, 3);
   assert.ok(!db.log.some((entry) => entry.url.includes('/constitution_rules') && ['PATCH', 'DELETE'].includes(entry.m)));
 });
 console.log(`ALL ${n} PASSED`);
