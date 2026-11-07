@@ -46,6 +46,7 @@ import {
   refineBotanicalIdentification,
   submitOrderCheckout,
   submitIdentificationFeedback,
+  submitBotanicalHealthEvidence,
   supabaseAuthRequest,
   supabaseRpcRequest,
   refreshSupabaseSession,
@@ -719,6 +720,21 @@ export default function App() {
       lang === 'es'
         ? '¡Gracias! Tu confirmación se guardó para revisión botánica.'
         : 'Thank you! Your feedback was saved for botanical review.'
+    );
+  };
+
+  const handleSubmitHealthEvidence = async (recordType: 'pest' | 'disease', notes: string) => {
+    if (!identifyPhoto || !identifyResult) {
+      throw new Error('Analyze a pest or disease photo before submitting evidence.');
+    }
+    if (!session?.access_token) {
+      throw new Error('Please sign in before submitting pest or disease evidence.');
+    }
+    await submitBotanicalHealthEvidence(recordType, identifyPhoto, identifyResult, notes, session.access_token);
+    showToast(
+      lang === 'es'
+        ? 'Reporte enviado y pendiente de revisión. No está verificado científicamente.'
+        : 'Report submitted and pending review. It is not scientifically verified.'
     );
   };
 
@@ -1783,6 +1799,7 @@ export default function App() {
               }}
               onSaveToGarden={handleSaveToGarden}
               onSubmitFeedback={handleSubmitIdentificationFeedback}
+              onSubmitHealthEvidence={handleSubmitHealthEvidence}
               onAddToCart={(storeId, qty) => handleAddToCart(storeId, qty)}
               formatMoney={formatMoney}
               catalog={currentCatalog}
