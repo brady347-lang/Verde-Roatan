@@ -326,6 +326,8 @@ async function reviewSummary(request, body, env) {
     summary_id: summary.id, document_id: summary.document_id, chunk_index,
     page_start: pageStart, page_end: pageEnd, content
   }));
+  const cleared = await db(env, 'knowledge_curated_chunks?summary_id=eq.' + summary.id, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+  if (!cleared.ok) throw new Error('Existing pending summary chunks could not be cleared safely.');
   const inserted = await db(env, 'knowledge_curated_chunks', {
     method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(rows)
   });
@@ -336,6 +338,10 @@ async function reviewSummary(request, body, env) {
     body: JSON.stringify({ review_status: 'approved', reviewed_by_email: clean(auth.user.email, 254), reviewed_at: now, review_note: clean(body.review_note, 1000) || null })
   });
   if (!updated.ok) throw new Error('The summary chunks were saved, but approval could not be completed.');
+  const superseded = await db(env, 'knowledge_document_summaries?document_id=eq.' + summary.document_id + '&review_status=eq.approved&id=neq.' + summary.id, {
+    method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ review_status: 'superseded' })
+  });
+  if (!superseded.ok) throw new Error('The new summary was approved, but older versions could not be superseded.');
   return json(200, { status: 'success', review_status: 'approved', chunks_created: rows.length });
 }
 
