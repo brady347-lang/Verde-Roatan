@@ -98,14 +98,11 @@ CREATE INDEX IF NOT EXISTS botanical_health_records_type_review_idx
   ON public.botanical_health_records (record_type, review_status, visibility, created_at DESC);
 CREATE INDEX IF NOT EXISTS botanical_health_records_fts_idx
   ON public.botanical_health_records USING gin (
-    to_tsvector('simple',
-      coalesce(common_name,'') || ' ' || coalesce(scientific_name,'') || ' ' ||
-      coalesce(array_to_string(aliases,' '),'') || ' ' || coalesce(description,'') || ' ' ||
-      coalesce(identification_features,'') || ' ' || coalesce(symptoms,'') || ' ' ||
-      coalesce(causes,'') || ' ' || coalesce(treatment,'') || ' ' ||
-      coalesce(prevention,'') || ' ' || coalesce(array_to_string(affected_plants,' '),'') || ' ' ||
-      coalesce(severity_guidance::text,'') || ' ' || coalesce(safety_warnings::text,'')
-    )
+    to_tsvector('simple', concat_ws(' ',
+      common_name, scientific_name, array_to_string(aliases, ' '), description,
+      identification_features, symptoms, causes, treatment, prevention,
+      array_to_string(affected_plants, ' '), severity_guidance::text, safety_warnings::text
+    ))
   );
 
 CREATE TABLE IF NOT EXISTS public.botanical_health_record_taxa (
@@ -193,7 +190,8 @@ BEGIN
   END IF;
 
   IF length(btrim(coalesce(p_reviewed_by_email, ''))) = 0
-     OR jsonb_typeof(p_chunks) <> 'array'
+     OR p_chunks IS NULL
+     OR jsonb_typeof(p_chunks) IS DISTINCT FROM 'array'
      OR jsonb_array_length(p_chunks) < 1 THEN
     RAISE EXCEPTION 'Reviewer identity and at least one curated chunk are required';
   END IF;
@@ -315,7 +313,7 @@ AS $$
     SELECT * FROM health_hits
   ) hits
   ORDER BY rank DESC, source_title
-  LIMIT LEAST(GREATEST(match_count, 1), 30);
+  LIMIT LEAST(GREATEST(coalesce(match_count, 10), 1), 30);
 $$;
 REVOKE ALL ON FUNCTION public.search_verde_knowledge(text, integer, boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.search_verde_knowledge(text, integer, boolean) TO service_role;
