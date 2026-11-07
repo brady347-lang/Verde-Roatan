@@ -206,7 +206,7 @@ async function reviewHealthRecord(request, body, env) {
     visibility: body.status === 'approved' && body.visibility === 'public' ? 'public' : 'private',
     rag_indexed: body.status === 'approved' && body.rag_indexed === true,
     reviewed_by: auth.user.id,
-    reviewed_by_email: clean(auth.user.email, 254) || null,
+    reviewed_by_email: clean(auth.user.email || auth.user.id, 254) || null,
     reviewed_at: now,
     review_note: clean(body.review_note, 1000) || null
   };
