@@ -53,7 +53,6 @@ import { STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/init
 import { usePhotoUrl } from '../lib/photoStore';
 import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
-import { BotanicalKnowledgeCenter } from '../components/botanical/BotanicalKnowledgeCenter';
 import { IdentificationReviewCenter } from '../components/IdentificationReviewCenter';
 import { LandscapingRequestsCenter } from '../components/LandscapingRequestsCenter';
 import { MyServiceRequests } from '../components/MyServiceRequests';
@@ -159,7 +158,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [adminTab, setAdminTab] = useState<
-    'command_center' | 'botanical_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'constitution' | 'insights' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
+    'command_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'constitution' | 'insights' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
   const [newServiceCount, setNewServiceCount] = useState(0);
   const [activeSupplierId, setActiveSupplierId] = useState<string>(() => registeredSuppliers[0]?.id || 'sup-1');
@@ -318,13 +317,13 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setAdminTab('botanical_center')}
+                  onClick={() => setAdminTab('knowledge_docs')}
                   className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
-                    adminTab === 'botanical_center' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                    adminTab === 'knowledge_docs' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
                   }`}
                 >
                   <Compass className="w-3.5 h-3.5" />
-                  Knowledge (sample data)
+                  Botanical Knowledge Center
                 </button>
                 <button
                   type="button"
@@ -356,15 +355,6 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                   }`}
                 >
                   Bulk Import
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setAdminTab('knowledge_docs')}
-                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
-                    adminTab === 'knowledge_docs' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
-                  }`}
-                >
-                  Knowledge Docs
                 </button>
                 <button
                   type="button"
@@ -461,16 +451,6 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                     suppliers={registeredSuppliers}
                     formatMoney={formatMoney}
                     exchangeRateHnl={exchangeRateHnl}
-                  />
-                )}
-
-                {/* 0.05 Botanical Knowledge Center (Taxonomy, Document Ingestion, RAG, AI Assistant) */}
-                {adminTab === 'botanical_center' && (
-                  <BotanicalKnowledgeCenter
-                    lang={lang}
-                    catalogItems={catalog}
-                    isAdmin={isAdmin}
-                    onOpenStoreItem={onEditItem}
                   />
                 )}
 
