@@ -39,7 +39,7 @@ test('evidence enqueue is idempotent and reports duplicate fingerprints', async 
   };
   const response = await worker.fetch(request('/engine/enqueue', {
     evidence_type:'catalog_photo', source_record_id:'catalog-1', subject_key:'Dypsis lutescens',
-    evidence_fingerprint:'sha256:unique-1', submitted_payload:{image_storage_path:'private/path.jpg'}
+    evidence_fingerprint:'sha256:unique-1', submitted_payload:{image_storage_path:'user-1/private/path.jpg'}
   }), env);
   const body = await response.json();
   assert.equal(response.status, 200);
