@@ -50,7 +50,8 @@ test('scheduled cycle does not require Gemini when no evidence is queued', async
   const calls=[];
   globalThis.fetch = async (url, init={}) => {
     calls.push({url:String(url),init});
-    if (String(url).includes('botanical_evidence_queue')) return ok([]);
+    if (String(url).includes('botanical_evidence_queue?status=eq.processing')) return ok([]);
+    if (String(url).includes('/rpc/claim_botanical_evidence_batch')) return ok([]);
     if (String(url).includes('botanical_engine_runs')) return ok(null, 404);
     throw new Error('Unexpected upstream call: '+url);
   };
@@ -58,7 +59,7 @@ test('scheduled cycle does not require Gemini when no evidence is queued', async
   await worker.scheduled({}, env, { waitUntil(p) { scheduledTask = p; } });
   assert.ok(scheduledTask, 'scheduled handler must register its work with waitUntil');
   await scheduledTask;
-  assert.ok(calls.some(c=>c.url.includes('botanical_evidence_queue')));
+  assert.ok(calls.some(c=>c.url.includes('/rpc/claim_botanical_evidence_batch')));
   assert.ok(!calls.some(c=>/generativelanguage|gemini/i.test(c.url)));
 });
 
@@ -177,6 +178,9 @@ test('schema separates admin approval from verification and enforces one communi
   assert.match(sql,/approved_by uuid/);
   assert.match(sql,/unique \(evidence_id, user_id\)/);
   assert.match(sql,/'admin_approved'/);
+  assert.match(sql,/claim_botanical_evidence_batch/);
+  assert.match(sql,/for update skip locked/i);
+  assert.match(sql,/grant execute on function public\.claim_botanical_evidence_batch\(integer\) to service_role/i);
 });
 
 test('public botanical search strips submitter identity and private storage details from approved evidence', async () => {
@@ -211,4 +215,24 @@ test('public botanical search strips submitter identity and private storage deta
   for (const secret of ['customer-uuid','private@example.test','admin@example.test','private customer note','private admin note','private-evidence-id','customer-record-77','signed']) {
     assert.equal(textBody.includes(secret), false, 'public response must not expose '+secret);
   }
+});
+
+test('scheduled evidence cycle uses the atomic claim RPC instead of reading and locking rows individually', async () => {
+  const calls = [];
+  globalThis.fetch = async (url, init={}) => {
+    calls.push({url:String(url),init});
+    if (String(url).includes('botanical_evidence_queue?status=eq.processing')) return ok([]);
+    if (String(url).includes('/rpc/claim_botanical_evidence_batch')) {
+      assert.equal(init.method, 'POST');
+      assert.deepEqual(JSON.parse(init.body), { p_batch_size: 10 });
+      return ok([]);
+    }
+    if (String(url).includes('botanical_engine_runs')) return ok(null, 404);
+    throw new Error('Unexpected upstream call: '+url);
+  };
+  let task;
+  await worker.scheduled({}, env, { waitUntil(p) { task = p; } });
+  await task;
+  assert.equal(calls.filter(call => call.url.includes('/rpc/claim_botanical_evidence_batch')).length, 1);
+  assert.equal(calls.some(call => /botanical_evidence_queue\?id=eq\..*status=in/.test(call.url)), false);
 });
