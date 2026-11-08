@@ -130,7 +130,7 @@ Deno.serve(async (req: Request) => {
     const publicClient = createClient(url, anonKey, { auth: { persistSession: false, autoRefreshToken: false } });
     const { data: sessionData, error: sessionError } = await publicClient.auth.verifyOtp({
       token_hash: tokenHash,
-      type: "magiclink",
+      type: "email",
     });
     if (sessionError || !sessionData.session) return reply({ error: "Could not establish the temporary session." }, 500);
 
