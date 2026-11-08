@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from 'react-leaflet';
@@ -17,14 +17,20 @@ const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: strin
   compost: { en: 'Compost & soil blend', es: 'Compost y mezcla de suelo', terms: /compost|soil blend|soil mix|coir|worm cast/i },
   pavers: { en: 'Pavers & stepping stones', es: 'Adoquines y losas', terms: /paver|stepping stone|patio block|adoqu[ií]n|losa/i }
 };
-function MapViewport({ points }: { points: Point[] }) {
+function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
   const map = useMap();
   useEffect(() => {
     if (!points.length) return;
+    const latest = points[points.length - 1];
+    if (follow) {
+      if (map.getZoom() < 18) map.setZoom(18, { animate: false });
+      map.panTo([latest.lat, latest.lon], { animate: true, duration: 0.3 });
+      return;
+    }
     const bounds = points.map((point) => [point.lat, point.lon] as [number, number]);
     if (bounds.length === 1) map.setView(bounds[0], 18);
     else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 19 });
-  }, [map, points]);
+  }, [map, points, follow]);
   return null;
 }
 const toRadians = (value: number) => value * Math.PI / 180;
@@ -113,6 +119,11 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   const [gpsBusy, setGpsBusy] = useState(false);
   const [gpsError, setGpsError] = useState('');
+  const [tracking, setTracking] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState('');
+  const gpsWatchRef = useRef<string | number | null>(null);
+  const trackingActiveRef = useRef(false);
+  const lastTrackPointRef = useRef<Point | null>(null);
   const [depth, setDepth] = useState('0.08');
   const [coverage, setCoverage] = useState('50');
   const [selectedSodId, setSelectedSodId] = useState('');
@@ -129,6 +140,72 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const selectedSod = sodOptions.find((item) => item.id === selectedSodId);
   const materialOptions = useMemo(() => materialType ? catalog.filter((item) => MATERIAL_LABELS[materialType].terms.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))) : [], [catalog, materialType]);
   const selectedMaterial = materialOptions.find((item) => item.id === selectedMaterialId) || materialOptions[0];
+  const stopGpsTracking = async () => {
+    trackingActiveRef.current = false;
+    setTracking(false);
+    if (gpsWatchRef.current !== null) {
+      if (typeof gpsWatchRef.current === 'string') await Geolocation.clearWatch({ id: gpsWatchRef.current }).catch(() => undefined);
+      else if (navigator.geolocation) navigator.geolocation.clearWatch(gpsWatchRef.current);
+      gpsWatchRef.current = null;
+    }
+    setTrackingStatus(es ? 'Recorrido detenido. El mapa permanece guardado en pantalla.' : 'Walk stopped. Your route remains on screen.');
+  };
+  const startGpsTracking = async () => {
+    if (trackingActiveRef.current) return;
+    setGpsBusy(true); setGpsError(''); setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
+    lastTrackPointRef.current = points[points.length - 1] || null;
+    const onFix = (latitude: number, longitude: number, accuracy: number) => {
+      if (!trackingActiveRef.current) return;
+      if (![latitude, longitude, accuracy].every(Number.isFinite) || accuracy > 30) {
+        setTrackingStatus(es ? 'Esperando GPS preciso…' : 'Waiting for a more accurate GPS fix…'); return;
+      }
+      const previous = lastTrackPointRef.current;
+      if (previous) {
+        const latMean = (previous.lat + latitude) / 2 * Math.PI / 180;
+        const distance = Math.hypot((longitude - previous.lon) * 111320 * Math.cos(latMean), (latitude - previous.lat) * 111133);
+        if (distance < 0.7) return;
+      }
+      const next = { lat: latitude, lon: longitude, accuracy };
+      lastTrackPointRef.current = next;
+      setPoints(current => [...current, next]);
+      setTrackingStatus((es ? 'Seguimiento en vivo · precisión ±' : 'Live tracking · ±') + Math.round(accuracy) + ' m');
+    };
+    try {
+      const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
+      trackingActiveRef.current = true;
+      if (Capacitor.isNativePlatform()) {
+        let permission = await Geolocation.checkPermissions();
+        if (permission.location !== 'granted') permission = await Geolocation.requestPermissions();
+        if (permission.location !== 'granted') throw new Error('LOCATION_PERMISSION_DENIED');
+        const id = await Geolocation.watchPosition(options, (position, error) => {
+          if (!trackingActiveRef.current) return;
+          if (error) { setGpsError(error.message || 'GPS unavailable'); return; }
+          if (position) onFix(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
+        });
+        if (!trackingActiveRef.current) { await Geolocation.clearWatch({ id }).catch(() => undefined); return; }
+        gpsWatchRef.current = id;
+      } else {
+        if (!navigator.geolocation || !window.isSecureContext) throw new Error('GEOLOCATION_UNAVAILABLE');
+        gpsWatchRef.current = navigator.geolocation.watchPosition(
+          p => onFix(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
+          e => { if (trackingActiveRef.current) setGpsError(e.message); }, options
+        );
+      }
+      setTracking(true);
+      setTrackingStatus(es ? 'Camina por el borde: el mapa seguirá tu posición.' : 'Walk the boundary: the map will follow your position.');
+    } catch (error) {
+      trackingActiveRef.current = false;
+      setGpsError(error instanceof Error ? error.message : 'GPS could not start');
+      setTrackingStatus('');
+    } finally { setGpsBusy(false); }
+  };
+  useEffect(() => () => {
+    trackingActiveRef.current = false;
+    if (gpsWatchRef.current !== null) {
+      if (typeof gpsWatchRef.current === 'string') void Geolocation.clearWatch({ id: gpsWatchRef.current });
+      else if (navigator.geolocation) navigator.geolocation.clearWatch(gpsWatchRef.current);
+    }
+  }, []);
   const capturePoint = async () => {
     setGpsBusy(true);
     setGpsError('');
@@ -211,9 +288,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <div className="flex items-center justify-between bg-[var(--surface-2)] px-3 py-2"><b className="text-xs">{es ? "Mapa del terreno medido" : "Measured land map"}</b><span className="text-[10px] text-[var(--ink-soft)]">{points.length >= 3 ? (es ? "Perímetro trazado" : "Boundary plotted") : (es ? "Puntos GPS" : "GPS points")}</span></div>
           <MapContainer center={[points[0].lat, points[0].lon]} zoom={18} scrollWheelZoom={false} style={{ height: "280px", width: "100%" }}>
             <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <MapViewport points={points} />
-            {points.length === 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 4 }} /> }
-            {points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 3, fillColor: "#39A879", fillOpacity: 0.28 }} /> }
+            <MapViewport points={points} follow={tracking} />
+            {(tracking || points.length === 2) && points.length >= 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 4 }} /> }
+            {!tracking && points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 3, fillColor: "#39A879", fillOpacity: 0.28 }} /> }
             {points.map((point, index) => <CircleMarker key={index} center={[point.lat, point.lon]} radius={7} pathOptions={{ color: "#FFFFFF", weight: 2, fillColor: "#126B4B", fillOpacity: 1 }} />)}
           </MapContainer>
           {points.length < 3 && <p className="bg-[var(--surface-2)] px-3 py-2 text-[11px] text-[var(--ink-soft)]">{es ? "Captura al menos 3 esquinas para cerrar y calcular el área del polígono." : "Capture at least 3 corners to close the boundary and calculate its area."}</p>}
@@ -288,7 +365,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
               <button aria-label={es ? 'Eliminar ' + plot.name : 'Delete ' + plot.name} onClick={() => handleDeletePlot(plot.id)} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold text-red-600">{es ? 'Borrar' : 'Delete'}</button>
             </div>)}</div>}
         </div>
-        <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy} onClick={capturePoint} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><MapPin className="h-4 w-4" />{gpsBusy ? (es ? 'Buscando GPS…' : 'Getting GPS…') : (es ? 'Capturar punto' : 'Capture point')}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><RotateCcw className="h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
+        {trackingStatus && <p className="mb-2 rounded-xl bg-[var(--surface-2)] p-2 text-xs font-semibold text-[var(--palm)]">{trackingStatus}</p>}
+        <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy} onClick={() => tracking ? void stopGpsTracking() : void startGpsTracking()} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><MapPin className="h-4 w-4" />{gpsBusy ? (es ? 'Iniciando GPS…' : 'Starting GPS…') : tracking ? (es ? 'Detener recorrido' : 'Stop walk') : (es ? 'Iniciar recorrido' : 'Start walk')}</button><button onClick={() => { if (tracking) void stopGpsTracking(); setPoints([]); lastTrackPointRef.current = null; setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy || tracking} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><RotateCcw className="h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
         {points.length > 0 && <button onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
         {points.length > 0 && <ol className="mt-3 space-y-1 text-[11px] text-[var(--ink-soft)]">{points.map((point, index) => <li key={index}>#{index + 1} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)} · ±{point.accuracy.toFixed(0)}m</li>)}</ol>}
         <p className="mt-3 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Estimación de campo, no un levantamiento topográfico. La precisión depende del dispositivo, cielo abierto y señal GPS. Revisa los límites antes de cotizar o construir.' : 'Field estimate, not a certified survey. Accuracy depends on device, open sky and GPS signal. Verify boundaries before quoting or construction.'}</p>
