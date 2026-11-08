@@ -723,7 +723,8 @@ export default function App() {
     decision: 'confirmed' | 'almost' | 'not_my_plant',
     correctedCommonName = '',
     correctedScientificName = '',
-    notes = ''
+    notes = '',
+    shareForBotanicalLearning = false
   ) => {
     if (!identifyPhoto || !identifyResult) {
       throw new Error('Analyze a plant photo before submitting feedback.');
@@ -740,7 +741,8 @@ export default function App() {
       correctedScientificName,
       session.access_token,
       notes,
-      lang
+      lang,
+      shareForBotanicalLearning
     );
     showToast(
       lang === 'es'
