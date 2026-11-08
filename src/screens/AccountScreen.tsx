@@ -60,6 +60,7 @@ import { BotanicalImportPanel } from '../components/botanical/BotanicalImportPan
 import { matchesQuery } from '../lib/botanicalRules';
 import { KnowledgeCenterPanel } from '../components/botanical/KnowledgeCenterPanel';
 import { BotanicalKnowledgeCorePanel } from '../components/botanical/BotanicalKnowledgeCorePanel';
+import { BotanicalEvidenceReviewPanel } from '../components/botanical/BotanicalEvidenceReviewPanel';
 import { ConstitutionPanel } from '../components/botanical/ConstitutionPanel';
 import { AdminInsightsPanel } from '../components/AdminInsightsPanel';
 import { AccountPrivacySection } from '../components/AccountPrivacySection';
@@ -160,7 +161,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [adminTab, setAdminTab] = useState<
-    'command_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'knowledge_core' | 'constitution' | 'insights' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
+    'command_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'knowledge_core' | 'evidence_review' | 'constitution' | 'insights' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
   const [newServiceCount, setNewServiceCount] = useState(0);
   const [activeSupplierId, setActiveSupplierId] = useState<string>(() => registeredSuppliers[0]?.id || 'sup-1');
@@ -339,6 +340,14 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setAdminTab('evidence_review')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${adminTab === 'evidence_review' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'}`}
+                >
+                  <Database className="w-3.5 h-3.5" />
+                  Evidence Review
+                </button>
+                <button
+                  type="button"
                   onClick={() => setAdminTab('identification_reviews')}
                   className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
                     adminTab === 'identification_reviews' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
@@ -492,6 +501,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 )}
                 {adminTab === 'knowledge_core' && (
                   <BotanicalKnowledgeCorePanel lang={lang} accessToken={session?.access_token} />
+                )}
+                {adminTab === 'evidence_review' && (
+                  <BotanicalEvidenceReviewPanel lang={lang} accessToken={session?.access_token} />
                 )}
                 {adminTab === 'insights' && (
                   <AdminInsightsPanel lang={lang} orders={orders} exchangeRateHnl={exchangeRateHnl} accessToken={session?.access_token} />
