@@ -520,7 +520,7 @@ async function reviewQueuedEvidence(request, body, env) {
     // Administrator approval makes the evidence retrievable; it does NOT claim scientific verification.
     verification_status: item.verification_status || 'community_submitted'
   };
-  const saved = await db(env, 'botanical_evidence_queue?id=eq.' + item.id + '&approval_status=eq.pending', {
+  const saved = await db(env, 'botanical_evidence_queue?id=eq.' + item.id + '&approval_status=in.(pending,community_corroborated)', {
     method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch)
   });
   if (!saved.ok) throw new Error('The administrator decision could not be saved.');
