@@ -178,3 +178,37 @@ test('schema separates admin approval from verification and enforces one communi
   assert.match(sql,/unique \(evidence_id, user_id\)/);
   assert.match(sql,/'admin_approved'/);
 });
+
+test('public botanical search strips submitter identity and private storage details from approved evidence', async () => {
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes('/rpc/search_verde_knowledge')) return ok([]);
+    if (target.includes('constitution_rules?')) return ok([
+      'approved_sources_only','cite_the_source','never_false_information','three_verification_levels',
+      'community_stays_separate','humans_decide','safety_first'
+    ].map(rule_key => ({ rule_key, title: rule_key, active: true })));
+    if (target.includes('botanical_evidence_queue?')) return ok([{
+      id:'private-evidence-id', evidence_type:'catalog_photo', source_system:'rootwise',
+      source_record_id:'customer-record-77', subject_key:'Hibiscus rosa-sinensis',
+      submitted_payload:{
+        common_name:'Chinese hibiscus', scientific_name:'Hibiscus rosa-sinensis',
+        image_storage_path:'customer-uuid/private/photo.jpg', submitter_email:'private@example.test',
+        notes:'private customer note'
+      },
+      model_result:{
+        description:'Evergreen flowering shrub', submitter_user_id:'customer-uuid',
+        image_url:'https://private.example.test/signed'
+      },
+      verification_status:'community_submitted', approved_by_email:'admin@example.test',
+      approved_at:'2026-11-08T00:00:00Z', approval_note:'private admin note'
+    }]);
+    throw new Error('Unexpected upstream call: '+target);
+  };
+  const response = await worker.fetch(request('/knowledge/search', { query:'Hibiscus' }), env);
+  const textBody = await response.text();
+  assert.equal(response.status, 200);
+  assert.match(textBody, /Evergreen flowering shrub/);
+  for (const secret of ['customer-uuid','private@example.test','admin@example.test','private customer note','private admin note','private-evidence-id','customer-record-77','signed']) {
+    assert.equal(textBody.includes(secret), false, 'public response must not expose '+secret);
+  }
+});
