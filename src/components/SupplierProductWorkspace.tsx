@@ -40,6 +40,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
   const [stock, setStock] = useState('1');
   const [reportNotes, setReportNotes] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
+  const [submittedProductId, setSubmittedProductId] = useState('');
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
@@ -125,7 +126,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
       createdId = rows[0].id;
       await uploadCatalogPhotoDataUrl(createdId, photoPreview, session.access_token);
       setMessage(es ? 'Producto enviado para revisión. No será visible hasta la aprobación del administrador.' : 'Listing submitted for review. It will remain hidden until an administrator approves it.');
-      setPhoto(null); setPhotoPreview(''); setAnalysis(null); setName(''); setScientificName(''); setDescription(''); setCare(''); setPrice(''); setStock('1'); setReportOpen(false); setReportNotes('');
+      setSubmittedProductId(createdId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not submit listing.');
       if (createdId) setMessage(es ? 'El registro se creó, pero la foto no se pudo guardar. Contacta al administrador antes de volver a enviarlo.' : 'The listing record was created, but its photo did not save. Contact an administrator before resubmitting.');
@@ -138,8 +139,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
     const record = analysis?.verified_botanical_record;
     setLoading(true); setError('');
     try {
-      const rows = await rest('products?select=id&created_by=eq.' + encodeURIComponent(session.user.id) + '&order=created_at.desc&limit=1', session.access_token);
-      const productId = rows?.[0]?.id;
+      const productId = submittedProductId;
       if (!productId) throw new Error(es ? 'Primero envía el producto para revisión.' : 'Submit the listing for review first.');
       await rest('supplier_identification_reports', session.access_token, {
         method: 'POST',
@@ -187,9 +187,9 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
           <label className="text-[11px] text-[var(--ink-soft)]">{es ? 'Moneda *' : 'Currency *'}<select value={currency} onChange={e => setCurrency(e.target.value as 'HNL' | 'USD')} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]"><option value="HNL">HNL</option><option value="USD">USD</option></select></label>
         </div>
         <label className="text-[11px] text-[var(--ink-soft)]">{es ? 'Cantidad disponible *' : 'Available stock *'}<input required type="number" min="0" step="1" value={stock} onChange={e => setStock(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]" /></label>
-        <button type="submit" disabled={loading || analyzing || !analysis || !photo} className="rounded-xl bg-[var(--palm)] p-3 text-[12px] font-bold text-white disabled:opacity-50">{loading ? '…' : (es ? 'Enviar para revisión' : 'Submit for review')}</button>
+        <button type="submit" disabled={loading || analyzing || !analysis || !photo || Boolean(submittedProductId)} className="rounded-xl bg-[var(--palm)] p-3 text-[12px] font-bold text-white disabled:opacity-50">{loading ? '…' : (es ? 'Enviar para revisión' : 'Submit for review')}</button>
       </form>
-      {analysis && <div className="border-t border-[var(--line)] pt-3"><button type="button" onClick={() => setReportOpen(!reportOpen)} className="text-[12px] font-bold text-[var(--bloom)] flex items-center gap-2"><AlertCircle className="w-4 h-4" />{es ? 'Reportar identificación incorrecta' : 'Report incorrect identification'}</button>{reportOpen && <div className="mt-2 flex flex-col gap-2"><textarea value={reportNotes} onChange={e => setReportNotes(e.target.value)} required rows={3} placeholder={es ? 'Explica qué identificó mal RootWise…' : 'Explain what RootWise identified incorrectly…'} className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[12px] text-[var(--ink)]" /><button type="button" disabled={loading} onClick={() => void reportIncorrect()} className="rounded-xl border border-[var(--line)] p-2 text-[12px] font-bold text-[var(--ink)]">{es ? 'Enviar reporte' : 'Send report'}</button></div>}</div>}
+      {analysis && <div className="border-t border-[var(--line)] pt-3"><button type="button" disabled={!submittedProductId} onClick={() => setReportOpen(!reportOpen)} className="text-[12px] font-bold text-[var(--bloom)] flex items-center gap-2 disabled:opacity-40"><AlertCircle className="w-4 h-4" />{es ? 'Reportar identificación incorrecta' : 'Report incorrect identification'}</button>{!submittedProductId && <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Envía primero el producto para poder adjuntar el reporte.' : 'Submit the listing first to attach an identification report.'}</p>}{reportOpen && <div className="mt-2 flex flex-col gap-2"><textarea value={reportNotes} onChange={e => setReportNotes(e.target.value)} required rows={3} placeholder={es ? 'Explica qué identificó mal RootWise…' : 'Explain what RootWise identified incorrectly…'} className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[12px] text-[var(--ink)]" /><button type="button" disabled={loading} onClick={() => void reportIncorrect()} className="rounded-xl border border-[var(--line)] p-2 text-[12px] font-bold text-[var(--ink)]">{es ? 'Enviar reporte' : 'Send report'}</button></div>}</div>}
       {error && <p role="alert" className="rounded-lg bg-red-50 p-2 text-[11px] text-red-700">{error}</p>}
       {message && <p className="flex items-center gap-2 rounded-lg bg-[var(--surface-2)] p-2 text-[11px] text-[var(--ink)]"><CheckCircle2 className="h-4 w-4 text-[var(--palm)]" />{message}</p>}
     </section>
