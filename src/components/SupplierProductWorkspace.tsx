@@ -4,6 +4,63 @@ import { AIAnalysisResult, AuthSession, Language } from '../types';
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '../data/initialData';
 import { analyzeBotanicalImage, compressImage } from '../services/api';
 
+type PhotoQuality = { score: number; status: 'acceptable' | 'needs_attention'; width: number; height: number; notes: string[] };
+
+async function inspectPhotoQuality(file: File): Promise<PhotoQuality> {
+  const bitmap = await createImageBitmap(file);
+  const width = bitmap.width;
+  const height = bitmap.height;
+  const canvas = document.createElement('canvas');
+  canvas.width = 160;
+  canvas.height = 120;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) throw new Error('Photo quality inspection is unavailable on this device.');
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+  const gray = new Float32Array(canvas.width * canvas.height);
+  let total = 0;
+  let totalSquared = 0;
+  for (let i = 0, p = 0; i < pixels.length; i += 4, p++) {
+    const value = 0.2126 * pixels[i] + 0.7152 * pixels[i + 1] + 0.0722 * pixels[i + 2];
+    gray[p] = value;
+    total += value;
+    totalSquared += value * value;
+  }
+  const count = gray.length;
+  const brightness = total / count;
+  const contrast = Math.sqrt(Math.max(0, totalSquared / count - brightness * brightness));
+  let laplacianTotal = 0;
+  let laplacianSquared = 0;
+  let samples = 0;
+  for (let y = 1; y < canvas.height - 1; y += 1) {
+    for (let x = 1; x < canvas.width - 1; x += 1) {
+      const k = y * canvas.width + x;
+      const value = gray[k - canvas.width] + gray[k - 1] - 4 * gray[k] + gray[k + 1] + gray[k + canvas.width];
+      laplacianTotal += value;
+      laplacianSquared += value * value;
+      samples += 1;
+    }
+  }
+  const sharpness = Math.max(0, laplacianSquared / samples - Math.pow(laplacianTotal / samples, 2));
+  const notes: string[] = [];
+  const resolutionOk = width >= 800 && height >= 600;
+  const exposureOk = brightness >= 28 && brightness <= 232;
+  const contrastOk = contrast >= 18;
+  const sharpnessOk = sharpness >= 10;
+  if (!resolutionOk) notes.push('Low resolution: use an image at least 800 × 600 pixels.');
+  if (!exposureOk) notes.push(brightness < 28 ? 'Photo is too dark.' : 'Photo is overexposed.');
+  if (!contrastOk) notes.push('Low contrast: the subject may be difficult to distinguish.');
+  if (!sharpnessOk) notes.push('Possible blur: retake the photo with the camera steady and focused.');
+  const score = Math.max(0, Math.min(100,
+    (resolutionOk ? 25 : Math.min(20, 25 * Math.min(width / 800, height / 600))) +
+    (exposureOk ? 25 : 8) +
+    (contrastOk ? 20 : 8) +
+    (sharpnessOk ? 30 : Math.min(18, sharpness * 1.2))
+  ));
+  return { score: Math.round(score), status: notes.length ? 'needs_attention' : 'acceptable', width, height, notes };
+}
+
 type Nursery = { id: string; name: string };
 type Identification = { common: string; scientific: string; confidence: number | null; model: string; status: 'identified' | 'uncertain' };
 
@@ -41,6 +98,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
   const [photo, setPhoto] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [analysis, setAnalysis] = useState<AIAnalysisResult | null>(null);
+  const [photoQuality, setPhotoQuality] = useState<PhotoQuality | null>(null);
   const [name, setName] = useState('');
   const [scientificName, setScientificName] = useState('');
   const [category, setCategory] = useState('plant');
@@ -75,7 +133,8 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
     if (!file) return;
     if (!file.type.startsWith('image/')) { setError(es ? 'Selecciona una imagen válida.' : 'Choose a valid image file.'); return; }
     if (file.size > 15 * 1024 * 1024) { setError(es ? 'La imagen debe pesar menos de 15 MB.' : 'Image must be smaller than 15 MB.'); return; }
-    setError(''); setMessage(''); setAnalysis(null); setPhoto(file);
+    setError(''); setMessage(''); setAnalysis(null); setPhotoQuality(null); setSubmittedProductId(''); setSubmittedImageUrl(''); setPhoto(file);
+    try { setPhotoQuality(await inspectPhotoQuality(file)); } catch (qualityError) { setError(qualityError instanceof Error ? qualityError.message : 'Photo quality check failed.'); return; }
     const preview = await compressImage(file, 1400, 0.84);
     setPhotoPreview(preview);
     setAnalyzing(true);
@@ -105,7 +164,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
   const submitListing = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!nursery) { setError(es ? 'No encontramos un vivero aprobado para esta cuenta.' : 'No approved nursery was found for this account.'); return; }
-    if (!photo || !photoPreview || !analysis) { setError(es ? 'Sube una foto y completa primero el análisis de inteligencia.' : 'Upload a photo and complete the intelligence analysis first.'); return; }
+    if (!photo || !photoPreview || !analysis || !photoQuality) { setError(es ? 'Sube una foto y completa primero el análisis de inteligencia.' : 'Upload a photo and complete the intelligence analysis first.'); return; }
     if (!name.trim() || !scientificName.trim() || !category.trim() || !description.trim() || !care.trim() || !size.trim() || !sunlight.trim() || !watering.trim() || !price || !stock) {
       setError(es ? 'Completa todos los parámetros obligatorios.' : 'Complete every required listing parameter.'); return;
     }
@@ -145,7 +204,13 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
           ai_identified_scientific_name: record?.scientific_name || candidate?.scientific_name || null,
           ai_identification_confidence: Number.isFinite(confidence) ? confidence : null,
           ai_identification_model: analysis.model_used || null,
-          ai_identification_status: (record?.common_name || candidate?.common_name) ? 'identified' : 'uncertain'
+          ai_identification_status: (record?.common_name || candidate?.common_name) ? 'identified' : 'uncertain',
+          photo_quality_score: photoQuality.score,
+          photo_quality_status: photoQuality.status,
+          photo_quality_notes: photoQuality.notes.join(' '),
+          photo_width: photoQuality.width,
+          photo_height: photoQuality.height,
+          photo_file_size_bytes: photo.size
         })
       });
       if (!Array.isArray(rows) || !rows[0]?.id) throw new Error('The listing was not returned after saving.');
@@ -201,6 +266,12 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
         <input type="file" accept="image/*" className="sr-only" onChange={e => { void selectPhoto(e.target.files?.[0]); e.target.value = ''; }} />
       </label>
       {photoPreview && <img src={photoPreview} alt="Supplier upload preview" className="w-full max-h-52 rounded-xl object-cover" />}
+      {photoQuality && <div className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-3 text-[11px]">
+        <div className="flex items-center justify-between gap-2"><b className="text-[var(--ink)]">{es ? 'Revisión técnica de foto' : 'Photo quality check'}</b><b className={photoQuality.status === 'acceptable' ? 'text-[var(--palm)]' : 'text-amber-700'}>{photoQuality.score}/100 · {photoQuality.status === 'acceptable' ? (es ? 'Aceptable' : 'Acceptable') : (es ? 'Necesita atención' : 'Needs attention')}</b></div>
+        <p className="mt-1 text-[var(--ink-soft)]">{photoQuality.width} × {photoQuality.height}px · {(photo.size / 1024).toFixed(0)} KB</p>
+        {photoQuality.notes.length > 0 && <ul className="mt-1 list-disc pl-4 text-amber-700">{photoQuality.notes.map(note => <li key={note}>{note}</li>)}</ul>}
+        <p className="mt-1 text-[var(--ink-soft)]">{es ? 'Esta comprobación estima resolución, exposición, contraste y nitidez. El administrador revisará la foto antes de publicar.' : 'This check estimates resolution, exposure, contrast and sharpness. An administrator still reviews the image before publication.'}</p>
+      </div>}
       {analyzing && <p className="flex items-center gap-2 text-[12px] text-[var(--palm)]"><Loader2 className="w-4 h-4 animate-spin" />{es ? 'RootWise Intelligence identificando la planta…' : 'RootWise Intelligence is identifying the plant…'}</p>}
       {analysis && <div className="rounded-xl bg-[var(--surface-2)] p-3 text-[12px]"><p className="flex items-center gap-2 font-bold text-[var(--palm)]"><Sparkles className="w-4 h-4" />{es ? 'Identificación sugerida por inteligencia' : 'Intelligence identification suggestion'}</p><p className="mt-1 text-[var(--ink)]">{analysis.verified_botanical_record?.common_name || analysis.candidates?.[0]?.common_name || (es ? 'Sin identificación concluyente' : 'No conclusive identification')} · {analysis.verified_botanical_record?.scientific_name || analysis.candidates?.[0]?.scientific_name || '—'}</p><p className="text-[10px] text-[var(--ink-soft)]">{es ? 'Verifica y edita todos los datos. La IA puede equivocarse.' : 'Review and edit all details. AI can be wrong.'}</p></div>}
       <form onSubmit={submitListing} className="flex flex-col gap-2">
