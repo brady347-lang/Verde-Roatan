@@ -19,26 +19,32 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
     private SensorManager sensorManager;
     private Sensor lightSensor;
     private boolean listening = false;
+    private boolean shouldListen = false;
 
-    @PluginMethod
-    public void startAmbientLight(PluginCall call) {
+    private boolean registerAmbientLightListener() {
         if (sensorManager == null) {
             sensorManager = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
         }
-        if (sensorManager == null) {
-            call.reject("Android sensor service is unavailable.");
-            return;
-        }
+        if (sensorManager == null) return false;
         lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
-        if (lightSensor == null) {
-            call.reject("This device does not expose an ambient light sensor.");
-            return;
-        }
-        if (!listening) {
-            listening = sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_NORMAL);
-        }
-        if (!listening) {
-            call.reject("Android could not start the ambient light sensor.");
+        if (lightSensor == null) return false;
+        if (listening) return true;
+        listening = sensorManager.registerListener(this, lightSensor, SensorManager.SENSOR_DELAY_UI);
+        return listening;
+    }
+
+    @PluginMethod
+    public void startAmbientLight(PluginCall call) {
+        shouldListen = true;
+        if (!registerAmbientLightListener()) {
+            shouldListen = false;
+            if (sensorManager == null) {
+                call.reject("Android sensor service is unavailable.");
+            } else if (lightSensor == null) {
+                call.reject("This device does not expose an ambient light sensor.");
+            } else {
+                call.reject("Android could not start the ambient light sensor.");
+            }
             return;
         }
         call.resolve();
@@ -50,6 +56,7 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
             sensorManager.unregisterListener(this);
         }
         listening = false;
+        shouldListen = false;
         call.resolve();
     }
 
@@ -84,9 +91,20 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
     }
 
     @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        if (shouldListen && !registerAmbientLightListener()) {
+            JSObject payload = new JSObject();
+            payload.put("message", "Ambient light sensor could not resume.");
+            notifyListeners("lightSensorError", payload);
+        }
+    }
+
+    @Override
     protected void handleOnDestroy() {
         if (sensorManager != null) sensorManager.unregisterListener(this);
         listening = false;
+        shouldListen = false;
         super.handleOnDestroy();
     }
 }
