@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Compass, Home, Leaf, ScanLine, UserRound, Wrench } from 'lucide-react';
+import { Compass, Home, ScanLine, Wrench } from 'lucide-react';
 import { Language } from '../types';
 
 export type TabType = 'home' | 'tools' | 'explore' | 'plants' | 'id' | 'svc' | 'request' | 'account';
@@ -20,17 +20,16 @@ export const Navigation: React.FC<NavigationProps> = ({
     { id: 'home', label: lang === 'es' ? 'Inicio' : 'Home', icon: <Home className="h-5 w-5" /> },
     { id: 'explore', label: lang === 'es' ? 'Explorar' : 'Explore', icon: <Compass className="h-5 w-5" /> },
     { id: 'id', label: lang === 'es' ? 'Identificar' : 'Identify', icon: <ScanLine className="h-5 w-5" />, featured: true },
-    { id: 'tools', label: lang === 'es' ? 'Herramientas' : 'Tools', icon: <Wrench className="h-5 w-5" /> },
-    { id: 'account', label: lang === 'es' ? 'Perfil' : 'Profile', icon: <UserRound className="h-5 w-5" /> }
+    { id: 'tools', label: lang === 'es' ? 'Herramientas' : 'Tools', icon: <Wrench className="h-5 w-5" /> }
   ];
   const exploreActive = ['explore', 'plants', 'svc', 'request'].includes(activeTab);
 
   return (
     <motion.nav initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ duration: 0.35, ease: 'easeOut' }}
-      className="relative grid grid-cols-5 gap-1 bg-[var(--surface)]/95 backdrop-blur-md border border-[var(--line)] rounded-3xl p-1.5 mx-auto w-full max-w-[440px] my-1.5 shadow-lg shadow-black/5 z-40 select-none"
+      className="relative grid grid-cols-4 gap-1 bg-[var(--surface)]/95 backdrop-blur-md border border-[var(--line)] rounded-3xl p-1.5 mx-auto w-full max-w-[440px] my-1.5 shadow-lg shadow-black/5 z-40 select-none"
       role="tablist" aria-label="RootWise navigation">
       {tabs.map((item) => {
-        const selected = item.id === 'explore' ? exploreActive : activeTab === item.id;
+        const selected = item.id === 'explore' ? exploreActive : item.id === 'home' ? activeTab === 'home' || activeTab === 'account' : activeTab === item.id;
         return (
           <motion.button key={item.id} type="button" role="tab" aria-selected={selected}
             onClick={() => onSelectTab(item.id)} whileTap={{ scale: 0.92 }} whileHover={{ y: -1 }}
