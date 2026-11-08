@@ -39,4 +39,10 @@ assert.match(tools, /map\.panTo\(\[latest\.lat, latest\.lon\]/, 'live map must f
 assert.match(tools, /MapViewport points=\{points\} follow=\{tracking\}/, 'map follow mode must be tied to active tracking');
 assert.match(tools, /evaluateFix\(previousPoint, \{ lat: latitude, lon: longitude, accuracy, timestamp: Date\.now\(\) \}\)/, 'manual GPS points must pass accuracy and duplicate filtering');
 
+// Light measurements must come from the device sensor, never user-entered lux values.
+assert.doesNotMatch(tools, /luxInput|Lux measured with a lux meter|Lectura de luz \\(lux\\)/, 'manual lux entry must not be exposed');
+assert.match(tools, /RootWiseDeviceSensors\\.addListener\\('lightReading'/, 'live lux must come from the native device sensor');
+assert.match(tools, /hasLiveLux \\? <>/, 'light guidance must wait until a real sensor reading exists');
+assert.match(tools, /Recommendations will appear automatically when a real sensor reading is received/, 'plant recommendations must wait for real sensor data');
+
 console.log('androidWiring tests passed');
