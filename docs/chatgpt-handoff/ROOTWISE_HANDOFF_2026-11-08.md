@@ -74,3 +74,16 @@ The user wants hands-on work directly in GitHub, clear continuity between chats,
   - `31a678d00ad49c424e21a2070c3961eb35605669` — harden IndexedDB result handling.
 - Basic source inspection confirms the screen imports the store and includes save/open/delete handlers. Full typecheck/build and device runtime tests remain outstanding; no dependency install, Android sync, APK build, merge or deployment has been performed.
 - Next validation: install project dependencies in a proper build environment, run `npm run lint` and `npm run build`, then on Android verify save → app restart → reopen → delete, plus behavior when IndexedDB is unavailable or storage is full.
+
+
+## Site notes and planting estimates (Round 4 — in progress)
+- Extended `SavedPlot` with optional `notes`, `plantSpacingM`, and `estimatedPlants` fields. Optional fields keep existing saved-map records readable without migration.
+- The measured-map form now accepts site notes (soil, shade, slope, obstacles, and other project details).
+- Saving a reopened plot updates the same record instead of creating a duplicate; Reset starts a new plot record.
+- Saved map cards now show the estimated plant count and a short notes preview. Reopening restores the saved plant spacing and notes.
+- These details and coordinates remain in device-local IndexedDB; no cloud sync or account sharing was added.
+- Commits:
+  - `7d4184440040e62d472c3e961b723f10972b6997` — extend saved plot model.
+  - `72f7c1dd9a60aa691789d6af58145cb540d5e6ba` — add editable notes and planting estimates.
+- Source-level checks confirmed the expected fields, restore handlers, form controls and reset behavior are present. This is not a substitute for `npm run lint`, `npm run build`, or physical-device testing; none has been run in this round.
+- Next: add a basic planting layout visualization to the saved plot detail (starting with a square-grid estimate), while clearly labeling it as a planning approximation and allowing the user to adjust spacing. Later work can support species-specific spacing and mixed planting zones.
