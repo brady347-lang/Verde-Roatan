@@ -66,6 +66,8 @@ import { AdminInsightsPanel } from '../components/AdminInsightsPanel';
 import { AccountPrivacySection } from '../components/AccountPrivacySection';
 
 interface AccountScreenProps {
+  theme: 'system' | 'light' | 'dark';
+  onThemeChange: (theme: 'system' | 'light' | 'dark') => void;
   lang: Language;
   session: AuthSession | null;
   isAdmin: boolean;
@@ -116,6 +118,8 @@ function GardenThumb({ photoId, legacyPhoto, alt }: { photoId?: string | null; l
 }
 
 export const AccountScreen: React.FC<AccountScreenProps> = ({
+  theme,
+  onThemeChange,
   lang,
   session,
   isAdmin,
@@ -253,6 +257,23 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
 
   return (
     <div className="flex flex-col gap-4 pb-8">
+      <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Sun className="w-4 h-4 text-[var(--palm)]" />
+          <div>
+            <h2 className="text-[14px] font-extrabold text-[var(--ink)]">{lang === 'es' ? 'Apariencia' : 'Appearance'}</h2>
+            <p className="text-[11.5px] text-[var(--ink-soft)]">{lang === 'es' ? 'Elige cómo se ve RootWise en tu dispositivo.' : 'Choose how RootWise looks on your device.'}</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {(['light', 'dark', 'system'] as const).map((mode) => (
+            <button key={mode} type="button" aria-pressed={theme === mode} onClick={() => onThemeChange(mode)}
+              className={`rounded-xl border px-2 py-2.5 text-[12px] font-bold transition-colors ${theme === mode ? 'border-[var(--palm)] bg-[var(--palm)] text-white' : 'border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink)]'}`}>
+              {mode === 'light' ? (lang === 'es' ? 'Claro' : 'Light') : mode === 'dark' ? (lang === 'es' ? 'Oscuro' : 'Dark') : (lang === 'es' ? 'Sistema' : 'System')}
+            </button>
+          ))}
+        </div>
+      </section>
       {/* If Authenticated */}
       {session ? (
         <div className="flex flex-col gap-4">
