@@ -208,7 +208,7 @@ test('public botanical search strips submitter identity and private storage deta
     }]);
     throw new Error('Unexpected upstream call: '+target);
   };
-  const response = await worker.fetch(request('/knowledge/search', { query:'Hibiscus' }), env);
+  const response = await worker.fetch(request('/knowledge/search', { query:'Hibiscus' }, ''), env);
   const textBody = await response.text();
   assert.equal(response.status, 200);
   assert.match(textBody, /Evergreen flowering shrub/);
