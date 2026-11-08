@@ -490,6 +490,27 @@ async function runEvidenceCycle(env) {
 }
 
 export default {
+  scheduled(_controller, env, ctx) {
+    ctx.waitUntil(runEvidenceCycle(env).catch(async error => {
+      const message = clean(error?.message || 'Scheduled evidence cycle failed.', 500);
+      try {
+        await db(env, 'botanical_engine_runs', {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            started_at: new Date().toISOString(),
+            finished_at: new Date().toISOString(),
+            status: 'failed',
+            evidence_reviewed: 0,
+            escalated: 0,
+            failed: 1,
+            error_summary: message
+          })
+        });
+      } catch (_) { /* The scheduler must not hide the original failure. */ }
+      console.error('RootWise evidence cycle failed:', message);
+    }));
+  },
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
