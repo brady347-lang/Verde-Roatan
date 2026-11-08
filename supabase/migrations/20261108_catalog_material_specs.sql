@@ -1,4 +1,4 @@
--- PREPARED, NOT APPLIED. Owner approval is required before running this on the production project.
+-- APPLIED to the primary production Supabase project (verde-roatan / tjzqxsyxvfdabfguezmu) on 2026-11-08 after owner approval.
 -- Stores supplier-confirmed package volume and surface coverage for accurate landscaping estimates.
 -- Existing products remain NULL and are never assigned inferred measurements.
 begin;
