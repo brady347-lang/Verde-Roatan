@@ -2,7 +2,7 @@ name: Verify RootWise app
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/rootwise-unified-development]
   pull_request:
     branches: [main]
 
