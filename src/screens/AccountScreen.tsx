@@ -1277,7 +1277,6 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
             )}
 
             {authMode !== 'temporary' && (
-              {/* Password Field - STRICTLY REQUIRED FOR EVERYONE INCLUDING ADMIN */}
               <div className="flex flex-col gap-1">
                 <label className="text-[12px] font-bold text-[var(--ink)] flex items-center justify-between">
                   <span>{authMode === 'admin' ? 'Supabase Saved Password *' : 'Password'}</span>
