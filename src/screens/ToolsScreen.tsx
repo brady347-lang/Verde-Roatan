@@ -41,6 +41,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const [points, setPoints] = useState<Point[]>([]);
   const [savedPlots, setSavedPlots] = useState<SavedPlot[]>([]);
   const [plotName, setPlotName] = useState('');
+  const [plotNotes, setPlotNotes] = useState('');
+  const [editingPlotId, setEditingPlotId] = useState<string | null>(null);
   const [plotStorageError, setPlotStorageError] = useState('');
   useEffect(() => {
     let active = true;
@@ -53,18 +55,21 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
     if (points.length < 3) return;
     const now = new Date().toISOString();
     const plot: SavedPlot = {
-      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'plot-' + Date.now() + '-' + Math.random().toString(36).slice(2),
+      id: editingPlotId || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'plot-' + Date.now() + '-' + Math.random().toString(36).slice(2)),
       name: plotName.trim() || (es ? 'Terreno ' : 'Garden plot ') + new Date().toLocaleDateString(),
       points: points.map((point) => ({ ...point })),
       areaM2: measurement.area,
       perimeterM: measurement.perimeter,
-      createdAt: now,
+      notes: plotNotes.trim(),
+      plantSpacingM: spacing,
+      estimatedPlants: plants,
+      createdAt: savedPlots.find((item) => item.id === editingPlotId)?.createdAt || now,
       updatedAt: now
     };
     try {
       await saveMeasuredPlot(plot);
       setSavedPlots(await listSavedPlots());
-      setPlotName('');
+      setEditingPlotId(plot.id);
       setPlotStorageError('');
     } catch {
       setPlotStorageError(es ? 'No se pudo guardar. Comprueba el espacio disponible en el dispositivo.' : 'Could not save this map. Check available device storage.');
@@ -73,6 +78,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const handleOpenPlot = (plot: SavedPlot) => {
     setPoints(plot.points.map((point) => ({ ...point })));
     setPlotName(plot.name);
+    setPlotNotes(plot.notes || '');
+    setPlantSpacing(String(plot.plantSpacingM || 0.5));
+    setEditingPlotId(plot.id);
     setGpsError('');
     setTool('area');
   };
@@ -203,22 +211,23 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
         {plotStorageError && <p role="alert" className="mb-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">{plotStorageError}</p>}
         {points.length >= 3 && <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
           <p className="mb-2 text-xs font-bold">{es ? 'Guardar este mapa en el dispositivo' : 'Save this map on this device'}</p>
-          <div className="flex gap-2">
-            <input aria-label={es ? 'Nombre del terreno' : 'Plot name'} value={plotName} onChange={(event) => setPlotName(event.target.value)} placeholder={es ? 'Nombre del terreno (opcional)' : 'Plot name (optional)'} className="min-w-0 flex-1 rounded-xl border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]" />
-            <button onClick={handleSavePlot} className="rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{es ? 'Guardar mapa' : 'Save map'}</button>
-          </div>
+          <input aria-label={es ? 'Nombre del terreno' : 'Plot name'} value={plotName} onChange={(event) => setPlotName(event.target.value)} placeholder={es ? 'Nombre del terreno (opcional)' : 'Plot name (optional)'} className="mb-2 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]" />
+          <label className="mb-2 block text-xs text-[var(--ink-soft)]">{es ? 'Notas del sitio (suelo, sombra, pendientes, obstáculos...)' : 'Site notes (soil, shade, slope, obstacles...)'}
+            <textarea value={plotNotes} onChange={(event) => setPlotNotes(event.target.value)} rows={3} maxLength={1200} placeholder={es ? 'Añade detalles útiles para el proyecto...' : 'Add useful project details...'} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]" />
+          </label>
+          <button onClick={handleSavePlot} className="w-full rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{editingPlotId ? (es ? 'Actualizar terreno' : 'Update plot') : (es ? 'Guardar mapa' : 'Save map')}</button>
           <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Las coordenadas se guardan solo en este dispositivo; no se suben a la nube.' : 'Coordinates are stored only on this device; they are not uploaded to the cloud.'}</p>
         </div>}
         <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
           <div className="mb-2 flex items-center justify-between"><b className="text-xs">{es ? 'Mapas guardados' : 'Saved maps'}</b><span className="text-[10px] text-[var(--ink-soft)]">{savedPlots.length}</span></div>
           {savedPlots.length === 0 ? <p className="text-[11px] text-[var(--ink-soft)]">{es ? 'Tus mapas guardados aparecerán aquí.' : 'Your saved maps will appear here.'}</p> :
             <div className="space-y-2">{savedPlots.map((plot) => <div key={plot.id} className="flex items-center gap-2 rounded-xl bg-[var(--surface-2)] p-2">
-              <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{plot.name}</p><p className="text-[10px] text-[var(--ink-soft)]">{plot.areaM2.toFixed(1)} m² · {plot.points.length} {es ? 'puntos' : 'points'} · {new Date(plot.updatedAt).toLocaleDateString(es ? 'es-HN' : 'en-US')}</p></div>
+              <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{plot.name}</p><p className="text-[10px] text-[var(--ink-soft)]">{plot.areaM2.toFixed(1)} m² · {plot.points.length} {es ? 'puntos' : 'points'} · {plot.estimatedPlants ?? '—'} {es ? 'plantas estimadas' : 'estimated plants'} · {new Date(plot.updatedAt).toLocaleDateString(es ? 'es-HN' : 'en-US')}</p>{plot.notes && <p className="mt-1 line-clamp-2 text-[10px] text-[var(--ink-soft)]">{plot.notes}</p>}</div>
               <button onClick={() => handleOpenPlot(plot)} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold">{es ? 'Abrir' : 'Open'}</button>
               <button aria-label={es ? 'Eliminar ' + plot.name : 'Delete ' + plot.name} onClick={() => handleDeletePlot(plot.id)} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold text-red-600">{es ? 'Borrar' : 'Delete'}</button>
             </div>)}</div>}
         </div>
-        <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy} onClick={capturePoint} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><MapPin className="h-4 w-4" />{gpsBusy ? (es ? 'Buscando GPS…' : 'Getting GPS…') : (es ? 'Capturar punto' : 'Capture point')}</button><button onClick={() => setPoints([])} disabled={!points.length || gpsBusy} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><RotateCcw className="h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
+        <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy} onClick={capturePoint} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><MapPin className="h-4 w-4" />{gpsBusy ? (es ? 'Buscando GPS…' : 'Getting GPS…') : (es ? 'Capturar punto' : 'Capture point')}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); }} disabled={!points.length || gpsBusy} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><RotateCcw className="h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
         {points.length > 0 && <button onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
         {points.length > 0 && <ol className="mt-3 space-y-1 text-[11px] text-[var(--ink-soft)]">{points.map((point, index) => <li key={index}>#{index + 1} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)} · ±{point.accuracy.toFixed(0)}m</li>)}</ol>}
         <p className="mt-3 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Estimación de campo, no un levantamiento topográfico. La precisión depende del dispositivo, cielo abierto y señal GPS. Revisa los límites antes de cotizar o construir.' : 'Field estimate, not a certified survey. Accuracy depends on device, open sky and GPS signal. Verify boundaries before quoting or construction.'}</p>
