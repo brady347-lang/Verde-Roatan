@@ -14,8 +14,10 @@ This pass preserves the original React/TypeScript application and its existing S
 - Admin order-status advancement now calls the existing `advance_order_status` Supabase RPC before updating the front-end state. This lets the existing database function record the status history and its transaction event.
 - Offline currency display fallback is clearly treated as a manual reference rate of 26 HNL/USD. When the currency worker responds, its live rate remains authoritative.
 
-- Catalog ID routing now distinguishes UUID-backed `products` rows from legacy text-keyed `catalog_items` rows. Delete, stock updates, and catalog photo URL updates use the matching table; deletion requires a returned row so the UI cannot report success when Supabase changed nothing.
+- Catalog deletion and stock updates now distinguish UUID-backed production `products` rows from legacy seed entries such as `p-areca`. The active production Supabase project has `public.products` but no `public.catalog_items`; legacy seed entries are therefore removed/updated locally, while UUID-backed records use Supabase. Database deletion requires a returned row so the UI cannot report success when Supabase changed nothing.
 - Added `supabase/migrations/20261107_verde_catalog_delete_policy.sql` to permit trusted admins to delete rows from both catalog tables under the existing `app_metadata.role = admin` authorization model. This migration must be applied to the connected Supabase project before testing deletion.
+
+- The catalog-delete migration `verde_catalog_delete_policy` has been applied to the primary production Supabase project. It adds an admin-only DELETE policy on `public.products`; the optional `catalog_items` policy is skipped because that table is absent in this project.
 
 ## Important integration boundaries
 
