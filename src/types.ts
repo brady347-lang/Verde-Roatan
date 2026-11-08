@@ -12,6 +12,16 @@ export type PlantCategory = 'palm' | 'shrub' | 'flower' | 'grass' | 'bottle' | '
 export type ItemType = 'plant' | 'product';
 export type StockStatus = 'In stock' | 'Low stock' | 'Out of stock';
 
+/** Explicit, verified selling-unit coverage for landscaping estimates. */
+export interface CatalogMaterialSpec {
+  /** Usable volume supplied by one package, in liters. */
+  package_volume_liters?: number;
+  /** Surface area covered by one selling unit, in square meters. */
+  coverage_area_m2?: number;
+  /** Customer-facing name for one selling unit (e.g. bag, slab, paver). */
+  unit_label?: string;
+}
+
 export interface CatalogItem {
   id: string;
   t: ItemType;
@@ -44,6 +54,8 @@ export interface CatalogItem {
   category: string;
   image_url?: string;
   native_to_bay_islands?: boolean;
+  /** Optional explicit package volume or surface coverage; never infer from display text. */
+  material_spec?: CatalogMaterialSpec;
 }
 
 export interface CartItem {
