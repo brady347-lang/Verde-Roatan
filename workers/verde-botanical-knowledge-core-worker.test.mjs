@@ -238,6 +238,7 @@ test('public knowledge search excludes private data, reports no-AI retrieval and
       return ok([{ source_type: 'research', source_title: 'Palm guide.pdf', citation: 'University extension', page_start: 4, content: 'Potassium deficiency symptoms.', verification_status: 'source_supported', rank: 0.2 }]);
     }
     if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
+    if (url.includes('/rest/v1/botanical_evidence_queue')) return ok([]);
     throw new Error('Unexpected request: ' + url);
   }, null);
   const r = await worker.fetch(request('/knowledge/search', { query: 'palm potassium' }, null), env);
