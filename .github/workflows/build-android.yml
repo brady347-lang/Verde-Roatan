@@ -94,6 +94,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      - name: Verify merged APK permissions (camera and precise location prompts depend on these)
+        run: |
+          AAPT2="$(ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/aapt2 | sort -V | tail -1)"
+          PERMS="$("$AAPT2" dump permissions android/app/build/outputs/apk/debug/app-debug.apk)"
+          echo "$PERMS"
+          for p in android.permission.CAMERA android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION; do
+            echo "$PERMS" | grep -q "$p" || { echo "::error::Merged APK is missing $p"; exit 1; }
+          done
+
       - name: Show APK signing fingerprint (must stay the same on every build)
         run: keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | grep 'SHA256'
 

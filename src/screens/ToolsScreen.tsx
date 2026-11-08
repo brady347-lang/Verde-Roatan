@@ -8,10 +8,11 @@ import { Activity, Camera, Calculator, Check, CircleDot, Compass, Leaf, MapPin, 
 import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
+import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
 import { buildCalibrationProfile, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
-type Point = { lat: number; lon: number; accuracy: number; };
+type Point = TrackPoint;
 const CAMERA_CALIBRATION_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_CAMERA_CALIBRATION === 'true';
 type MaterialType = '' | 'mulch' | 'gravel' | 'topsoil' | 'compost' | 'pavers';
 const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: string; terms: RegExp }> = {
@@ -31,23 +32,6 @@ function MapViewport({ points }: { points: Point[] }) {
   }, [map, points]);
   return null;
 }
-const toRadians = (value: number) => value * Math.PI / 180;
-
-function measurePolygon(points: Point[]) {
-  if (points.length < 3) return { area: 0, perimeter: 0 };
-  const lat0 = toRadians(points.reduce((sum, point) => sum + point.lat, 0) / points.length);
-  const metersPerDegreeLat = 111132.92;
-  const metersPerDegreeLon = 111412.84 * Math.cos(lat0);
-  const xy = points.map((point) => ({ x: point.lon * metersPerDegreeLon, y: point.lat * metersPerDegreeLat }));
-  let twiceArea = 0, perimeter = 0;
-  xy.forEach((point, index) => {
-    const next = xy[(index + 1) % xy.length];
-    twiceArea += point.x * next.y - next.x * point.y;
-    perimeter += Math.hypot(next.x - point.x, next.y - point.y);
-  });
-  return { area: Math.abs(twiceArea) / 2, perimeter };
-}
-
 export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const es = lang === 'es';
   const [points, setPoints] = useState<Point[]>([]);
@@ -117,6 +101,11 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   const [gpsBusy, setGpsBusy] = useState(false);
   const [gpsError, setGpsError] = useState('');
+  const [tracking, setTracking] = useState(false);
+  const [trackingStatus, setTrackingStatus] = useState('');
+  const gpsWatchRef = useRef<string | number | null>(null);
+  const trackingActiveRef = useRef(false);
+  const lastAcceptedFixRef = useRef<(TrackPoint & { timestamp?: number }) | null>(null);
   const [depth, setDepth] = useState('0.08');
   const [coverage, setCoverage] = useState('50');
   const [selectedSodId, setSelectedSodId] = useState('');
@@ -128,10 +117,11 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [waste, setWaste] = useState('10');
   const [bagLiters, setBagLiters] = useState('40');
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation' | 'light'>('area');
-  const [luxInput, setLuxInput] = useState('12000');
+  const [luxInput, setLuxInput] = useState('0');
   const [liveLux, setLiveLux] = useState<number | null>(null);
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
+  const sensorTimeoutRef = useRef<number | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -166,8 +156,15 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       setCameraReferenceLux('');
       setCameraStatus(es ? 'Cámara lista. Sigue cada paso.' : 'Camera ready. Follow each step.');
       window.setTimeout(() => { if (cameraVideoRef.current) { cameraVideoRef.current.srcObject = stream; void cameraVideoRef.current.play().catch(() => undefined); } }, 0);
-    } catch {
-      setCameraStatus(es ? 'No se pudo acceder a la cámara. Revisa el permiso e inténtalo de nuevo.' : 'Camera access failed. Check permission and try again.');
+    } catch (error) {
+      const name = error instanceof Error ? error.name : '';
+      setCameraStatus(name === 'NotAllowedError' || name === 'SecurityError'
+        ? (es ? 'El permiso de cámara está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Cámara e inténtalo de nuevo.' : 'Camera permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Camera, then try again.')
+        : name === 'NotFoundError' || name === 'OverconstrainedError'
+          ? (es ? 'No se encontró una cámara trasera utilizable en este dispositivo.' : 'No usable rear camera was found on this device.')
+          : name === 'NotReadableError'
+            ? (es ? 'La cámara está en uso por otra aplicación. Ciérrala e inténtalo de nuevo.' : 'The camera is in use by another app. Close it and try again.')
+            : (es ? 'No se pudo acceder a la cámara. Revisa el permiso e inténtalo de nuevo.' : 'Camera access failed. Check permission and try again.'));
     }
   };
   const captureCameraCalibrationStage = () => {
@@ -210,28 +207,66 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const lux = liveLux ?? Math.max(0, Number(luxInput) || 0);
   const lightAssessment = useMemo(() => assessLight(lux), [lux]);
   const lightMatches = useMemo(() => recommendPlantsForLight(lux), [lux]);
-  useEffect(() => () => { sensorRef.current?.stop(); stopCameraCalibration(); }, []);
+  const stopGpsTracking = async () => {
+    trackingActiveRef.current = false;
+    setTracking(false);
+    if (gpsWatchRef.current !== null) {
+      if (typeof gpsWatchRef.current === 'string') await Geolocation.clearWatch({ id: gpsWatchRef.current }).catch(() => undefined);
+      else if (typeof navigator !== 'undefined' && navigator.geolocation) navigator.geolocation.clearWatch(gpsWatchRef.current);
+      gpsWatchRef.current = null;
+    }
+    setTrackingStatus(es ? 'Seguimiento detenido. El recorrido queda en el mapa.' : 'Tracking stopped. Your path remains on the map.');
+  };
+  useEffect(() => () => {
+    trackingActiveRef.current = false;
+    if (gpsWatchRef.current !== null) {
+      if (typeof gpsWatchRef.current === 'string') void Geolocation.clearWatch({ id: gpsWatchRef.current });
+      else if (typeof navigator !== 'undefined' && navigator.geolocation) navigator.geolocation.clearWatch(gpsWatchRef.current);
+    }
+    sensorRef.current?.stop();
+    if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+    stopCameraCalibration();
+  }, []);
+  useEffect(() => { if (tool !== 'area' && trackingActiveRef.current) void stopGpsTracking(); }, [tool]);
   useEffect(() => { if (tool !== 'light' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } }, [tool]);
   const startLightSensor = async () => {
     sensorRef.current?.stop();
     sensorRef.current = null;
+    if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
     setLiveLux(null);
+    setSensorStatus(es ? 'Esperando la primera lectura del sensor…' : 'Waiting for the first sensor reading…');
     try {
       if (Capacitor.isNativePlatform()) {
+        let receivedReading = false;
         const listener = await RootWiseDeviceSensors.addListener('lightReading', (event) => {
-          if (Number.isFinite(event.lux)) setLiveLux(Math.max(0, event.lux));
+          if (!Number.isFinite(event.lux)) return;
+          receivedReading = true;
+          if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+          setLiveLux(Math.max(0, event.lux));
+          setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
+        });
+        const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
+          // The native layer could not re-register the sensor after the app resumed. Drop the stale
+          // live value so the manual lux entry is what the guidance is based on.
+          if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+          setLiveLux(null);
+          setSensorStatus(es ? 'El sensor de luz no pudo reanudarse al volver a la app. Toca «Leer sensor» de nuevo o introduce los lux manualmente.' : 'The light sensor could not resume when you returned to the app. Tap Read sensor again or enter lux manually.');
         });
         try {
           await RootWiseDeviceSensors.startAmbientLight();
         } catch (error) {
           await listener.remove();
+          await errorListener.remove();
           throw error;
         }
         sensorRef.current = { stop: () => {
           void RootWiseDeviceSensors.stopAmbientLight();
           void listener.remove();
+          void errorListener.remove();
         } };
-        setSensorStatus(es ? 'Sensor nativo activo: lectura ambiental en tiempo real.' : 'Native ambient light sensor is active.');
+        sensorTimeoutRef.current = window.setTimeout(() => {
+          if (!receivedReading) setSensorStatus(es ? 'El sensor inició, pero Android no ha enviado lecturas. Comprueba que el teléfono tenga sensor de luz ambiental y vuelve a intentarlo.' : 'The sensor started, but Android has not delivered a reading. Confirm the phone has an ambient light sensor and try again.');
+        }, 6000);
         return;
       }
 
@@ -239,23 +274,33 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       const Sensor = (window as unknown as { AmbientLightSensor?: new (options?: { frequency?: number }) => SensorLike }).AmbientLightSensor;
       if (!Sensor) throw new Error('AMBIENT_LIGHT_SENSOR_UNAVAILABLE');
       const sensor = new Sensor({ frequency: 1 });
+      let receivedReading = false;
       sensor.addEventListener('reading', () => {
-        if (typeof sensor.illuminance === 'number' && Number.isFinite(sensor.illuminance)) setLiveLux(sensor.illuminance);
+        if (typeof sensor.illuminance === 'number' && Number.isFinite(sensor.illuminance)) {
+          receivedReading = true;
+          if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+          setLiveLux(sensor.illuminance);
+          setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
+        }
       });
       sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Introduce los lux manualmente.' : 'Sensor read failed. Enter lux manually.');
       sensor.start();
       sensorRef.current = sensor;
-      setSensorStatus(es ? 'Sensor del navegador activo.' : 'Browser ambient light sensor is active.');
+      sensorTimeoutRef.current = window.setTimeout(() => {
+        if (!receivedReading) setSensorStatus(es ? 'El sensor no ha enviado lecturas. Introduce los lux manualmente.' : 'The sensor has not delivered readings. Enter lux manually.');
+      }, 6000);
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       setSensorStatus(es
-        ? (detail.includes('UNAVAILABLE') ? 'Este dispositivo o navegador no expone el sensor de luz. Introduce los lux manualmente.' : 'No se pudo iniciar el sensor de luz. Introduce los lux manualmente.')
-        : (detail.includes('UNAVAILABLE') ? 'This device does not expose an ambient light sensor to the app. Enter lux manually.' : 'Could not start the light sensor. Enter lux manually.'));
+        ? (/UNAVAILABLE|does not expose/i.test(detail) ? 'Este dispositivo o navegador no expone el sensor de luz. Introduce los lux manualmente.' : 'No se pudo iniciar el sensor de luz. Introduce los lux manualmente.')
+        : (/UNAVAILABLE|does not expose/i.test(detail) ? 'This device does not expose an ambient light sensor to the app. Enter lux manually.' : 'Could not start the light sensor. Enter lux manually.'));
     }
   };
   const stopLightSensor = () => {
     sensorRef.current?.stop();
     sensorRef.current = null;
+    if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+    sensorTimeoutRef.current = null;
     setLiveLux(null);
     setSensorStatus(es ? 'Sensor detenido.' : 'Sensor stopped.');
   };
@@ -267,10 +312,99 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }
   };
   const measurement = useMemo(() => measurePolygon(points), [points]);
+  const selfCrossing = useMemo(() => hasSelfIntersection(points), [points]);
   const sodOptions = useMemo(() => catalog.filter((item) => item.kind === 'grass' && /sod|zoysia|natural grass/i.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))), [catalog]);
   const selectedSod = sodOptions.find((item) => item.id === selectedSodId);
   const materialOptions = useMemo(() => materialType ? catalog.filter((item) => MATERIAL_LABELS[materialType].terms.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))) : [], [catalog, materialType]);
   const selectedMaterial = materialOptions.find((item) => item.id === selectedMaterialId) || materialOptions[0];
+  const gpsErrorText = (kind: ReturnType<typeof classifyGpsError>, raw = '') => {
+    switch (kind) {
+      case 'permission_denied':
+        return es ? 'El permiso de ubicación está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación.' : 'Location permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Location.';
+      case 'precise_required':
+        return es ? 'RootWise necesita ubicación precisa para trazar el borde. En Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación, activa «Usar ubicación precisa».' : 'RootWise needs Precise location to trace a boundary. In Android Settings → Apps → Rootwise → Permissions → Location, turn on “Use precise location”.';
+      case 'services_disabled':
+        return es ? 'La ubicación del teléfono está desactivada. Actívala y toca «Iniciar recorrido» de nuevo.' : 'Phone Location is turned off. Turn it on, then tap Start walk again.';
+      case 'timeout':
+        return es ? 'El GPS no obtuvo una posición. Muévete a cielo abierto e inténtalo de nuevo.' : 'GPS could not get a fix. Move to open sky and try again.';
+      case 'unavailable':
+        return es ? 'La posición GPS no está disponible ahora. Muévete a cielo abierto e inténtalo de nuevo.' : 'GPS position is unavailable right now. Move to open sky and try again.';
+      default:
+        return raw || (es ? 'Se perdió la señal GPS.' : 'GPS signal was lost.');
+    }
+  };
+  const reportGpsError = (raw: string | undefined) => {
+    const kind = classifyGpsError(raw);
+    setGpsError(gpsErrorText(kind, raw));
+  };
+  const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number) => {
+    const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp });
+    if (!decision.accept) {
+      if (decision.reason === 'inaccurate') setTrackingStatus(es ? 'Esperando una señal GPS más precisa…' : 'Waiting for a more accurate GPS fix…');
+      else if (decision.reason === 'jump') setTrackingStatus(es ? 'Se ignoró un salto brusco del GPS.' : 'Ignored a sudden GPS jump.');
+      return;
+    }
+    lastAcceptedFixRef.current = { lat: latitude, lon: longitude, accuracy, timestamp };
+    setPoints((current) => [...current, { lat: latitude, lon: longitude, accuracy }]);
+    setTrackingStatus(es ? `Seguimiento en vivo · precisión ±${Math.round(accuracy)} m` : `Live tracking · ±${Math.round(accuracy)} m accuracy`);
+  };
+  const startGpsTracking = async () => {
+    if (trackingActiveRef.current) return;
+    setGpsBusy(true);
+    setGpsError('');
+    setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
+    const lastPoint = points[points.length - 1];
+    lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
+    try {
+      const options = { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 };
+      if (Capacitor.isNativePlatform()) {
+        let permission = await Geolocation.checkPermissions();
+        if (!hasPreciseLocation(permission)) permission = await Geolocation.requestPermissions();
+        if (!hasPreciseLocation(permission)) throw new Error(permission.coarseLocation === 'granted' ? 'LOCATION_PRECISE_REQUIRED' : 'LOCATION_PERMISSION_DENIED');
+        trackingActiveRef.current = true;
+        const watchId = await Geolocation.watchPosition(options, (position, error) => {
+          if (!trackingActiveRef.current) return;
+          if (error) {
+            reportGpsError(error.message);
+            return;
+          }
+          if (position) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp);
+        });
+        if (!trackingActiveRef.current) {
+          // Stopped (or the screen closed) while the native watcher was still starting: release it and
+          // do not flip the UI back into the tracking state.
+          await Geolocation.clearWatch({ id: watchId }).catch(() => undefined);
+          return;
+        }
+        gpsWatchRef.current = watchId;
+      } else {
+        if (!navigator.geolocation) throw new Error('GEOLOCATION_UNAVAILABLE');
+        if (!window.isSecureContext) throw new Error('GEOLOCATION_REQUIRES_HTTPS');
+        trackingActiveRef.current = true;
+        gpsWatchRef.current = navigator.geolocation.watchPosition(
+          (position) => { if (trackingActiveRef.current) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp); },
+          (error) => { if (trackingActiveRef.current) reportGpsError(error.code === 1 ? 'LOCATION_PERMISSION_DENIED' : error.message); },
+          options
+        );
+      }
+      setTracking(true);
+      setTrackingStatus(es ? 'Sigue caminando por el borde. El mapa se actualiza en vivo.' : 'Walk the boundary. Your map updates live as you move.');
+    } catch (error) {
+      trackingActiveRef.current = false;
+      const message = error instanceof Error ? error.message : '';
+      if (message === 'GEOLOCATION_REQUIRES_HTTPS') {
+        setGpsError(es ? 'La ubicación del navegador requiere HTTPS.' : 'Browser location requires HTTPS.');
+      } else if (message === 'GEOLOCATION_UNAVAILABLE') {
+        setGpsError(es ? 'Este navegador no ofrece geolocalización.' : 'This browser does not provide geolocation.');
+      } else {
+        const kind = classifyGpsError(message);
+        setGpsError(kind === 'unknown'
+          ? (es ? 'No se pudo iniciar el seguimiento GPS. Comprueba los permisos y la ubicación del teléfono.' : 'Could not start GPS tracking. Check app permission and phone Location settings.')
+          : gpsErrorText(kind, message));
+      }
+      setTrackingStatus('');
+    } finally { setGpsBusy(false); }
+  };
   const capturePoint = async () => {
     setGpsBusy(true);
     setGpsError('');
@@ -280,8 +414,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       let accuracy: number;
       if (Capacitor.isNativePlatform()) {
         let permission = await Geolocation.checkPermissions();
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') permission = await Geolocation.requestPermissions();
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') throw new Error('LOCATION_PERMISSION_DENIED');
+        if (!hasPreciseLocation(permission)) permission = await Geolocation.requestPermissions();
+        if (!hasPreciseLocation(permission)) throw new Error(permission.coarseLocation === 'granted' ? 'LOCATION_PRECISE_REQUIRED' : 'LOCATION_PERMISSION_DENIED');
         const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
         latitude = position.coords.latitude; longitude = position.coords.longitude; accuracy = position.coords.accuracy;
       } else {
@@ -294,6 +428,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       const code = typeof error === 'object' && error !== null && 'code' in error ? Number((error as { code?: unknown }).code) : 0;
+      if (message === 'LOCATION_PRECISE_REQUIRED') { setGpsError(gpsErrorText('precise_required')); return; }
       const denied = message === 'LOCATION_PERMISSION_DENIED' || code === 1 || /permission|denied/i.test(message);
       setGpsError(denied
         ? (es ? 'El permiso de ubicación está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación y vuelve a intentarlo.' : 'Location permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Location, then try again.')
@@ -344,7 +479,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       </div>
       {tool === 'area' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medición de terreno por GPS' : 'GPS land measurement'}</h2></div>
-        <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Camina por el borde de la cama o terreno y captura cada esquina. También puedes introducir largo y ancho manualmente.' : 'Walk the edge of the bed or site and capture each corner. You can also enter length and width manually.'}</p>
+        <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Inicia el seguimiento y camina por todo el perímetro. RootWise seguirá tu recorrido GPS y actualizará el mapa y el área en vivo.' : 'Start tracking and walk the full boundary. RootWise follows your GPS path and updates the map and area live.'}</p>
         <div className="my-4 grid grid-cols-2 gap-2">
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length}</b><p className="text-xs text-[var(--ink-soft)]">{es ? 'Puntos capturados' : 'Points captured'}</p></div>
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length >= 3 ? (area >= 10000 ? (area / 10000).toFixed(3) : area.toFixed(1)) : manualArea.toFixed(1)}</b><p className="text-xs text-[var(--ink-soft)]">{points.length >= 3 && area >= 10000 ? 'ha' : 'm²'} {es ? 'área estimada' : 'estimated area'}</p></div>
@@ -355,11 +490,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <MapContainer center={[points[0].lat, points[0].lon]} zoom={18} scrollWheelZoom={false} style={{ height: "280px", width: "100%" }}>
             <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapViewport points={points} />
-            {points.length === 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 4 }} /> }
-            {points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 3, fillColor: "#39A879", fillOpacity: 0.28 }} /> }
+            {(tracking || points.length < 3) && points.length >= 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 4 }} />}
+            {!tracking && points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 3, fillColor: "#39A879", fillOpacity: 0.28 }} />}
+            {points.length > 0 && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lon]} radius={7} pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#0b8f62', fillOpacity: 1 }} />}
             {points.map((point, index) => <CircleMarker key={index} center={[point.lat, point.lon]} radius={7} pathOptions={{ color: "#FFFFFF", weight: 2, fillColor: "#126B4B", fillOpacity: 1 }} />)}
           </MapContainer>
           {points.length < 3 && <p className="bg-[var(--surface-2)] px-3 py-2 text-[11px] text-[var(--ink-soft)]">{es ? "Captura al menos 3 esquinas para cerrar y calcular el área del polígono." : "Capture at least 3 corners to close the boundary and calculate its area."}</p>}
+          {!tracking && selfCrossing && <p role="alert" className="bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">{es ? 'El recorrido se cruza a sí mismo, así que el área mostrada no es fiable. Deshaz los últimos puntos o reinicia y camina el borde sin cruzarlo.' : 'The walked path crosses itself, so the area shown is not reliable. Undo the last points, or reset and walk the boundary without crossing it.'}</p>}
         </div>}
         {points.length === 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)] p-3">
           <b className="text-xs">{es ? "Vista previa del área rectangular" : "Rectangular area preview"}</b>
@@ -421,7 +558,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <label className="mb-2 block text-xs text-[var(--ink-soft)]">{es ? 'Notas del sitio (suelo, sombra, pendientes, obstáculos...)' : 'Site notes (soil, shade, slope, obstacles...)'}
             <textarea value={plotNotes} onChange={(event) => setPlotNotes(event.target.value)} rows={3} maxLength={1200} placeholder={es ? 'Añade detalles útiles para el proyecto...' : 'Add useful project details...'} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]" />
           </label>
-          <button onClick={handleSavePlot} className="w-full rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{editingPlotId ? (es ? 'Actualizar terreno' : 'Update plot') : (es ? 'Guardar mapa' : 'Save map')}</button>
+          <button disabled={tracking} onClick={handleSavePlot} className="w-full disabled:opacity-40 rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{editingPlotId ? (es ? 'Actualizar terreno' : 'Update plot') : (es ? 'Guardar mapa' : 'Save map')}</button>
           <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Las coordenadas se guardan solo en este dispositivo; no se suben a la nube.' : 'Coordinates are stored only on this device; they are not uploaded to the cloud.'}</p>
         </div>}
         <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
@@ -433,8 +570,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
               <button aria-label={es ? 'Eliminar ' + plot.name : 'Delete ' + plot.name} onClick={() => handleDeletePlot(plot.id)} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold text-red-600">{es ? 'Borrar' : 'Delete'}</button>
             </div>)}</div>}
         </div>
-        <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy} onClick={capturePoint} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><MapPin className="h-4 w-4" />{gpsBusy ? (es ? 'Buscando GPS…' : 'Getting GPS…') : (es ? 'Capturar punto' : 'Capture point')}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><RotateCcw className="h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
-        {points.length > 0 && <button onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
+        <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={startGpsTracking} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><Play className="h-4 w-4" />{gpsBusy ? (es ? 'Iniciando…' : 'Starting…') : (es ? 'Iniciar recorrido' : 'Start walk')}</button><button disabled={!tracking} onClick={() => void stopGpsTracking()} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><Square className="h-4 w-4" />{es ? 'Detener recorrido' : 'Stop walk'}</button></div>
+        {trackingStatus && <p role="status" className="mt-2 rounded-xl bg-[var(--surface-2)] p-2 text-xs text-[var(--ink-soft)]">{trackingStatus}</p>}
+        <div className="mt-2 grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={capturePoint} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><MapPin className="mr-1 inline h-4 w-4" />{es ? 'Capturar punto manual' : 'Add manual point'}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy || tracking} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><RotateCcw className="mr-1 inline h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
+        {points.length > 0 && <button disabled={tracking} onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full disabled:opacity-40 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
         {points.length > 0 && <ol className="mt-3 space-y-1 text-[11px] text-[var(--ink-soft)]">{points.map((point, index) => <li key={index}>#{index + 1} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)} · ±{point.accuracy.toFixed(0)}m</li>)}</ol>}
         <p className="mt-3 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Estimación de campo, no un levantamiento topográfico. La precisión depende del dispositivo, cielo abierto y señal GPS. Revisa los límites antes de cotizar o construir.' : 'Field estimate, not a certified survey. Accuracy depends on device, open sky and GPS signal. Verify boundaries before quoting or construction.'}</p>
       </section>}
@@ -480,7 +619,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       {tool === 'light' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medidor inteligente de luz' : 'Intelligent light meter'}</h2></div>
         <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Mide la iluminación del lugar y compárala con las necesidades de luz de las plantas del Centro de Conocimiento Botánico.' : 'Measure the site illumination and compare it with plant light requirements from the Botanical Knowledge Center.'}</p>
-        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{Math.round(lux).toLocaleString()} lux</b><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
+        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{liveLux !== null ? Math.round(liveLux).toLocaleString() : Math.round(lux).toLocaleString()} lux</b><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
         <label className="block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Lectura de luz (lux)' : 'Light reading (lux)'}<input type="number" min="0" max="200000" value={luxInput} onChange={event => { setLuxInput(event.target.value); setLiveLux(null); }} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}

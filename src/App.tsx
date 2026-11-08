@@ -74,7 +74,6 @@ import { Header } from './components/Header';
 import { CurrencyWidget } from './components/CurrencyWidget';
 import { Navigation, TabType } from './components/Navigation';
 import { BottomSheet } from './components/BottomSheet';
-import { HomeScreen } from './screens/HomeScreen';
 import { RootWiseHomeScreen } from './screens/RootWiseHomeScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { ShopScreen } from './screens/ShopScreen';
@@ -111,7 +110,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-const TAB_ORDER: TabType[] = ['home', 'tools', 'id', 'explore', 'plants', 'svc', 'request', 'account'];
+const TAB_ORDER: TabType[] = ['home', 'tools', 'explore', 'plants', 'svc', 'request', 'id', 'account'];
 
 export default function App() {
   // --- Persistent State ---
@@ -1917,39 +1916,7 @@ export default function App() {
 
           {tab === 'tools' && <ToolsScreen lang={lang} catalog={currentCatalog} />}
 
-          {tab === 'explore' && (
-            <HomeScreen
-              lang={lang}
-              isSignedIn={Boolean(session?.user)}
-              isAdmin={isAdmin}
-              displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
-              gardenCount={garden.length}
-              cartCount={cartCount}
-              activeOrdersCount={activeOrders.length}
-              onNavigate={(nextTab) => setTab(nextTab)}
-              onStartIdentify={(mode) => {
-                setIdentifyMode(mode);
-                setIdentifyResult(null);
-                setIdentifyPhoto(null);
-                setTab('id');
-              }}
-              catalog={currentCatalog}
-              landscapers={landscapers}
-              onSelectItem={(item) => {
-                setSheetQty(1);
-                setActiveModal({ type: 'item-details', item });
-              }}
-              onRequestQuote={(crew) => setActiveModal({ type: 'quote-request', crew })}
-              onSearchSubmit={(q) => {
-                setShopSearchInit(q);
-                setTab('plants');
-              }}
-              formatMoney={formatMoney}
-              onOpenGardenAdvisor={() => setIsGardenAdvisorOpen(true)}
-            />
-          )}
-
-          {tab === 'plants' && (
+          {(tab === 'explore' || tab === 'plants') && (
             <ShopScreen
               lang={lang}
               catalog={currentCatalog}
