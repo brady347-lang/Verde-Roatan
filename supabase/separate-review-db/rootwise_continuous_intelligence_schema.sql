@@ -77,3 +77,19 @@ grant select, insert, update, delete on public.botanical_evidence_queue to servi
 grant select, insert, update, delete on public.botanical_reference_images to service_role;
 
 commit;
+
+create table if not exists public.botanical_engine_runs (
+  id uuid primary key default gen_random_uuid(),
+  started_at timestamptz not null,
+  finished_at timestamptz,
+  status text not null check (status in ('idle','completed','failed')),
+  evidence_reviewed integer not null default 0,
+  escalated integer not null default 0,
+  corroborated integer not null default 0,
+  failed integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists botanical_engine_runs_started_idx on public.botanical_engine_runs(started_at desc);
+alter table public.botanical_engine_runs enable row level security;
+revoke all on public.botanical_engine_runs from anon, authenticated;
+grant select, insert on public.botanical_engine_runs to service_role;
