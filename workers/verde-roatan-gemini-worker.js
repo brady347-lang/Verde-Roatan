@@ -848,6 +848,7 @@ async function handleIdentificationReview(request, body, env) {
             corrected_common_name: correctedCommon || null,
             corrected_scientific_name: correctedScientific || null,
             notes: noteText.slice(0, 1000),
+            share_consent: { granted: true, purpose: 'botanical_knowledge_improvement', granted_at: new Date().toISOString() },
             submitted_by: user.id,
             review_id: reviewId
           },
