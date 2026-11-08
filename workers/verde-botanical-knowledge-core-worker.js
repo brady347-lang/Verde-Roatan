@@ -530,10 +530,14 @@ export default {
     try {
       if (path === '/engine/enqueue') {
         const auth = await authenticate(request, env); if (auth.error) return auth.error;
-        // Queued evidence can trigger a Gemini review of a private photo, so only administrators may queue it.
-        if (!isAdmin(auth.user, env)) return json(403, { status: 'error', error: 'Administrator access is required.' });
+        // Authenticated customers and staff may submit evidence. Submission never grants verification or approval.
+        // A private photo must be stored under the submitter's own user-ID folder.
         const queuedPath = body.submitted_payload && body.submitted_payload.image_storage_path;
-        if (queuedPath !== undefined && queuedPath !== null && !SAFE_EVIDENCE_PATH.test(String(queuedPath))) return json(400, { status: 'error', error: 'The evidence photo path is not valid.' });
+        if (queuedPath !== undefined && queuedPath !== null) {
+          const path = String(queuedPath);
+          if (!SAFE_EVIDENCE_PATH.test(path)) return json(400, { status: 'error', error: 'The evidence photo path is not valid.' });
+          if (!path.startsWith(String(auth.user.id) + '/')) return json(403, { status: 'error', error: 'You can only submit photos from your own private evidence folder.' });
+        }
         if (JSON.stringify(body.submitted_payload || {}).length > 20000) return json(413, { status: 'error', error: 'The evidence payload is too large.' });
         const kind = ['catalog_photo','catalog_record','plant_identification','pest_disease_identification','community_correction','document','field_observation'].includes(body.evidence_type) ? body.evidence_type : '';
         if (!kind || !body.evidence_fingerprint || typeof body.submitted_payload !== 'object' || !body.submitted_payload) return json(400, { status:'error', error:'Evidence type, fingerprint and payload are required.' });
