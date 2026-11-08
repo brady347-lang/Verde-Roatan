@@ -7,7 +7,15 @@ import { analyzeBotanicalImage, compressImage } from '../services/api';
 type Nursery = { id: string; name: string };
 type Identification = { common: string; scientific: string; confidence: number | null; model: string; status: 'identified' | 'uncertain' };
 
-async function uploadSupplierPhoto(productId: string, userId: string, dataUrl: string, token: string) {\n  const blob = await (await fetch(dataUrl)).blob();\n  const path = `${userId}/${productId}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;\n  const upload = await fetch(`${SUPABASE_URL}/storage/v1/object/product-images/${path.split('/').map(encodeURIComponent).join('/')}`, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });\n  const uploaded = await upload.json().catch(() => ({}));\n  if (!upload.ok) throw new Error(uploaded.message || uploaded.error || 'Product photo upload failed.');\n  const imageUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${path.split('/').map(encodeURIComponent).join('/')}`;\n  await rest(`products?id=eq.${encodeURIComponent(productId)}`, token, { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) });\n  return imageUrl;\n}\n\nasync function rest(path: string, token: string, init?: RequestInit) {
+async function uploadSupplierPhoto(productId: string, userId: string, dataUrl: string, token: string) {
+  const blob = await (await fetch(dataUrl)).blob();
+  const path = `${userId}/${productId}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+  const upload = await fetch(`${SUPABASE_URL}/storage/v1/object/product-images/${path.split('/').map(encodeURIComponent).join('/')}`, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
+  const uploaded = await upload.json().catch(() => ({}));
+  if (!upload.ok) throw new Error(uploaded.message || uploaded.error || 'Product photo upload failed.');
+  const imageUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${path.split('/').map(encodeURIComponent).join('/')}`;
+  await rest(`products?id=eq.${encodeURIComponent(productId)}`, token, { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) });
+  return imageUrl;\n}\n\nasync function rest(path: string, token: string, init?: RequestInit) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
     headers: {
@@ -40,7 +48,8 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
   const [stock, setStock] = useState('1');
   const [reportNotes, setReportNotes] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
-  const [submittedProductId, setSubmittedProductId] = useState('');\n  const [submittedImageUrl, setSubmittedImageUrl] = useState('');
+  const [submittedProductId, setSubmittedProductId] = useState('');
+  const [submittedImageUrl, setSubmittedImageUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
@@ -72,8 +81,9 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
       const suggestedScientific = record?.scientific_name || candidate?.scientific_name || '';
       setName(suggestedName);
       setScientificName(suggestedScientific);
-      setDescription(record?.description || '');
-      setCare(Array.isArray(record?.care_instructions) ? record.care_instructions.join('\n') : '');
+      setDescription(record?.botanical_description || '');
+      const careInfo = record?.care;
+      setCare(careInfo ? [careInfo.sunlight_requirement, careInfo.watering_instructions, careInfo.soil_requirements, careInfo.fertilization_instructions, careInfo.pruning_instructions].filter(Boolean).join('\n') : '');
       if (!suggestedName || !suggestedScientific) setMessage(es ? 'La identificación es incierta. Completa y corrige los campos manualmente antes de enviar.' : 'Identification is uncertain. Complete and correct the fields manually before submission.');
     } catch (err) {
       setAnalysis(null);
@@ -124,7 +134,8 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
       });
       if (!Array.isArray(rows) || !rows[0]?.id) throw new Error('The listing was not returned after saving.');
       createdId = rows[0].id;
-      const imageUrl = await uploadSupplierPhoto(createdId, session.user.id, photoPreview, session.access_token);\n      setSubmittedImageUrl(imageUrl);
+      const imageUrl = await uploadSupplierPhoto(createdId, session.user.id, photoPreview, session.access_token);
+      setSubmittedImageUrl(imageUrl);
       setMessage(es ? 'Producto enviado para revisión. No será visible hasta la aprobación del administrador.' : 'Listing submitted for review. It will remain hidden until an administrator approves it.');
       setSubmittedProductId(createdId);
     } catch (err) {
