@@ -87,3 +87,19 @@ The user wants hands-on work directly in GitHub, clear continuity between chats,
   - `72f7c1dd9a60aa691789d6af58145cb540d5e6ba` — add editable notes and planting estimates.
 - Source-level checks confirmed the expected fields, restore handlers, form controls and reset behavior are present. This is not a substitute for `npm run lint`, `npm run build`, or physical-device testing; none has been run in this round.
 - Next: add a basic planting layout visualization to the saved plot detail (starting with a square-grid estimate), while clearly labeling it as a planning approximation and allowing the user to adjust spacing. Later work can support species-specific spacing and mixed planting zones.
+
+
+## Catalog-connected sod estimator (Round 5 — in progress)
+- Updated `ToolsScreen` to receive the live `currentCatalog` from `App.tsx`, so the area tool uses the same current catalog as the shop.
+- Added a sod/turf/lawn catalog selector using catalog names, scientific names, categories and tags. Existing catalog record found: `p-zoysia`, Empire Zoysia Sod (Per Sq Yd), HNL 140, size `1 Sq Yd Pallet Slab`, 120 recorded units, nursery Verde Roatán Nursery (Sandy Bay).
+- The estimator converts measured square meters to square yards, rounds required slabs up, calculates subtotal from the selected catalog price, and compares the requirement with recorded stock. It warns when the estimate exceeds recorded stock and advises confirmation with the nursery; it does not reserve inventory or place an order.
+- If no sod/turf/lawn item is present, the tool explicitly says none is currently listed instead of inventing a product.
+- Saved plot records now retain selected surface-material ID/name and estimated units; reopening restores the catalog selection.
+- Commits:
+  - `2902f4bc3f701694034fc6a0290c798d62888af7` — connect measured area to sod catalog inventory.
+  - `8ab2ba3db1bdc56a214e3865dc06c0840b64d31e` — pass live catalog from App.
+  - `94043218e6fa99e791871ae7d0a812385099ed93` — extend saved plot material fields.
+  - `5732e66d71d478be1db81cbf68b446b3848057f1` — save and restore sod choice.
+- Source-level checks passed for catalog wiring, product matching, quantity/price/stock calculation, no-match messaging, and saved selection restoration. Arithmetic spot-check: 80 m² = 95.68 yd², rounded to 96 slabs; at HNL 140 each, estimated subtotal HNL 13,440. Recorded stock 120. This is a calculation/source inspection only, not full build or live inventory validation.
+- Next: extend the same measured-area workflow to other surface materials (mulch, gravel, topsoil, pavers) only where catalog package/coverage units are explicit; avoid assuming every bag or pallet covers the same area. Add waste/cut allowance and a clear estimate-vs-confirmed-stock distinction.
+- Still outstanding: `npm run lint`, `npm run build`, and physical Android testing. No APK build, merge, deployment or inventory reservation was performed.
