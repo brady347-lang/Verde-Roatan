@@ -30,6 +30,8 @@ jobs:
           node --input-type=module --check < workers/verde-roatan-legal-worker.js
       - name: Worker regression tests
         run: npm run test:worker
+      - name: Field tool tests (GPS tracking, Android wiring, light meter)
+        run: npm run test:field
       - name: TypeScript check
         run: npm run lint
       - name: Production web build
