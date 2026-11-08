@@ -1903,7 +1903,7 @@ export default function App() {
             />
           )}
 
-          {tab === 'tools' && <ToolsScreen lang={lang} />}
+          {tab === 'tools' && <ToolsScreen lang={lang} catalog={currentCatalog} />}
 
           {tab === 'explore' && (
             <HomeScreen
