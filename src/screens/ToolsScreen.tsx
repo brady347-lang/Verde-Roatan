@@ -279,7 +279,11 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
       });
-      sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Se intentará usar la cámara.' : 'Sensor read failed. The camera fallback will be tried.');
+      sensor.onerror = () => {
+        sensorRef.current?.stop();
+        sensorRef.current = null;
+        void startCameraFallback();
+      };
       sensor.start();
       sensorRef.current = sensor;
       sensorTimeoutRef.current = window.setTimeout(() => {
