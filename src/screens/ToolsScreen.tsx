@@ -128,6 +128,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation' | 'light'>('area');
   const [liveLux, setLiveLux] = useState<number | null>(null);
   const [rawLux, setRawLux] = useState<number | null>(null);
+  const [sensorDetails, setSensorDetails] = useState<{ name: string; vendor: string; accuracy: number; resolution: number } | null>(null);
   const luxFilterRef = useRef(new LuxReadingFilter());
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
@@ -248,6 +249,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setRawLux(Math.max(0, event.lux));
+          setSensorDetails({ name: event.sensorName, vendor: event.sensorVendor, accuracy: event.accuracy, resolution: event.resolution });
           setLiveLux(luxFilterRef.current.push(Math.max(0, event.lux)));
           setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
         });
@@ -647,6 +649,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           {hasLiveLux ? <>
             <b className="mt-2 block text-3xl tabular-nums">{Math.round(liveLux!).toLocaleString()} lux</b>
             <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Lectura estabilizada para mostrar' : 'Stabilized display reading'} · {es ? 'bruto' : 'raw'}: {rawLux === null ? '—' : rawLux.toFixed(1)} lux</p>
+            {sensorDetails && <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{sensorDetails.name} · {sensorDetails.vendor} · {es ? 'precisión del sensor' : 'sensor resolution'}: {sensorDetails.resolution} lux · {es ? 'estado' : 'accuracy'}: {sensorDetails.accuracy}</p>}
             <p className="text-sm font-bold">{lightAssessment.label}</p>
             <p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p>
             <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p>
