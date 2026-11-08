@@ -5,7 +5,7 @@ import { supabaseRpcRequest } from '../services/api';
 import { AuthSession, Language } from '../types';
 import { SupplierProductWorkspace } from './SupplierProductWorkspace';
 
-type Application = {
+type IdentificationReport = { id: string; product_id: string; supplier_user_id: string; ai_common_name: string | null; ai_scientific_name: string | null; corrected_common_name: string | null; corrected_scientific_name: string | null; report_notes: string; image_url: string | null; status: string; created_at: string; };\n\ntype Application = {
   id: string;
   user_id: string;
   business_name: string;
@@ -52,12 +52,12 @@ export const SupplierOnboardingPanel: React.FC<{
   const [hours, setHours] = useState('72');
   const [issuedCode, setIssuedCode] = useState('');
   const [application, setApplication] = useState<Application | null>(null);
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);\n  const [identificationReports, setIdentificationReports] = useState<IdentificationReport[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  const loadApplications = useCallback(async () => {
+  const loadIdentificationReports = useCallback(async () => {\n    if (!isAdmin) return;\n    const rows = await requestRows('supplier_identification_reports?select=*&order=created_at.desc', session.access_token);\n    setIdentificationReports(Array.isArray(rows) ? rows : []);\n  }, [isAdmin, session.access_token]);\n\n  const loadApplications = useCallback(async () => {
     const rows = await requestRows(
       isAdmin
         ? 'supplier_applications?select=*&order=created_at.desc'
@@ -70,11 +70,11 @@ export const SupplierOnboardingPanel: React.FC<{
 
   useEffect(() => {
     let active = true;
-    loadApplications().catch((err) => { if (active) setError(err.message); });
+    loadApplications().catch((err) => { if (active) setError(err.message); });\n    if (isAdmin) loadIdentificationReports().catch((err) => { if (active) setError(err.message); });
     return () => { active = false; };
-  }, [loadApplications]);
+  }, [loadApplications, loadIdentificationReports, isAdmin]);
 
-  const issueCode = async (event: React.FormEvent) => {
+  const reviewIdentificationReport = async (item: IdentificationReport, status: 'reviewed' | 'resolved' | 'dismissed') => {\n    setLoading(true); setError('');\n    try {\n      await requestRows('supplier_identification_reports?id=eq.' + encodeURIComponent(item.id), session.access_token, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }) });\n      await loadIdentificationReports();\n    } catch (err: any) { setError(err.message || 'Could not update identification report.'); }\n    finally { setLoading(false); }\n  };\n\n  const issueCode = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true); setError(''); setMessage(''); setIssuedCode('');
     try {
@@ -162,6 +162,18 @@ export const SupplierOnboardingPanel: React.FC<{
             <button type="button" disabled={loading} onClick={() => reviewApplication(item, 'rejected')} className="rounded-xl border border-red-200 px-3 py-2 text-[11px] font-bold text-red-600">{spanish ? 'Rechazar' : 'Reject'}</button>
           </div>}
         </article>)}
+        <div className="border-t border-[var(--line)] pt-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between"><b className="text-[13px] text-[var(--ink)]">{spanish ? 'Reportes de identificación' : 'Identification reports'} ({identificationReports.filter(r => r.status === 'pending_review').length} {spanish ? 'pendientes' : 'pending'})</b><button type="button" onClick={() => loadIdentificationReports().catch(err => setError(err.message))} className="p-2 rounded-lg border border-[var(--line)] text-[var(--ink-soft)]"><RefreshCw className="w-4 h-4" /></button></div>
+          {identificationReports.length === 0 && <p className="rounded-xl bg-[var(--surface-2)] p-3 text-[12px] text-[var(--ink-soft)]">{spanish ? 'Aún no hay reportes.' : 'No identification reports yet.'}</p>}
+          {identificationReports.map(item => <article key={item.id} className="rounded-xl border border-[var(--line)] p-3 flex flex-col gap-2">
+            <div className="flex items-center justify-between gap-2"><b className="text-[12px] text-[var(--ink)]">{item.ai_common_name || item.ai_scientific_name || 'Uncertain identification'}</b><span className="text-[10px] text-[var(--ink-soft)]">{item.status.replace('_',' ')}</span></div>
+            <p className="text-[11px] text-[var(--ink-soft)]">{spanish ? 'IA' : 'AI'}: {item.ai_common_name || '—'} · {item.ai_scientific_name || '—'}</p>
+            <p className="text-[11px] text-[var(--ink-soft)]">{spanish ? 'Corrección' : 'Supplier correction'}: {item.corrected_common_name || '—'} · {item.corrected_scientific_name || '—'}</p>
+            <p className="text-[12px] text-[var(--ink)]">{item.report_notes}</p>
+            {item.image_url && <img src={item.image_url} alt="Reported specimen" className="w-full max-h-36 rounded-lg object-cover" />}
+            {item.status === 'pending_review' && <div className="flex gap-2"><button type="button" disabled={loading} onClick={() => reviewIdentificationReport(item, 'reviewed')} className="flex-1 rounded-lg border border-[var(--line)] p-2 text-[11px] font-bold text-[var(--ink)]">{spanish ? 'Revisado' : 'Mark reviewed'}</button><button type="button" disabled={loading} onClick={() => reviewIdentificationReport(item, 'resolved')} className="flex-1 rounded-lg bg-[var(--palm)] p-2 text-[11px] font-bold text-white">{spanish ? 'Resuelto' : 'Resolve'}</button><button type="button" disabled={loading} onClick={() => reviewIdentificationReport(item, 'dismissed')} className="rounded-lg border border-[var(--line)] p-2 text-[11px] font-bold text-[var(--ink-soft)]">{spanish ? 'Descartar' : 'Dismiss'}</button></div>}
+          </article>)}
+        </div>
         {error && <p role="alert" className="rounded-xl bg-red-50 p-2.5 text-[12px] text-red-700">{error}</p>}
         {message && <p className="rounded-xl bg-emerald-50 p-2.5 text-[12px] text-emerald-800">{message}</p>}
       </section>
