@@ -1,0 +1,9 @@
+# RootWise Botanical Knowledge Core — scheduled queue review.
+# Configure bindings/secrets and deploy only after explicit production approval.
+name = "rootwise-botanical-knowledge-core"
+main = "workers/verde-botanical-knowledge-core-worker.js"
+compatibility_date = "2025-01-01"
+keep_vars = true
+
+[triggers]
+crons = ["*/15 * * * *"]
