@@ -48,7 +48,7 @@ interface IdentifyScreenProps {
   currentPhoto: string | null;
   onReset: () => void;
   onSaveToGarden: () => void;
-  onSubmitFeedback: (decision: 'confirmed' | 'almost' | 'not_my_plant', correctedCommonName?: string, correctedScientificName?: string, notes?: string) => Promise<void>;
+  onSubmitFeedback: (decision: 'confirmed' | 'almost' | 'not_my_plant', correctedCommonName?: string, correctedScientificName?: string, notes?: string, shareForBotanicalLearning?: boolean) => Promise<void>;
   onSubmitHealthEvidence: (recordType: 'pest' | 'disease', notes: string) => Promise<void>;
   onAddToCart: (storeProductId: string, qty: number) => void;
   formatMoney: (val: number, cur: string) => React.ReactNode;
@@ -90,6 +90,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
   const [elapsedTime, setElapsedTime] = useState(0);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [feedbackSaved, setFeedbackSaved] = useState(false);
+  const [shareForBotanicalLearning, setShareForBotanicalLearning] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
   const [correctedCommonName, setCorrectedCommonName] = useState('');
   const [correctedScientificName, setCorrectedScientificName] = useState('');
@@ -125,6 +126,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
     setFeedbackNotes('');
     setFeedbackChoice(null);
     setFeedbackOutcome(null);
+    setShareForBotanicalLearning(false);
     setHealthRecordType('pest');
     setHealthSubmitBusy(false);
     setHealthSubmitted(false);
@@ -135,7 +137,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
     setFeedbackBusy(true);
     setFeedbackError(null);
     try {
-      await onSubmitFeedback(decision, correctedCommonName, correctedScientificName, feedbackNotes);
+      await onSubmitFeedback(decision, correctedCommonName, correctedScientificName, feedbackNotes, shareForBotanicalLearning);
       setFeedbackOutcome(decision);
       setFeedbackSaved(true);
     } catch (error) {
@@ -1093,6 +1095,12 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                 </div>
               ) : (
                 <>
+                  <label className="flex items-start gap-2 rounded-xl border border-[var(--line)] p-3 text-[12px] text-[var(--ink-soft)]">
+                    <input type="checkbox" checked={shareForBotanicalLearning} onChange={(event) => setShareForBotanicalLearning(event.target.checked)} className="mt-0.5 accent-[var(--palm)]" />
+                    <span>{lang === 'es'
+                      ? 'Acepto que RootWise use esta foto y mi corrección para mejorar su conocimiento botánico. La evidencia permanecerá privada y será revisada por administradores; no se publicará.'
+                      : 'I agree that RootWise may use this photo and my correction to improve its botanical knowledge. The evidence will remain private and be reviewed by administrators; it will not be published.'}</span>
+                  </label>
                   <button
                     type="button"
                     disabled={feedbackBusy}
