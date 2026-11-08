@@ -55,6 +55,7 @@ import { LEGAL_WORKER_URL, STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } 
 import { usePhotoUrl } from '../lib/photoStore';
 import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
+import { SupplierOnboardingPanel } from '../components/SupplierOnboardingPanel';
 import { IdentificationReviewCenter } from '../components/IdentificationReviewCenter';
 import { LandscapingRequestsCenter } from '../components/LandscapingRequestsCenter';
 import { MyServiceRequests } from '../components/MyServiceRequests';
@@ -167,7 +168,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
   const [adminTab, setAdminTab] = useState<
-    'command_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'knowledge_core' | 'evidence_review' | 'constitution' | 'insights' | 'supplier_portal' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
+    'command_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'knowledge_core' | 'evidence_review' | 'constitution' | 'insights' | 'supplier_portal' | 'supplier_access' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
   const [newServiceCount, setNewServiceCount] = useState(0);
   const [activeSupplierId, setActiveSupplierId] = useState<string>(() => registeredSuppliers[0]?.id || 'sup-1');
@@ -311,6 +312,10 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
             </button>
           </div>
 
+          {!isAdmin && session && (
+            <SupplierOnboardingPanel lang={lang} session={session} isAdmin={false} />
+          )}
+
           {/* Plant Intelligence Studio (Admin Exclusive Live Management) */}
           {isAdmin && (
             <div className="flex flex-col gap-3 bg-[var(--surface)] border-2 border-[var(--palm)] rounded-3xl p-4 shadow-sm">
@@ -427,6 +432,16 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 >
                   <Building2 className="w-3.5 h-3.5" />
                   Supplier Portal
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAdminTab('supplier_access')}
+                  className={`py-1.5 px-2.5 text-[11px] font-extrabold rounded-lg whitespace-nowrap grow justify-center transition-all flex items-center gap-1 ${
+                    adminTab === 'supplier_access' ? 'bg-[var(--palm)] text-white shadow-xs' : 'text-[var(--ink-soft)] hover:text-[var(--ink)]'
+                  }`}
+                >
+                  <Key className="w-3.5 h-3.5" />
+                  Supplier Access
                 </button>
                 <button
                   type="button"
@@ -550,6 +565,10 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                     }}
                     formatMoney={formatMoney}
                   />
+                )}
+
+                {adminTab === 'supplier_access' && session && (
+                  <SupplierOnboardingPanel lang={lang} session={session} isAdmin />
                 )}
 
                 {/* 1. Catalog / Plants & Products */}
