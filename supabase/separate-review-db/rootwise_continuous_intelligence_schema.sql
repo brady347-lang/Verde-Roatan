@@ -15,8 +15,13 @@ create table if not exists public.botanical_evidence_queue (
   submitted_payload jsonb not null default '{}'::jsonb,
   evidence_fingerprint text not null unique,
   status text not null default 'pending' check (status in (
-    'pending','processing','corroborated','needs_review','rejected','failed'
+    'pending','processing','corroborated','needs_review','rejected','failed','admin_approved'
   )),
+  approval_status text not null default 'pending' check (approval_status in ('pending','admin_approved','community_corroborated','rejected')),
+  approved_by uuid,
+  approved_by_email text,
+  approved_at timestamptz,
+  approval_note text,
   attempts integer not null default 0 check (attempts >= 0),
   available_at timestamptz not null default now(),
   locked_at timestamptz,
@@ -35,6 +40,24 @@ create index if not exists botanical_evidence_queue_ready_idx
   where status in ('pending','failed');
 create index if not exists botanical_evidence_queue_subject_idx
   on public.botanical_evidence_queue(subject_key, created_at desc);
+
+-- Independent community votes are unique per evidence item and authenticated user.
+create table if not exists public.botanical_evidence_votes (
+  id uuid primary key default gen_random_uuid(),
+  evidence_id uuid not null references public.botanical_evidence_queue(id) on delete cascade,
+  user_id uuid not null,
+  vote text not null check (vote in ('support','flag')),
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (evidence_id, user_id)
+);
+create index if not exists botanical_evidence_votes_evidence_idx
+  on public.botanical_evidence_votes(evidence_id, vote);
+alter table public.botanical_evidence_votes enable row level security;
+revoke all on public.botanical_evidence_votes from anon, authenticated;
+grant select, insert, update, delete on public.botanical_evidence_votes to service_role;
+
 
 create table if not exists public.botanical_reference_images (
   id uuid primary key default gen_random_uuid(),
