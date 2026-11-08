@@ -1191,6 +1191,29 @@ async function knowledgeCoreCall<T = any>(path: string, payload: Record<string, 
   return data as T;
 }
 
+export async function enqueueCatalogBotanicalEvidence(
+  token: string,
+  item: Pick<CatalogItem, 'id' | 'name' | 'sci' | 'image_url' | 'category'>
+): Promise<void> {
+  if (!item.image_url || !/^https:\/\//i.test(item.image_url)) return;
+  const fingerprint = 'catalog-photo:' + String(item.id) + ':' + item.image_url.slice(-100);
+  await knowledgeCoreCall('/engine/enqueue', {
+    evidence_type: 'catalog_photo',
+    source_system: 'rootwise-catalog',
+    source_record_id: String(item.id),
+    subject_key: item.sci || item.name,
+    evidence_fingerprint: fingerprint,
+    submitted_payload: {
+      name: item.name,
+      common_name: item.name,
+      scientific_name: item.sci || null,
+      category: item.category || null,
+      image_url: item.image_url,
+      source_system: 'rootwise-catalog'
+    }
+  }, token);
+}
+
 export async function submitBotanicalHealthEvidence(
   recordType: 'pest' | 'disease',
   image: string,
