@@ -10,12 +10,12 @@ type RootWiseSound =
   | 'savedSuccess';
 
 const CHANNELS: Record<RootWiseSound, { id: string; name: string; sound: string }> = {
-  signature: { id: 'rootwise_signature_v1', name: 'RootWise updates', sound: '01_rootwise_signature' },
-  plantIdentified: { id: 'rootwise_plant_identified_v1', name: 'Plant identified', sound: '02_plant_identified' },
-  careReminder: { id: 'rootwise_care_reminder_v1', name: 'Landscape care reminders', sound: '03_landscape_care_reminder' },
-  importantAlert: { id: 'rootwise_important_alert_v1', name: 'Important alerts', sound: '04_important_alert' },
-  knowledgeUpdate: { id: 'rootwise_knowledge_update_v1', name: 'Botanical Knowledge Center', sound: '05_knowledge_center_update' },
-  savedSuccess: { id: 'rootwise_saved_success_v1', name: 'Saved successfully', sound: '06_saved_success' }
+  signature: { id: 'rootwise_signature_v1', name: 'RootWise updates', sound: 'rootwise_signature' },
+  plantIdentified: { id: 'rootwise_plant_identified_v1', name: 'Plant identified', sound: 'rootwise_plant_identified' },
+  careReminder: { id: 'rootwise_care_reminder_v1', name: 'Landscape care reminders', sound: 'rootwise_care_reminder' },
+  importantAlert: { id: 'rootwise_important_alert_v1', name: 'Important alerts', sound: 'rootwise_important_alert' },
+  knowledgeUpdate: { id: 'rootwise_knowledge_update_v1', name: 'Botanical Knowledge Center', sound: 'rootwise_knowledge_update' },
+  savedSuccess: { id: 'rootwise_saved_success_v1', name: 'Saved successfully', sound: 'rootwise_saved_success' }
 };
 
 let channelsReady = false;
