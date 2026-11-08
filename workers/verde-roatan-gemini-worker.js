@@ -815,9 +815,10 @@ async function handleIdentificationReview(request, body, env) {
     throw new Error('The review could not be completed. Please try again.');
   }
 
-  // Feed the same private photo and the user's correction into the botanical evidence queue.
-  // This is a community signal only; it never changes the scientific verification level.
-  try {
+  // Secondary use of the customer photo for botanical learning requires explicit opt-in.
+  // The ordinary identification review remains private and is saved regardless of this choice.
+  if (body.share_for_botanical_learning === true) {
+    try {
     const archivePath = 'identification-review/' + user.id + '/' + reviewId + '.' + extension;
     const archiveUpload = await fetch(`${url}/storage/v1/object/botanical-health-evidence/${archivePath}`, {
       method: 'POST',
@@ -856,9 +857,10 @@ async function handleIdentificationReview(request, body, env) {
       });
       if (!queued.ok) console.warn('Identification feedback saved, but botanical evidence queue insert failed:', queued.status);
     }
-  } catch (queueError) {
-    // Keep the already-saved customer review intact; retry/repair can ingest it later.
-    console.warn('Identification feedback could not be forwarded to botanical evidence:', queueError);
+    } catch (queueError) {
+      // Keep the already-saved customer review intact; retry/repair can ingest it later.
+      console.warn('Identification feedback could not be forwarded to botanical evidence:', queueError);
+    }
   }
 
   return new Response(JSON.stringify({
