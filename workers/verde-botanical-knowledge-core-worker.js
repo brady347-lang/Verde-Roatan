@@ -496,6 +496,14 @@ async function archiveCatalogImage(env, item, payload) {
 }
 
 
+async function listQueuedEvidence(request, env) {
+  const auth = await admin(request, env);
+  if (auth.error) return auth.error;
+  const result = await db(env, 'botanical_evidence_queue?select=id,evidence_type,source_system,source_record_id,subject_key,submitted_payload,model_result,status,approval_status,verification_status,created_at,approved_at,approved_by_email&approval_status=in.(pending,community_corroborated)&order=created_at.desc&limit=100');
+  if (!result.ok || !Array.isArray(result.data)) throw new Error('The evidence review queue could not be loaded.');
+  return json(200, { status: 'success', items: result.data });
+}
+
 async function reviewQueuedEvidence(request, body, env) {
   const auth = await admin(request, env);
   if (auth.error) return auth.error;
@@ -667,6 +675,7 @@ export default {
     if (request.method !== 'POST') return json(405, { status: 'error', error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     try {
+      if (path === '/engine/admin/list') return await listQueuedEvidence(request, env);
       if (path === '/engine/admin/review') return await reviewQueuedEvidence(request, body, env);
       if (path === '/engine/vote') return await voteOnEvidence(request, body, env);
       if (path === '/engine/enqueue') {
