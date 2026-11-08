@@ -16,6 +16,8 @@ export interface CatalogItem {
   id: string;
   t: ItemType;
   name: string;
+  /** Optional verified Spanish common name; never machine-invented. */
+  name_es?: string;
   sci: string;
   kind: PlantCategory;
   salt: number; // 1 to 3
