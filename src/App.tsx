@@ -48,6 +48,7 @@ import {
   submitOrderCheckout,
   submitIdentificationFeedback,
   submitBotanicalHealthEvidence,
+  enqueueCatalogBotanicalEvidence,
   supabaseAuthRequest,
   supabaseRpcRequest,
   refreshSupabaseSession,
@@ -1633,7 +1634,11 @@ export default function App() {
       });
     };
     try {
-      merge(await saveCatalogItemWithAdminSession(plant));
+      const saved = await saveCatalogItemWithAdminSession(plant);
+      merge(saved);
+      if (saved.image_url && session?.access_token) {
+        void enqueueCatalogBotanicalEvidence(session.access_token, saved).catch(error => console.warn('Botanical evidence queue submission failed:', error));
+      }
       showToast('Plant saved to the production catalog.');
       return null;
     } catch (error) {
@@ -1669,7 +1674,11 @@ export default function App() {
       });
     };
     try {
-      merge(await saveCatalogItemWithAdminSession(product));
+      const saved = await saveCatalogItemWithAdminSession(product);
+      merge(saved);
+      if (saved.image_url && session?.access_token) {
+        void enqueueCatalogBotanicalEvidence(session.access_token, saved).catch(error => console.warn('Botanical evidence queue submission failed:', error));
+      }
       showToast('Product saved to the production catalog.');
       return null;
     } catch (error) {
