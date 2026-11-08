@@ -1905,6 +1905,7 @@ export default function App() {
               gardenCount={garden.length}
               plantCount={currentCatalog.filter((item) => item.t === 'plant').length}
               catalog={currentCatalog}
+              garden={garden}
               onNavigate={(nextTab) => setTab(nextTab)}
               onStartIdentify={() => {
                 setIdentifyMode('plant');
