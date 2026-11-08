@@ -236,7 +236,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     stopCameraCalibration();
   }, []);
   useEffect(() => { if (tool !== 'area' && trackingActiveRef.current) void stopGpsTracking(); }, [tool]);
-  useEffect(() => { if (tool !== 'light' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } }, [tool]);
+  useEffect(() => { if (tool !== 'light') { sensorRef.current?.stop(); sensorRef.current = null; if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current); sensorTimeoutRef.current = null; setLiveLux(null); } }, [tool]);
   const startLightSensor = async () => {
     sensorRef.current?.stop();
     sensorRef.current = null;
@@ -638,7 +638,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medidor inteligente de luz' : 'Intelligent light meter'}</h2></div>
         <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Mide la iluminación del lugar y compárala con las necesidades de luz de las plantas del Centro de Conocimiento Botánico.' : 'Measure the site illumination and compare it with plant light requirements from the Botanical Knowledge Center.'}</p>
         <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{liveLux !== null ? Math.round(liveLux).toLocaleString() : Math.round(lux).toLocaleString()} lux</b><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
-        <label className="block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Lectura de luz (lux)' : 'Light reading (lux)'}<input type="number" min="0" max="200000" value={luxInput} onChange={event => { setLuxInput(event.target.value); setLiveLux(null); }} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
+        <label className="block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Lectura de luz (lux)' : 'Light reading (lux)'}<input type="number" min="0" max="200000" value={luxInput} onChange={event => { sensorRef.current?.stop(); sensorRef.current = null; if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current); sensorTimeoutRef.current = null; setLuxInput(event.target.value); setLiveLux(null); setSensorStatus(es ? 'Lectura manual activa; sensor detenido.' : 'Manual reading active; sensor stopped.'); }} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
         <div className="mt-3 rounded-2xl border border-[var(--line)] p-3">
