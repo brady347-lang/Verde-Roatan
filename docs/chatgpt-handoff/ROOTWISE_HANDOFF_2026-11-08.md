@@ -106,7 +106,8 @@ The user wants hands-on work directly in GitHub, clear continuity between chats,
 
 ## Optional natural landscaping materials (Round 6 — in progress)
 - Expanded the measured-area workflow to support optional project materials: natural mulch, gravel/stone, topsoil, compost/soil blends, and pavers/stepping stones. The material selector defaults to None, so projects do not have to include these materials.
-- Natural sod matching is now restricted to grass catalog records and explicitly excludes artificial/synthetic turf. The existing Empire Zoysia natural sod record remains eligible.
+- Natural sod matching is now restricted to grass catalog records and explicitly excludes artificial/synthetic turf. Sod is also optional (the selector defaults to None); the existing Empire Zoysia natural sod record remains eligible.
+- Saved-map cards display the selected sod and optional project material names so users can see the materials attached to a saved plot.
 - Catalog matching is conservative. A material is priced and quantity-estimated only when its package size explicitly provides a usable liter volume. The existing Organic Roatán Coconut Coir Soil Blend is listed as a 40 L package and can be estimated under compost/soil blend. No catalog product or stock is fabricated for mulch, gravel, topsoil or pavers when a matching product is absent.
 - Manual volume estimates remain available for bulk materials using area × depth plus a user-set settling/waste allowance. Pavers are intentionally excluded from volume math; their unit count requires exact piece dimensions/coverage data, which the current catalog does not yet provide.
 - Saved plot records now optionally retain the selected project-material category, catalog product ID/name, and calculated units. Older records remain compatible because all new fields are optional.
@@ -115,5 +116,6 @@ The user wants hands-on work directly in GitHub, clear continuity between chats,
   - `24df52a48778b6764937f5076767fd552e7011d1` — separate paver planning from volumetric calculations.
   - `febc863236926241649f63ab23ba70a6b5f58327` — correct package-volume parsing and reset behavior.
   - `e3bb691bd9b5e8833b417759b4acfc6479e8de20` — persist optional material selections on saved plots.
+  - `f66435a9b6f19a58681e86c863a451aba7c4f460` — make natural sod optional and show saved project materials.
 - Source inspection confirms the new categories, conservative package parsing, natural-sod-only filter, paver volume exclusion, and saved-plot fields. Full lint/typecheck/build and Android runtime tests have not been run. No APK build, merge, deployment or inventory reservation was performed.
 - Next: add explicit structured coverage metadata to catalog items (e.g. liters per bag, square meters per unit, or cubic meters per bulk unit) rather than parsing display strings. Then implement paver counts and package-based mulch/gravel/topsoil calculations only for records with verified coverage. Review whether saved plot cards should summarize all selected project materials.
