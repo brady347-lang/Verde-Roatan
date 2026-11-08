@@ -115,6 +115,29 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length >= 3 ? (area >= 10000 ? (area / 10000).toFixed(3) : area.toFixed(1)) : manualArea.toFixed(1)}</b><p className="text-xs text-[var(--ink-soft)]">{points.length >= 3 && area >= 10000 ? 'ha' : 'm²'} {es ? 'área estimada' : 'estimated area'}</p></div>
         </div>
         {points.length > 0 && <div className="mb-3 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]"><p>{es ? 'Perímetro estimado' : 'Estimated perimeter'}: <b className="text-[var(--ink)]">{measurement.perimeter.toFixed(1)} m</b></p><p>{es ? 'Precisión GPS promedio' : 'Average GPS accuracy'}: <b className="text-[var(--ink)]">{(points.reduce((sum, point) => sum + point.accuracy, 0) / points.length).toFixed(1)} m</b></p></div>}
+        {points.length > 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)]">
+          <div className="flex items-center justify-between bg-[var(--surface-2)] px-3 py-2"><b className="text-xs">{es ? "Mapa del terreno medido" : "Measured land map"}</b><span className="text-[10px] text-[var(--ink-soft)]">{points.length >= 3 ? (es ? "Perímetro trazado" : "Boundary plotted") : (es ? "Puntos GPS" : "GPS points")}</span></div>
+          <MapContainer center={[points[0].lat, points[0].lon]} zoom={18} scrollWheelZoom={false} style={{ height: "280px", width: "100%" }}>
+            <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <MapViewport points={points} />
+            {points.length === 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 4 }} /> }
+            {points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 3, fillColor: "#39A879", fillOpacity: 0.28 }} /> }
+            {points.map((point, index) => <CircleMarker key={index} center={[point.lat, point.lon]} radius={7} pathOptions={{ color: "#FFFFFF", weight: 2, fillColor: "#126B4B", fillOpacity: 1 }} />)}
+          </MapContainer>
+          {points.length < 3 && <p className="bg-[var(--surface-2)] px-3 py-2 text-[11px] text-[var(--ink-soft)]">{es ? "Captura al menos 3 esquinas para cerrar y calcular el área del polígono." : "Capture at least 3 corners to close the boundary and calculate its area."}</p>}
+        </div>}
+        {points.length === 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)] p-3">
+          <b className="text-xs">{es ? "Vista previa del área rectangular" : "Rectangular area preview"}</b>
+          <svg viewBox="0 0 320 150" role="img" aria-label={es ? "Diagrama rectangular del área manual" : "Manual rectangular area diagram"} className="mt-2 h-36 w-full">
+            <defs><pattern id="rootwise-area-grid" width="16" height="16" patternUnits="userSpaceOnUse"><path d="M 16 0 L 0 0 0 16" fill="none" stroke="currentColor" strokeOpacity=".12" strokeWidth="1" /></pattern></defs>
+            <rect x="1" y="1" width="318" height="148" fill="url(#rootwise-area-grid)" />
+            <rect x="72" y="30" width="176" height="88" rx="5" fill="#39A879" fillOpacity=".22" stroke="#16845B" strokeWidth="3" />
+            <text x="160" y="25" textAnchor="middle" fontSize="10" fill="currentColor">{manualLength || "0"} m</text>
+            <text x="258" y="77" fontSize="10" fill="currentColor">{manualWidth || "0"} m</text>
+            <text x="160" y="78" textAnchor="middle" fontSize="12" fontWeight="700" fill="currentColor">{manualArea.toFixed(1)} m²</text>
+          </svg>
+          <p className="text-[10px] text-[var(--ink-soft)]">{es ? "Diagrama aproximado, no un mapa geográfico. Captura puntos GPS para ver el terreno sobre el mapa." : "Approximate diagram, not a geographic map. Capture GPS points to see the site on a real map."}</p>
+        </div>}
         <div className="mb-3 rounded-2xl bg-[var(--surface-2)] p-3">
           <p className="mb-2 text-xs font-bold">{es ? 'O medir manualmente (área rectangular)' : 'Or enter dimensions manually (rectangular area)'}</p>
           <div className="grid grid-cols-2 gap-2">
