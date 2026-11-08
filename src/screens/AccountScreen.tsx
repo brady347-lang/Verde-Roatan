@@ -1193,7 +1193,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 <input
                   type="password"
                   required
-                  minLength={8}
+                  minLength={authMode === 'signup' ? 8 : 6}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
