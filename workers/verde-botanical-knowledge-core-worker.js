@@ -610,13 +610,14 @@ async function runEvidenceCycle(env) {
   // The queue schema is applied separately; until it exists the cycle is a quiet no-op instead of a failure every 15 minutes.
   if (stale.status === 404) { report.finished_at = new Date().toISOString(); return report; }
   if (!stale.ok) throw new Error('Unable to recover expired evidence leases.');
-  const ready = await db(env,'botanical_evidence_queue?select=*&status=in.(pending,failed)&attempts=lt.5&available_at=lte.'+encodeURIComponent(started)+'&order=created_at.asc&limit=10');
-  if (!ready.ok || !Array.isArray(ready.data)) throw new Error('Unable to read evidence queue.');
-  for (const item of ready.data) {
-    const lock = await db(env,'botanical_evidence_queue?id=eq.'+item.id+'&status=in.(pending,failed)',{
-      method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:'processing',locked_at:new Date().toISOString(),attempts:Number(item.attempts||0)+1})
-    });
-    if (!lock.ok || !Array.isArray(lock.data) || !lock.data.length) continue;
+  // One database transaction claims the batch with FOR UPDATE SKIP LOCKED.
+  // Concurrent cron invocations can never claim the same queue row.
+  const claimed = await db(env, 'rpc/claim_botanical_evidence_batch', {
+    method: 'POST', body: JSON.stringify({ p_batch_size: 10 })
+  });
+  if (claimed.status === 404) { report.finished_at = new Date().toISOString(); return report; }
+  if (!claimed.ok || !Array.isArray(claimed.data)) throw new Error('Unable to atomically claim evidence queue.');
+  for (const item of claimed.data) {
     try {
       const payload = item.submitted_payload || {};
       let aiReview = null;
@@ -645,12 +646,12 @@ async function runEvidenceCycle(env) {
       if (!update.ok) throw new Error('Unable to save evidence review result.');
       report.reviewed++; report.escalated++;
     } catch (error) {
-      const attempts=Number(item.attempts||0)+1, terminal=attempts>=5, delay=[5,15,60,360,1440][Math.min(attempts-1,4)];
+      const attempts=Number(item.attempts||0), terminal=attempts>=5, delay=[5,15,60,360,1440][Math.min(attempts-1,4)];
       await db(env,'botanical_evidence_queue?id=eq.'+item.id,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({status:terminal?'failed':'pending',locked_at:null,available_at:new Date(Date.now()+delay*60000).toISOString(),last_error:clean(error?.message||'Processing failed.',500)})});
       report.failed++;
     }
   }
-  report.status=ready.data.length?'completed':'idle'; report.finished_at=new Date().toISOString();
+  report.status=claimed.data.length?'completed':'idle'; report.finished_at=new Date().toISOString();
   const metric=await db(env,'botanical_engine_runs',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({started_at:report.started_at,finished_at:report.finished_at,status:report.status,evidence_reviewed:report.reviewed,escalated:report.escalated,failed:report.failed})});
   if(!metric.ok && metric.status!==404) throw new Error('Unable to save engine run metrics.');
   return report;
