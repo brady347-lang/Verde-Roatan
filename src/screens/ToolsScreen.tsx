@@ -63,6 +63,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       notes: plotNotes.trim(),
       plantSpacingM: spacing,
       estimatedPlants: plants,
+      surfaceMaterialId: selectedSod?.id,
+      surfaceMaterialName: selectedSod?.name,
+      surfaceMaterialUnits: sodUnitsNeeded,
       createdAt: savedPlots.find((item) => item.id === editingPlotId)?.createdAt || now,
       updatedAt: now
     };
@@ -80,6 +83,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setPlotName(plot.name);
     setPlotNotes(plot.notes || '');
     setPlantSpacing(String(plot.plantSpacingM || 0.5));
+    setSelectedSodId(plot.surfaceMaterialId || '');
     setEditingPlotId(plot.id);
     setGpsError('');
     setTool('area');
