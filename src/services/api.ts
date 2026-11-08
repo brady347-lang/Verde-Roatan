@@ -1191,6 +1191,20 @@ async function knowledgeCoreCall<T = any>(path: string, payload: Record<string, 
   return data as T;
 }
 
+export interface BotanicalEvidenceQueueItem {
+  id: string; evidence_type: string; source_system: string; source_record_id?: string | null;
+  subject_key?: string | null; submitted_payload: Record<string, unknown>;
+  model_result?: Record<string, unknown> | null; status: string; approval_status: string;
+  verification_status: string; created_at: string;
+}
+export async function listBotanicalEvidenceQueue(token: string): Promise<BotanicalEvidenceQueueItem[]> {
+  const data = await knowledgeCoreCall<{ items: BotanicalEvidenceQueueItem[] }>('/engine/admin/list', {}, token);
+  return data.items || [];
+}
+export async function reviewBotanicalEvidence(token: string, evidenceId: string, decision: 'approve' | 'reject', note = ''): Promise<void> {
+  await knowledgeCoreCall('/engine/admin/review', { evidence_id: evidenceId, decision, note }, token);
+}
+
 export async function enqueueCatalogBotanicalEvidence(
   token: string,
   item: Pick<CatalogItem, 'id' | 'name' | 'sci' | 'image_url' | 'category'>
