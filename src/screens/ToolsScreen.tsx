@@ -125,7 +125,6 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [waste, setWaste] = useState('10');
   const [bagLiters, setBagLiters] = useState('40');
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation' | 'light'>('area');
-  const [luxInput, setLuxInput] = useState('0');
   const [liveLux, setLiveLux] = useState<number | null>(null);
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
@@ -212,7 +211,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       }
     }
   };
-  const lux = liveLux ?? Math.max(0, Number(luxInput) || 0);
+  const lux = liveLux ?? 0;
+  const hasLiveLux = liveLux !== null;
   const lightAssessment = useMemo(() => assessLight(lux), [lux]);
   const lightMatches = useMemo(() => recommendPlantsForLight(lux), [lux]);
   const stopGpsTracking = async () => {
@@ -295,7 +295,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       sensor.start();
       sensorRef.current = sensor;
       sensorTimeoutRef.current = window.setTimeout(() => {
-        if (!receivedReading) setSensorStatus(es ? 'El sensor no ha enviado lecturas. Introduce los lux manualmente.' : 'The sensor has not delivered readings. Enter lux manually.');
+        if (!receivedReading) setSensorStatus(es ? 'El sensor no ha enviado lecturas. Comprueba que el dispositivo tenga sensor de luz ambiental.' : 'The sensor has not delivered readings. Check that this device has an ambient light sensor.');
       }, 6000);
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
@@ -637,11 +637,20 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       {tool === 'light' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medidor inteligente de luz' : 'Intelligent light meter'}</h2></div>
         <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Mide la iluminación del lugar y compárala con las necesidades de luz de las plantas del Centro de Conocimiento Botánico.' : 'Measure the site illumination and compare it with plant light requirements from the Botanical Knowledge Center.'}</p>
-        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{liveLux !== null ? Math.round(liveLux).toLocaleString() : Math.round(lux).toLocaleString()} lux</b><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
-        <label className="block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Lectura de luz (lux)' : 'Light reading (lux)'}<input type="number" min="0" max="200000" value={luxInput} onChange={event => { sensorRef.current?.stop(); sensorRef.current = null; if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current); sensorTimeoutRef.current = null; setLuxInput(event.target.value); setLiveLux(null); setSensorStatus(es ? 'Lectura manual activa; sensor detenido.' : 'Manual reading active; sensor stopped.'); }} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
-        <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
+        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" />
+          {hasLiveLux ? <>
+            <b className="mt-2 block text-3xl tabular-nums">{Math.round(liveLux!).toLocaleString()} lux</b>
+            <p className="text-sm font-bold">{lightAssessment.label}</p>
+            <p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p>
+            <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p>
+          </> : <>
+            <b className="mt-2 block text-base">{es ? 'Esperando medición del sensor' : 'Waiting for sensor measurement'}</b>
+            <p className="mt-1 text-xs text-[var(--ink-soft)]">{es ? 'La lectura y las recomendaciones aparecerán aquí cuando el sensor del dispositivo envíe datos reales.' : 'The reading and recommendations will appear here when the device sensor provides real data.'}</p>
+          </>}
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Iniciar medición en vivo' : 'Start live measurement'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
-        <div className="mt-3 rounded-2xl border border-[var(--line)] p-3">
+        {hasLiveLux && <div className="mt-3 rounded-2xl border border-[var(--line)] p-3">
           <div className="flex items-center gap-2"><Camera className="h-4 w-4 text-[var(--palm)]" /><b className="text-sm">{es ? 'Calibración de cámara' : 'Camera calibration'}</b></div>
           <p className="mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Rutina avanzada local para crear un perfil de respuesta de esta cámara. No se guardan ni se envían imágenes.' : 'Advanced on-device routine to create this camera’s response profile. Images are not saved or uploaded.'}</p>
           {CAMERA_CALIBRATION_ENABLED && cameraProfile && <p className="mt-2 text-xs font-semibold text-[var(--ink-soft)]">{cameraProfile.quality === 'reference_calibrated' ? (es ? 'Perfil calibrado con lecturas de referencia' : 'Reference-calibrated profile') : (es ? 'Perfil relativo; falta luxómetro de referencia' : 'Relative profile; reference lux meter needed')}</p>}
@@ -657,9 +666,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
             <p className="text-[10px] text-[var(--ink-soft)]">{es ? 'La imagen solo se analiza en memoria para calcular brillo promedio. El modo sin luxómetro crea una escala relativa, no una medición exacta de lux.' : 'Frames are analyzed in memory for brightness only. Without a lux meter this creates a relative scale, not an exact lux measurement.'}</p>
           </div>)}
           {CAMERA_CALIBRATION_ENABLED && cameraStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{cameraStatus}</p>}
-        </div>
+        </div>}
         <div className="mt-5"><h3 className="flex items-center gap-2 text-base font-extrabold"><Leaf className="h-4 w-4 text-[var(--palm)]" />{es ? 'Plantas recomendadas' : 'Recommended plants'}</h3><p className="mb-3 mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Coincidencias basadas en los requisitos de luz registrados en el Centro de Conocimiento.' : 'Matches based on sunlight requirements recorded in the Botanical Knowledge Center.'}</p>
-          {lightMatches.length ? <div className="space-y-2">{lightMatches.map(match => <div key={match.profile.id} className="rounded-2xl border border-[var(--line)] p-3"><div className="flex items-start justify-between gap-2"><div><b className="text-sm">{match.profile.identification.common_names[es ? 'es' : 'en'][0] || match.profile.taxonomy.scientific_name}</b><p className="text-xs italic text-[var(--ink-soft)]">{match.profile.taxonomy.scientific_name}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${match.fit === 'strong' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{match.fit === 'strong' ? (es ? 'Buena coincidencia' : 'Strong fit') : (es ? 'Posible' : 'Possible fit')}</span></div><p className="mt-1 text-xs text-[var(--ink-soft)]">{match.reason}</p></div>)}</div> : <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay perfiles públicos coincidentes todavía.' : 'No matching public profiles are available yet.'}</p>}
+          {!hasLiveLux ? <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'Las recomendaciones se activarán automáticamente al recibir una lectura real del sensor.' : 'Recommendations will appear automatically when a real sensor reading is received.'}</p> : lightMatches.length ? <div className="space-y-2">{lightMatches.map(match => <div key={match.profile.id} className="rounded-2xl border border-[var(--line)] p-3"><div className="flex items-start justify-between gap-2"><div><b className="text-sm">{match.profile.identification.common_names[es ? 'es' : 'en'][0] || match.profile.taxonomy.scientific_name}</b><p className="text-xs italic text-[var(--ink-soft)]">{match.profile.taxonomy.scientific_name}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${match.fit === 'strong' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{match.fit === 'strong' ? (es ? 'Buena coincidencia' : 'Strong fit') : (es ? 'Posible' : 'Possible fit')}</span></div><p className="mt-1 text-xs text-[var(--ink-soft)]">{match.reason}</p></div>)}</div> : <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay perfiles públicos coincidentes todavía.' : 'No matching public profiles are available yet.'}</p>}
         </div>
         <p className="mt-4 rounded-xl border border-dashed border-[var(--line)] p-3 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Una lectura puntual de lux no mide la luz diaria total ni la radiación fotosintética (PPFD/DLI). El sensor depende del hardware y permisos del teléfono. Observa el lugar durante varias horas antes de plantar.' : 'A single lux reading does not measure daily light integral or photosynthetic radiation (PPFD/DLI). Sensor availability depends on phone hardware and permissions. Observe the location across several hours before planting.'}</p>
       </section>}
