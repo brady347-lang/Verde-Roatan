@@ -7,6 +7,9 @@ export type SavedPlot = {
   notes?: string;
   plantSpacingM?: number;
   estimatedPlants?: number;
+  surfaceMaterialId?: string;
+  surfaceMaterialName?: string;
+  surfaceMaterialUnits?: number;
   createdAt: string;
   updatedAt: string;
 };
