@@ -67,7 +67,7 @@ returns setof public.botanical_evidence_queue
 language sql
 security definer
 set search_path = public, pg_temp
-as $
+as $$
   with candidates as (
     select id
     from public.botanical_evidence_queue
@@ -85,7 +85,7 @@ as $
   from candidates
   where queue.id = candidates.id
   returning queue.*;
-$;
+$$;
 revoke all on function public.claim_botanical_evidence_batch(integer) from public, anon, authenticated;
 grant execute on function public.claim_botanical_evidence_batch(integer) to service_role;
 

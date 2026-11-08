@@ -166,7 +166,8 @@ async function handleInternalEvidenceReview(request, body, env) {
   let mismatch = 0; for (let i=0;i<expected.length;i++) mismatch |= expected.charCodeAt(i) ^ supplied.charCodeAt(i);
   if (mismatch) return jsonResponse(403, { status:'error', error:'Internal review is not authorized.' });
   const path = String(body.image_storage_path || '');
-  if (!path || path.includes('..') || path.startsWith('/') || path.length > 500) return jsonResponse(400, {status:'error',error:'A valid private evidence path is required.'});
+  // Same rule as the Knowledge Core: object keys only, no traversal, no empty segments, no odd characters.
+  if (!/^(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9][A-Za-z0-9_.\-\/]{0,300}$/.test(path)) return jsonResponse(400, {status:'error',error:'A valid private evidence path is required.'});
   const {url,key} = reviewDatabaseConfig(env);
   const imageResponse = await fetch(url+'/storage/v1/object/botanical-health-evidence/'+path,{
     headers:{apikey:key,Authorization:'Bearer '+key}

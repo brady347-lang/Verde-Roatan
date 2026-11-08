@@ -394,4 +394,15 @@ await t('identification admin: approve does NOT verify; verify needs approved + 
   const rj = await (await authed('/identification-review/admin/review', { review_id: id, status: 'rejected' })).json(); assert.equal(rj.review.verified_by, null);
 });
 
+await t('internal evidence review: secret required, constant-time compare, strict private path, no fetch before auth', async () => {
+  const review = (secret, path, e) => worker.fetch(new Request('https://w.test/internal/evidence-review', { method: 'POST', headers: secret === null ? {} : { 'x-rootwise-internal-secret': secret }, body: JSON.stringify({ image_storage_path: path, mode: 'plant' }) }), e);
+  const ienv = { GEMINI_API_KEY: 'k', ROOTWISE_INTERNAL_SECRET: 'shared-secret-value', VERDE_REVIEW_SUPABASE_URL: 'https://review.test', VERDE_REVIEW_SUPABASE_SERVICE_ROLE_KEY: 'svc' };
+  let fetched = 0; globalThis.fetch = async () => { fetched++; return new Response('nope', { status: 500 }); };
+  assert.equal((await review(null, 'u/a.jpg', ienv)).status, 403);
+  assert.equal((await review('wrong-secret-value!', 'u/a.jpg', ienv)).status, 403);
+  assert.equal((await review('shared-secret-value', 'u/a.jpg', { GEMINI_API_KEY: 'k' })).status, 403, 'unconfigured secret never authorizes');
+  for (const bad of ['../x.jpg', '/etc/passwd', 'a//b.jpg', 'a/../b.jpg', 'x y.jpg', '']) assert.equal((await review('shared-secret-value', bad, ienv)).status, 400, JSON.stringify(bad));
+  assert.equal(fetched, 0, 'no storage or Gemini call before the secret and path are valid');
+});
+
 console.log('ALL', n, 'PASSED');
