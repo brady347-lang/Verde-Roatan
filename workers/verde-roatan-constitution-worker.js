@@ -58,13 +58,14 @@ async function requireAdmin(request, env) {
 
 // ---- Self-study: counted facts from data that already exists. Read-only. ----
 async function studySignals(env) {
-  const [entities, reviews, taxa] = await Promise.all([
+  const [entities, reviews, confirmations, taxa] = await Promise.all([
     rest(env, 'knowledge_entities?select=id,field_name,approval_status&limit=5000'),
     rest(env, 'identification_reviews?select=id,ai_scientific_name,user_decision,status,submitted_by&limit=5000'),
+    rest(env, 'identification_confirmations?select=id,review_id,user_id,decision,corrected_common_name,corrected_scientific_name&limit=5000'),
     rest(env, 'botanical_taxa?select=id,scientific_name,record_status,verification_status&record_status=eq.published&limit=5000')
   ]);
   if (!entities.ok || !Array.isArray(entities.data) || !reviews.ok || !Array.isArray(reviews.data) ||
-      !taxa.ok || !Array.isArray(taxa.data)) {
+      !confirmations.ok || !Array.isArray(confirmations.data) || !taxa.ok || !Array.isArray(taxa.data)) {
     throw new Error('The botanical data could not be read.');
   }
   const foldName = (value) => clean(value, 180).normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -122,7 +123,54 @@ async function studySignals(env) {
     });
   }
 
-  // 3. Identifications that people or reviewers keep questioning (customer feedback = a hint only).
+  // 3. Repeated customer corrections are evidence signals, never scientific proof.
+  // Corrections live in identification_confirmations, not identification_reviews.
+  const reviewById = new Map(reviews.data.map((r) => [r.id, r]));
+  const correctionGroups = new Map();
+  for (const confirmation of confirmations.data) {
+    const correctedScientific = clean(confirmation.corrected_scientific_name, 160);
+    const correctedCommon = clean(confirmation.corrected_common_name, 160);
+    if (!correctedScientific && !correctedCommon) continue;
+    // Existing feedback UI stores the user's decision (e.g. not_my_plant) in this field;
+    // the corrected_* columns are the actual correction payload and must be read independently.
+    const review = reviewById.get(confirmation.review_id);
+    if (!review || !confirmation.user_id) continue;
+    const originalScientific = clean(review.ai_scientific_name, 160);
+    // Do not combine unrelated corrections when the original AI suggestion is absent.
+    if (!originalScientific) continue;
+    const corrected = correctedScientific || correctedCommon;
+    const kind = correctedScientific ? 'scientific_name' : 'common_name';
+    const key = [kind, foldName(originalScientific), foldName(corrected)].join(':');
+    const group = correctionGroups.get(key) || {
+      kind, original: originalScientific, corrected, people: new Set(), ids: [], reviewIds: []
+    };
+    group.people.add(confirmation.user_id);
+    if (group.ids.length < 8) group.ids.push(confirmation.id);
+    if (group.reviewIds.length < 8) group.reviewIds.push(confirmation.review_id);
+    correctionGroups.set(key, group);
+  }
+  for (const [key, group] of correctionGroups) {
+    if (group.people.size < MIN_DOUBTING_PEOPLE) continue;
+    const normalized = key.replace(/[^a-z0-9]+/g, '_').slice(0, 100);
+    signals.push({
+      signal_key: `customer_correction:${normalized}:${Math.floor(group.people.size / 3) * 3}`,
+      proposed_key: `review_correction_${normalized}`.slice(0, 60),
+      title: `Expert review requested for repeated customer correction: ${group.corrected}`,
+      body: `At least ${group.people.size} different customers corrected the AI suggestion "${group.original || 'unspecified scientific name'}" to "${group.corrected}". This is a repeated community signal only. Do not replace the AI result or publish the corrected name until an administrator and qualified botanical reviewer verify it against reliable sources.`,
+      rationale: `${group.people.size} distinct customers independently submitted the same ${group.kind.replace('_', ' ')} correction.`,
+      evidence: {
+        source: 'identification_confirmations_joined_to_identification_reviews',
+        correction_type: group.kind,
+        original_ai_scientific_name: group.original || null,
+        corrected_name: group.corrected,
+        distinct_customers: group.people.size,
+        confirmation_ids: group.ids,
+        review_ids: group.reviewIds
+      }
+    });
+  }
+
+  // 4. Identifications that people or reviewers keep questioning (customer feedback = a hint only).
   const byName = new Map();
   for (const r of reviews.data) {
     const name = clean(r.ai_scientific_name, 160);
@@ -152,6 +200,8 @@ async function studySignals(env) {
       extracted_facts: entities.data.length,
       facts_rejected_or_edited: entities.data.filter((e) => ['rejected', 'modified'].includes(e.approval_status)).length,
       identification_submissions: reviews.data.length,
+      identification_confirmations: confirmations.data.length,
+      customer_corrections: confirmations.data.filter((c) => clean(c.corrected_common_name, 160) || clean(c.corrected_scientific_name, 160)).length,
       identifications_doubted: reviews.data.filter((r) => ['almost', 'not_my_plant'].includes(r.user_decision)).length,
       published_taxa: taxa.data.length,
       scientifically_verified_taxa: taxa.data.filter((t) => t.verification_status === 'scientifically_verified').length
@@ -173,15 +223,14 @@ async function lessons(request, env) {
   return json(200, { status: 'success', ...study });
 }
 
-async function propose(request, env) {
-  const auth = await requireAdmin(request, env); if (auth.response) return auth.response;
-  const study = await studySignals(env);
-  if (!study.signals.length) return json(200, { status: 'success', created: 0, message: 'No repeated mistakes found yet.', stats: study.stats });
+async function createPendingProposals(env, study) {
+  if (!study.signals.length) return { created: 0 };
   const keys = study.signals.map((s) => `"${s.signal_key.replace(/"/g, '')}"`).join(',');
   const existing = await rest(env, `constitution_amendments?select=signal_key&signal_key=in.(${encodeURIComponent(keys)})`);
-  const seen = new Set((existing.ok && Array.isArray(existing.data) ? existing.data : []).map((e) => e.signal_key));
+  if (!existing.ok || !Array.isArray(existing.data)) throw new Error('Existing proposals could not be checked safely.');
+  const seen = new Set(existing.data.map((e) => e.signal_key));
   const fresh = study.signals.filter((s) => !seen.has(s.signal_key));
-  if (!fresh.length) return json(200, { status: 'success', created: 0, message: 'Everything found has already been proposed.', stats: study.stats });
+  if (!fresh.length) return { created: 0 };
   const rows = fresh.map((s) => ({
     kind: 'add_rule', proposed_key: s.proposed_key, proposed_title: s.title.slice(0, 160), proposed_body: s.body.slice(0, 2000),
     rationale: s.rationale.slice(0, 500), signal_key: s.signal_key, evidence: s.evidence, status: 'pending'
@@ -190,7 +239,23 @@ async function propose(request, env) {
     method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=representation' }, body: JSON.stringify(rows)
   });
   if (!ins.ok || !Array.isArray(ins.data)) throw new Error('The proposals could not be saved.');
-  return json(200, { status: 'success', created: ins.data.length, stats: study.stats });
+  return { created: ins.data.length };
+}
+
+async function propose(request, env) {
+  const auth = await requireAdmin(request, env); if (auth.response) return auth.response;
+  const study = await studySignals(env);
+  const result = await createPendingProposals(env, study);
+  return json(200, {
+    status: 'success', ...result,
+    message: result.created ? 'New proposals were saved for human review.' : 'No new repeated signals need a proposal.',
+    stats: study.stats
+  });
+}
+
+async function runScheduledStudy(env) {
+  const study = await studySignals(env);
+  return createPendingProposals(env, study);
 }
 
 async function amendments(request, body, env) {
@@ -346,6 +411,11 @@ async function ask(request, body, env) {
 }
 
 export default {
+  async scheduled(controller, env, ctx) {
+    const task = runScheduledStudy(env);
+    if (ctx?.waitUntil) ctx.waitUntil(task);
+    else await task;
+  },
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';

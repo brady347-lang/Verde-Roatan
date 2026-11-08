@@ -34,6 +34,7 @@ import {
   analyzeBotanicalImage,
   saveCatalogItem,
   CatalogSaveError,
+  CatalogRequestError,
   deleteCatalogItem,
   updateCatalogStock,
   uploadCatalogPhoto,
@@ -1554,6 +1555,52 @@ export default function App() {
     }
   };
 
+  // Refresh an expiring administrator session before catalog writes. A 401 gets one
+  // refresh-and-retry; a 403 is reported as a database permission/RLS issue and is never bypassed.
+  const saveCatalogItemWithAdminSession = async (item: CatalogItem): Promise<CatalogItem> => {
+    if (!session?.access_token || !session.refresh_token) {
+      throw new Error('Administrator session is missing its refresh token. Sign out and sign back in, then try again.');
+    }
+
+    const refreshAndVerify = async () => {
+      const refreshed = await refreshSupabaseSession(session.refresh_token);
+      if (!refreshed?.access_token) throw new Error('Administrator sign-in could not be refreshed. Please sign in again.');
+      const verifiedUser = await verifySupabaseUser(refreshed.access_token);
+      const email = verifiedUser.email || session.user.email;
+      if (!email || !checkAdminIdentity(email)) {
+        throw new Error('The refreshed account is not authorized as a Verde administrator. No catalog change was made.');
+      }
+      const nextSession: AuthSession = {
+        ...session,
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token || session.refresh_token,
+        expires_at: Math.floor(Date.now() / 1000) + Number(refreshed.expires_in || 3600),
+        user: {
+          ...session.user,
+          id: verifiedUser.id || session.user.id,
+          email,
+          full_name: verifiedUser.user_metadata?.full_name || session.user.full_name
+        }
+      };
+      setSession(nextSession);
+      safeSetItem('verde_auth_session', JSON.stringify(nextSession));
+      return nextSession.access_token;
+    };
+
+    let token = session.access_token;
+    const expiresAt = Number(session.expires_at || 0);
+    if (expiresAt && expiresAt <= Math.floor(Date.now() / 1000) + 90) {
+      token = await refreshAndVerify();
+    }
+    try {
+      return await saveCatalogItem(item, token);
+    } catch (error) {
+      if (!(error instanceof CatalogRequestError) || error.status !== 401) throw error;
+      token = await refreshAndVerify();
+      return await saveCatalogItem(item, token);
+    }
+  };
+
   // --- DATABASE MANIPULATION HANDLERS (PLANTS, PRODUCTS, LANDSCAPERS, SUPPLIERS) ---
 
   // Production catalog changes are committed to Supabase before updating the screen.
@@ -1581,7 +1628,7 @@ export default function App() {
       });
     };
     try {
-      merge(await saveCatalogItem(plant, session.access_token));
+      merge(await saveCatalogItemWithAdminSession(plant));
       showToast('Plant saved to the production catalog.');
       return null;
     } catch (error) {
@@ -1617,7 +1664,7 @@ export default function App() {
       });
     };
     try {
-      merge(await saveCatalogItem(product, session.access_token));
+      merge(await saveCatalogItemWithAdminSession(product));
       showToast('Product saved to the production catalog.');
       return null;
     } catch (error) {
@@ -1759,6 +1806,15 @@ export default function App() {
           onOpenZonePicker={() => setActiveModal({ type: 'zone-picker' })}
           rateHnl={rateData?.hnlPerUsd || null}
           onToggleCurrencyWidget={() => setIsCurrencyWidgetOpen((prev) => !prev)}
+          onHomeClick={() => {
+            if (plantModal.isOpen || productModal.isOpen || landscaperModal.isOpen) {
+              showToast(lang === 'es' ? 'Guarde o cancele la edición antes de volver al inicio.' : 'Save or cancel your current edit before returning home.');
+              return;
+            }
+            setActiveModal(null);
+            setIsGardenAdvisorOpen(false);
+            setTab('home');
+          }}
         />
 
         {/* Scrollable Screens Viewport with Ultra-Smooth Slide Motion Transitions */}
@@ -1797,6 +1853,12 @@ export default function App() {
               {tab === 'home' && (
             <HomeScreen
               lang={lang}
+              isSignedIn={Boolean(session?.user)}
+              isAdmin={isAdmin}
+              displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
+              gardenCount={garden.length}
+              cartCount={cartCount}
+              activeOrdersCount={activeOrders.length}
               onNavigate={(nextTab) => setTab(nextTab)}
               onStartIdentify={(mode) => {
                 setIdentifyMode(mode);
