@@ -136,7 +136,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [liveLux, setLiveLux] = useState<number | null>(null);
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
-  const sensorTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const sensorTimeoutRef = useRef<number | null>(null);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
