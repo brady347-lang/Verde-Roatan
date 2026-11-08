@@ -255,6 +255,13 @@ export default function App() {
     }
   });
 
+  useEffect(() => {
+    if (session?.user?.temporary_role === 'supplier') {
+      setTab('account');
+      setShowMyRootWise(false);
+    }
+  }, [session?.user?.id, session?.user?.temporary_role]);
+
   // STRICT ADMIN PERMISSION: Only true if user authenticated with Supabase password
   const isAdmin = Boolean(
     session?.user?.email &&
