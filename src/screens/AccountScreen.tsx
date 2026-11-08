@@ -318,7 +318,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
           </div>
 
           {!isAdmin && session && (
-            <SupplierOnboardingPanel lang={lang} session={session} isAdmin={false} />
+            <SupplierOnboardingPanel lang={lang} session={session} isAdmin={false} temporarySupplier={session.user.temporary_role === 'supplier'} />
           )}
 
           {/* Plant Intelligence Studio (Admin Exclusive Live Management) */}
