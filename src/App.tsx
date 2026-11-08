@@ -524,8 +524,18 @@ export default function App() {
               image_url: remoteItem.image_url || previousItem?.image_url || ''
             };
           });
+          // Remember locally deleted seed/draft IDs so refresh cannot resurrect them.
+          let deletedLocalIds: string[] = [];
+          try {
+            const stored = JSON.parse(localStorage.getItem('verde_deleted_catalog_ids') || '[]');
+            if (Array.isArray(stored)) deletedLocalIds = stored.map(String);
+          } catch {
+            deletedLocalIds = [];
+          }
+          const deletedSet = new Set(deletedLocalIds);
           const localDrafts = previousCatalog.filter((item) =>
             !remoteIds.has(String(item.id)) &&
+            !deletedSet.has(String(item.id)) &&
             (String(item.id).startsWith('p-') || String(item.id).startsWith('prd-'))
           );
           return [...localDrafts, ...mergedRemote];
@@ -1627,7 +1637,20 @@ export default function App() {
       // Seed catalog entries such as "p-areca" are local-only drafts in this
       // production project (there is no public.catalog_items table). Remove
       // them locally; only UUID-backed records are sent to Supabase.
-      if (isDatabaseCatalogId(id)) await deleteCatalogItem(id, session.access_token);
+      if (isDatabaseCatalogId(id)) {
+        await deleteCatalogItem(id, session.access_token);
+      } else {
+        // Persist a tombstone for seed/draft IDs; refreshCatalog otherwise re-adds INITIAL_CATALOG entries.
+        let deletedIds: string[] = [];
+        try {
+          const stored = JSON.parse(localStorage.getItem('verde_deleted_catalog_ids') || '[]');
+          if (Array.isArray(stored)) deletedIds = stored.map(String);
+        } catch {
+          deletedIds = [];
+        }
+        if (!deletedIds.includes(String(id))) deletedIds.push(String(id));
+        safeSetItem('verde_deleted_catalog_ids', JSON.stringify(deletedIds));
+      }
       setCatalog(prev => prev.filter(x => String(x.id) !== String(id)));
       setCart(prev => prev.filter(x => String(x.id) !== String(id)));
       setCustomImages(prev => { const next = { ...prev }; delete next[id]; return next; });
@@ -1695,6 +1718,7 @@ export default function App() {
       setRegisteredSuppliers(INITIAL_REGISTERED_SUPPLIERS);
       setCustomImages({});
       localStorage.removeItem('verde_custom_images');
+      localStorage.removeItem('verde_deleted_catalog_ids');
       safeSetItem('verde_catalog', JSON.stringify(INITIAL_CATALOG));
       safeSetItem('verde_landscapers', JSON.stringify(INITIAL_LANDSCAPERS));
       safeSetItem('verde_suppliers', JSON.stringify(INITIAL_REGISTERED_SUPPLIERS));
