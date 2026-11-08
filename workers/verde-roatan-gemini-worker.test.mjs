@@ -344,6 +344,8 @@ function idMock({ migrated = true, reviewRow = {} } = {}) {
     url = String(url); log.push({ url, init });
     if (url.startsWith('https://main.test/auth/v1/user')) return new Response(JSON.stringify({ id: 'u1', email: 'boss@x.com' }), { status: 200 });
     if (url.includes('/storage/v1/object/identification-review-images/') && init.method === 'POST') return new Response('{}', { status: 200 });
+    if (url.includes('/storage/v1/object/botanical-health-evidence/') && init.method === 'POST') return new Response('{}', { status: 200 });
+    if (url.includes('/rest/v1/botanical_evidence_queue') && init.method === 'POST') return new Response(null, { status: 201 });
     if (url.startsWith('https://tv.test/rest/v1/identification_reviews') && init.method === 'POST') {
       const row = JSON.parse(init.body);
       if (!migrated && 'verification_level' in row) return new Response(JSON.stringify({ code: 'PGRST204' }), { status: 400 });
@@ -360,6 +362,33 @@ function idMock({ migrated = true, reviewRow = {} } = {}) {
   return log;
 }
 const idBody = (extra = {}) => ({ image: IMG, identification: { candidate: { common_name: 'Monstera', scientific_name: 'Monstera deliciosa', confidence_score: 0.9 }, family: 'Araceae', model_used: 'gemini-x' }, decision: 'confirmed', source: { app: 'verde', platform: 'android', language: 'en' }, ...extra });
+await t('identification-review rejects oversized declared request bodies before JSON parsing', async () => {
+  const r = await worker.fetch(new Request('https://w.test/identification-review', {
+    method: 'POST', headers: { 'content-length': String(18 * 1024 * 1024) }, body: '{}'
+  }), { ...impEnv });
+  assert.equal(r.status, 413);
+  assert.match((await r.json()).error, /smaller than 12 MB/i);
+});
+
+await t('identification feedback is not forwarded to botanical learning without explicit opt-in', async () => {
+  const log = idMock();
+  const r = await authed('/identification-review', idBody());
+  assert.equal(r.status, 200);
+  assert.ok(!log.some((c) => c.url.includes('/botanical-health-evidence/') || c.url.includes('/botanical_evidence_queue')));
+});
+await t('identification feedback with explicit opt-in is archived privately and queued as unverified community evidence', async () => {
+  const log = idMock();
+  const r = await authed('/identification-review', idBody({ share_for_botanical_learning: true, decision: 'almost', corrected_common_name: 'Swiss cheese plant' }));
+  assert.equal(r.status, 200);
+  const archive = log.find((c) => c.url.includes('/botanical-health-evidence/'));
+  const queued = log.find((c) => c.url.includes('/botanical_evidence_queue'));
+  assert.ok(archive); assert.ok(queued);
+  const row = JSON.parse(queued.init.body);
+  assert.equal(row.verification_status, 'community_submitted');
+  assert.equal(row.evidence_type, 'community_correction');
+  assert.equal(row.submitted_payload.share_consent.granted, true);
+});
+
 await t('identification: "Yes" is only user_confirmed, never scientifically_verified; saves taxonomy and source', async () => {
   const log = idMock(); const r = await authed('/identification-review', idBody()); const j = await r.json();
   assert.equal(r.status, 200); assert.equal(j.verification_level, 'user_confirmed');

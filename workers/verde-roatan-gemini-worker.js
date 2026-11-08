@@ -226,6 +226,14 @@ export default {
       if (pathname === '/knowledge/upload') return await handleKnowledgeUpload(request, url, env);
       if (pathname === '/knowledge/reference-images/upload') return await knowledgeReferenceImageUpload(request, env);
 
+      // Reject oversized identification-review uploads before parsing the JSON body.
+      // A 12 MiB image expands to at most 16 MiB of base64 plus small JSON metadata.
+      if (pathname === '/identification-review') {
+        const contentLength = Number(request.headers.get('content-length') || 0);
+        if (Number.isFinite(contentLength) && contentLength > 17 * 1024 * 1024) {
+          return jsonResponse(413, { status: 'error', error: 'The review photo must be smaller than 12 MB.' });
+        }
+      }
       const body = await request.json().catch(() => ({}));
       if (pathname === '/internal/evidence-review') return await handleInternalEvidenceReview(request, body, env);
 
@@ -676,6 +684,12 @@ async function handleIdentificationReview(request, body, env) {
     });
   }
   const mimeType = imageMatch[1];
+  // Check encoded length before atob() so oversized uploads cannot force a large decode allocation.
+  if (imageMatch[2].length > 16 * 1024 * 1024) {
+    return new Response(JSON.stringify({ status: 'error', error: 'The review photo must be smaller than 12 MB.' }), {
+      status: 413, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
   const binary = atob(imageMatch[2]);
   if (binary.length > 12 * 1024 * 1024) {
     return new Response(JSON.stringify({ status: 'error', error: 'The review photo must be smaller than 12 MB.' }), {
@@ -801,9 +815,10 @@ async function handleIdentificationReview(request, body, env) {
     throw new Error('The review could not be completed. Please try again.');
   }
 
-  // Feed the same private photo and the user's correction into the botanical evidence queue.
-  // This is a community signal only; it never changes the scientific verification level.
-  try {
+  // Secondary use of the customer photo for botanical learning requires explicit opt-in.
+  // The ordinary identification review remains private and is saved regardless of this choice.
+  if (body.share_for_botanical_learning === true) {
+    try {
     const archivePath = 'identification-review/' + user.id + '/' + reviewId + '.' + extension;
     const archiveUpload = await fetch(`${url}/storage/v1/object/botanical-health-evidence/${archivePath}`, {
       method: 'POST',
@@ -833,6 +848,7 @@ async function handleIdentificationReview(request, body, env) {
             corrected_common_name: correctedCommon || null,
             corrected_scientific_name: correctedScientific || null,
             notes: noteText.slice(0, 1000),
+            share_consent: { granted: true, purpose: 'botanical_knowledge_improvement', granted_at: new Date().toISOString() },
             submitted_by: user.id,
             review_id: reviewId
           },
@@ -842,9 +858,10 @@ async function handleIdentificationReview(request, body, env) {
       });
       if (!queued.ok) console.warn('Identification feedback saved, but botanical evidence queue insert failed:', queued.status);
     }
-  } catch (queueError) {
-    // Keep the already-saved customer review intact; retry/repair can ingest it later.
-    console.warn('Identification feedback could not be forwarded to botanical evidence:', queueError);
+    } catch (queueError) {
+      // Keep the already-saved customer review intact; retry/repair can ingest it later.
+      console.warn('Identification feedback could not be forwarded to botanical evidence:', queueError);
+    }
   }
 
   return new Response(JSON.stringify({

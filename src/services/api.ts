@@ -469,7 +469,8 @@ export async function submitIdentificationFeedback(
   correctedScientificName: string,
   accessToken: string,
   notes = '',
-  language = 'en'
+  language = 'en',
+  shareForBotanicalLearning = false
 ): Promise<{ review_id: string; review_status: string; verification_level?: string; message: string }> {
   if (!accessToken) throw new Error('Please sign in before confirming an identification.');
   if (!image?.startsWith('data:image/')) throw new Error('The original specimen photo is missing.');
@@ -492,6 +493,7 @@ export async function submitIdentificationFeedback(
     corrected_common_name: correctedCommonName.trim(),
     corrected_scientific_name: correctedScientificName.trim(),
     notes: notes.trim(),
+    share_for_botanical_learning: shareForBotanicalLearning === true,
     source: { app: 'verde-roatan', platform: 'android', language }
   };
 
