@@ -162,7 +162,16 @@ export default function App() {
   const [catalog, setCatalog] = useState<CatalogItem[]>(() => {
     try {
       const saved = localStorage.getItem('verde_catalog');
-      return saved ? JSON.parse(saved) : INITIAL_CATALOG;
+      if (!saved) return INITIAL_CATALOG;
+      const parsed = JSON.parse(saved);
+      if (!Array.isArray(parsed)) return INITIAL_CATALOG;
+      const defaultsById = new Map(INITIAL_CATALOG.map((item) => [String(item.id), item]));
+      return parsed.map((item) => {
+        const defaults = defaultsById.get(String(item?.id));
+        return defaults
+          ? { ...defaults, ...item, material_spec: item.material_spec || defaults.material_spec }
+          : item;
+      });
     } catch {
       return INITIAL_CATALOG;
     }
@@ -530,10 +539,13 @@ export default function App() {
           const remoteIds = new Set(res.map((item) => String(item.id)));
           const mergedRemote = res.map((remoteItem) => {
             const previousItem = previousById.get(String(remoteItem.id));
+            const defaultItem = INITIAL_CATALOG.find((item) => String(item.id) === String(remoteItem.id));
             return {
+              ...defaultItem,
               ...previousItem,
               ...remoteItem,
-              image_url: remoteItem.image_url || previousItem?.image_url || ''
+              material_spec: remoteItem.material_spec || previousItem?.material_spec || defaultItem?.material_spec,
+              image_url: remoteItem.image_url || previousItem?.image_url || defaultItem?.image_url || ''
             };
           });
           // Remember locally deleted seed/draft IDs so refresh cannot resurrect them.
@@ -1903,7 +1915,7 @@ export default function App() {
             />
           )}
 
-          {tab === 'tools' && <ToolsScreen lang={lang} />}
+          {tab === 'tools' && <ToolsScreen lang={lang} catalog={currentCatalog} />}
 
           {tab === 'explore' && (
             <HomeScreen

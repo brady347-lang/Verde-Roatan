@@ -81,7 +81,7 @@ export function catalogTranslationFields(item: CatalogItem): Record<string, stri
 }
 
 function catalogBody(item: CatalogItem) {
-  return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true, ...catalogTranslationFields(item) };
+  return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true, ...(item.material_spec ? { material_spec: item.material_spec } : {}), ...catalogTranslationFields(item) };
 }
 
 /** Thrown when the database row saved but a follow-up step (photo) failed, so the UI can still show what was saved. */
@@ -320,7 +320,8 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
           tags: [category.toLowerCase(), kind],
           note: String(p.description || 'Tropical island specimen acclimatized to Roatan.'),
           category,
-          image_url: p.image_url || ''
+          image_url: p.image_url || '',
+          material_spec: p.material_spec && typeof p.material_spec === 'object' ? p.material_spec : undefined
         };
       });
     }

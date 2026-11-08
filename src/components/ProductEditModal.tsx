@@ -33,6 +33,9 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
   const [price, setPrice] = useState<number>(initialProduct?.price || 280);
   const [currency, setCurrency] = useState<'HNL' | 'USD'>(initialProduct?.currency || 'HNL');
   const [size, setSize] = useState(initialProduct?.size || '40 Liter Bag');
+  const [packageVolumeLiters, setPackageVolumeLiters] = useState(String(initialProduct?.material_spec?.package_volume_liters || ''));
+  const [coverageAreaM2, setCoverageAreaM2] = useState(String(initialProduct?.material_spec?.coverage_area_m2 || ''));
+  const [materialUnitLabel, setMaterialUnitLabel] = useState(initialProduct?.material_spec?.unit_label || '');
   const [stock, setStock] = useState<'In stock' | 'Low stock' | 'Out of stock'>(
     initialProduct?.stock || 'In stock'
   );
@@ -114,6 +117,13 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
       price: Number(price) || 0,
       currency,
       size: size.trim(),
+      material_spec: Number(packageVolumeLiters) > 0 || Number(coverageAreaM2) > 0
+        ? {
+            ...(Number(packageVolumeLiters) > 0 ? { package_volume_liters: Number(packageVolumeLiters) } : {}),
+            ...(Number(coverageAreaM2) > 0 ? { coverage_area_m2: Number(coverageAreaM2) } : {}),
+            ...(materialUnitLabel.trim() ? { unit_label: materialUnitLabel.trim() } : {})
+          }
+        : undefined,
       stock,
       stock_quantity: Number(stockQuantity) || 0,
       salt: 1,
@@ -308,6 +318,22 @@ export const ProductEditModal: React.FC<ProductEditModalProps> = ({
                 className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-2.5 py-2 text-[13px]"
               />
             </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--line)] p-3 flex flex-col gap-2">
+            <p className="text-[12px] font-bold">{lang === 'es' ? 'Especificaciones para cálculos de materiales' : 'Material-estimator specifications'}</p>
+            <p className="text-[10px] text-[var(--ink-soft)]">{lang === 'es' ? 'Introduce solo medidas confirmadas por el proveedor. Déjalas vacías si no se conocen.' : 'Enter only supplier-confirmed measurements. Leave blank when unknown.'}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-[11px] font-semibold">{lang === 'es' ? 'Volumen por paquete (L)' : 'Volume per package (L)'}
+                <input type="number" min="0" step="0.1" value={packageVolumeLiters} onChange={e=>setPackageVolumeLiters(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2 text-sm" />
+              </label>
+              <label className="text-[11px] font-semibold">{lang === 'es' ? 'Cobertura por unidad (m²)' : 'Coverage per unit (m²)'}
+                <input type="number" min="0" step="0.001" value={coverageAreaM2} onChange={e=>setCoverageAreaM2(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2 text-sm" />
+              </label>
+            </div>
+            <label className="text-[11px] font-semibold">{lang === 'es' ? 'Nombre de unidad' : 'Unit label'}
+              <input type="text" maxLength={60} value={materialUnitLabel} onChange={e=>setMaterialUnitLabel(e.target.value)} placeholder={lang === 'es' ? 'Ej. saco de 40 L, adoquín' : 'e.g. 40 L bag, paver'} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2 text-sm" />
+            </label>
           </div>
 
           {/* Stock Status & Quantity */}
