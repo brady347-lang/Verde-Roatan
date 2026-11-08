@@ -59,13 +59,7 @@ jobs:
           set -euo pipefail
           RAW_DIR=android/app/src/main/res/raw
           mkdir -p "$RAW_DIR"
-          for sound in \\
-            01_rootwise_signature.wav \\
-            02_plant_identified.wav \\
-            03_landscape_care_reminder.wav \\
-            04_important_alert.wav \\
-            05_knowledge_center_update.wav \\
-            06_saved_success.wav; do
+          for sound in 01_rootwise_signature.wav 02_plant_identified.wav 03_landscape_care_reminder.wav 04_important_alert.wav 05_knowledge_center_update.wav 06_saved_success.wav; do
             test -s "assets/rootwise-notification-sounds/$sound"
             cp "assets/rootwise-notification-sounds/$sound" "$RAW_DIR/$sound"
           done
