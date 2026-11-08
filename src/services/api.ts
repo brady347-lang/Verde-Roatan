@@ -79,9 +79,20 @@ export class CatalogSaveError extends Error {
 }
 
 /** Explain a failed catalog write. RLS blocks return 200 with zero rows, which is easy to mistake for success. */
-function catalogWriteError(response: Response, rows: any, action: string): Error {
+function tokenEmail(token?: string): string {
+  try {
+    const part = (token || '').split('.')[1] || '';
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    return String(JSON.parse(json).email || '');
+  } catch {
+    return '';
+  }
+}
+
+function catalogWriteError(response: Response, rows: any, action: string, token?: string): Error {
   if (response.status === 401 || response.status === 403) {
-    return new Error('Your administrator session was rejected. Sign out, sign back in as the administrator, then try again.');
+    const who = tokenEmail(token);
+    return new Error('The database rejected this save' + (who ? ' for ' + who : '') + '. That account is not the administrator, or the session expired. Sign out, sign back in as the administrator, then try again.');
   }
   if (response.ok && Array.isArray(rows) && rows.length === 0) {
     return new Error('Supabase did not ' + action + ' this record: the database blocked the change (administrator permission) or the record no longer exists. Sign out and back in as the administrator, then try again.');
@@ -96,7 +107,7 @@ export async function saveCatalogItem(item: CatalogItem, token: string): Promise
   const url = SUPABASE_URL + '/rest/v1/products' + (uuid ? '?id=eq.' + encodeURIComponent(id) : '');
   const response = await fetch(url, { method: uuid ? 'PATCH' : 'POST', headers: catalogHeaders(token), body: JSON.stringify(body), cache: 'no-store' });
   const rows = await response.json().catch(() => []);
-  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw catalogWriteError(response, rows, 'save');
+  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw catalogWriteError(response, rows, 'save', token);
   const row = rows[0];
   let saved: CatalogItem = { ...item, id: String(row.id), name: String(row.name || item.name), category: String(row.category || item.category), price: Number(row.price ?? item.price), currency: (row.currency || item.currency) as 'HNL' | 'USD', stock_quantity: Number(row.stock_quantity ?? item.stock_quantity), image_url: String(row.image_url || item.image_url || '') };
   if (item.image_url?.startsWith('data:image/')) {
@@ -110,7 +121,7 @@ export async function saveCatalogItem(item: CatalogItem, token: string): Promise
     const imageUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
     const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: imageUrl }), cache: 'no-store' });
     const patched = await patch.json().catch(() => []);
-    if (!patch.ok || !Array.isArray(patched) || patched.length !== 1) throw new CatalogSaveError('Your changes were saved and the photo uploaded, but its link could not be stored on the record. ' + catalogWriteError(patch, patched, 'update').message, { ...saved, image_url: String(row.image_url || '') });
+    if (!patch.ok || !Array.isArray(patched) || patched.length !== 1) throw new CatalogSaveError('Your changes were saved and the photo uploaded, but its link could not be stored on the record. ' + catalogWriteError(patch, patched, 'update', token).message, { ...saved, image_url: String(row.image_url || '') });
     saved = { ...saved, image_url: imageUrl };
   }
   return saved;
@@ -173,7 +184,7 @@ export async function uploadCatalogPhotoDataUrl(productId: string, dataUrl: stri
   const table = catalogTableForId(productId);
   const patch = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(productId), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: publicUrl }), cache: 'no-store' });
   const rows = await patch.json().catch(() => []);
-  if (!patch.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('Photo uploaded but its link was not saved: ' + catalogWriteError(patch, rows, 'update').message);
+  if (!patch.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('Photo uploaded but its link was not saved: ' + catalogWriteError(patch, rows, 'update', token).message);
   return publicUrl;
 }
 export interface BchRateResponse {
