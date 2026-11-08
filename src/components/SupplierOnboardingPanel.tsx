@@ -5,7 +5,9 @@ import { supabaseRpcRequest } from '../services/api';
 import { AuthSession, Language } from '../types';
 import { SupplierProductWorkspace } from './SupplierProductWorkspace';
 
-type IdentificationReport = { id: string; product_id: string; supplier_user_id: string; ai_common_name: string | null; ai_scientific_name: string | null; corrected_common_name: string | null; corrected_scientific_name: string | null; report_notes: string; image_url: string | null; status: string; created_at: string; };\n\ntype Application = {
+type IdentificationReport = { id: string; product_id: string; supplier_user_id: string; ai_common_name: string | null; ai_scientific_name: string | null; corrected_common_name: string | null; corrected_scientific_name: string | null; report_notes: string; image_url: string | null; status: string; created_at: string; };
+
+type Application = {
   id: string;
   user_id: string;
   business_name: string;
@@ -52,12 +54,19 @@ export const SupplierOnboardingPanel: React.FC<{
   const [hours, setHours] = useState('72');
   const [issuedCode, setIssuedCode] = useState('');
   const [application, setApplication] = useState<Application | null>(null);
-  const [applications, setApplications] = useState<Application[]>([]);\n  const [identificationReports, setIdentificationReports] = useState<IdentificationReport[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [identificationReports, setIdentificationReports] = useState<IdentificationReport[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  const loadIdentificationReports = useCallback(async () => {\n    if (!isAdmin) return;\n    const rows = await requestRows('supplier_identification_reports?select=*&order=created_at.desc', session.access_token);\n    setIdentificationReports(Array.isArray(rows) ? rows : []);\n  }, [isAdmin, session.access_token]);\n\n  const loadApplications = useCallback(async () => {
+  const loadIdentificationReports = useCallback(async () => {
+    if (!isAdmin) return;
+    const rows = await requestRows('supplier_identification_reports?select=*&order=created_at.desc', session.access_token);
+    setIdentificationReports(Array.isArray(rows) ? rows : []);
+  }, [isAdmin, session.access_token]);
+
+  const loadApplications = useCallback(async () => {
     const rows = await requestRows(
       isAdmin
         ? 'supplier_applications?select=*&order=created_at.desc'
@@ -70,11 +79,21 @@ export const SupplierOnboardingPanel: React.FC<{
 
   useEffect(() => {
     let active = true;
-    loadApplications().catch((err) => { if (active) setError(err.message); });\n    if (isAdmin) loadIdentificationReports().catch((err) => { if (active) setError(err.message); });
+    loadApplications().catch((err) => { if (active) setError(err.message); });
+    if (isAdmin) loadIdentificationReports().catch((err) => { if (active) setError(err.message); });
     return () => { active = false; };
   }, [loadApplications, loadIdentificationReports, isAdmin]);
 
-  const reviewIdentificationReport = async (item: IdentificationReport, status: 'reviewed' | 'resolved' | 'dismissed') => {\n    setLoading(true); setError('');\n    try {\n      await requestRows('supplier_identification_reports?id=eq.' + encodeURIComponent(item.id), session.access_token, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }) });\n      await loadIdentificationReports();\n    } catch (err: any) { setError(err.message || 'Could not update identification report.'); }\n    finally { setLoading(false); }\n  };\n\n  const issueCode = async (event: React.FormEvent) => {
+  const reviewIdentificationReport = async (item: IdentificationReport, status: 'reviewed' | 'resolved' | 'dismissed') => {
+    setLoading(true); setError('');
+    try {
+      await requestRows('supplier_identification_reports?id=eq.' + encodeURIComponent(item.id), session.access_token, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }) });
+      await loadIdentificationReports();
+    } catch (err: any) { setError(err.message || 'Could not update identification report.'); }
+    finally { setLoading(false); }
+  };
+
+  const issueCode = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true); setError(''); setMessage(''); setIssuedCode('');
     try {
@@ -207,7 +226,8 @@ export const SupplierOnboardingPanel: React.FC<{
           </form>
         </>
       )}
-      {application?.status === 'approved' && <SupplierProductWorkspace session={session} lang={lang} />}\n      {error && <p role="alert" className="rounded-xl bg-red-50 p-2.5 text-[12px] text-red-700">{error}</p>}
+      {application?.status === 'approved' && <SupplierProductWorkspace session={session} lang={lang} />}
+      {error && <p role="alert" className="rounded-xl bg-red-50 p-2.5 text-[12px] text-red-700">{error}</p>}
       {message && <p className="rounded-xl bg-emerald-50 p-2.5 text-[12px] text-emerald-800">{message}</p>}
     </section>
   );
