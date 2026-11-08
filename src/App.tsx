@@ -282,6 +282,9 @@ export default function App() {
     const restoreSession = async () => {
       if (!session?.access_token) return;
       try {
+        if (session.user.temporary_expires_at && Date.parse(session.user.temporary_expires_at) <= Date.now()) {
+          throw new Error('Temporary testing access has expired.');
+        }
         let activeSession = session;
         const expiresAt = Number(session.expires_at || 0);
         if (session.refresh_token && (!expiresAt || expiresAt <= Math.floor(Date.now() / 1000) + 60)) {
