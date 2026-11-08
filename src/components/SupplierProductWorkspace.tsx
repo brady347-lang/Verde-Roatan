@@ -2,12 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { AlertCircle, Camera, CheckCircle2, Loader2, Sparkles } from 'lucide-react';
 import { AIAnalysisResult, AuthSession, Language } from '../types';
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '../data/initialData';
-import { analyzeBotanicalImage, compressImage, uploadCatalogPhotoDataUrl } from '../services/api';
+import { analyzeBotanicalImage, compressImage } from '../services/api';
 
 type Nursery = { id: string; name: string };
 type Identification = { common: string; scientific: string; confidence: number | null; model: string; status: 'identified' | 'uncertain' };
 
-async function rest(path: string, token: string, init?: RequestInit) {
+async function uploadSupplierPhoto(productId: string, userId: string, dataUrl: string, token: string) {\n  const blob = await (await fetch(dataUrl)).blob();\n  const path = `${userId}/${productId}/${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;\n  const upload = await fetch(`${SUPABASE_URL}/storage/v1/object/product-images/${path.split('/').map(encodeURIComponent).join('/')}`, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });\n  const uploaded = await upload.json().catch(() => ({}));\n  if (!upload.ok) throw new Error(uploaded.message || uploaded.error || 'Product photo upload failed.');\n  const imageUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${path.split('/').map(encodeURIComponent).join('/')}`;\n  await rest(`products?id=eq.${encodeURIComponent(productId)}`, token, { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) });\n  return imageUrl;\n}\n\nasync function rest(path: string, token: string, init?: RequestInit) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
     headers: {
@@ -40,7 +40,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
   const [stock, setStock] = useState('1');
   const [reportNotes, setReportNotes] = useState('');
   const [reportOpen, setReportOpen] = useState(false);
-  const [submittedProductId, setSubmittedProductId] = useState('');
+  const [submittedProductId, setSubmittedProductId] = useState('');\n  const [submittedImageUrl, setSubmittedImageUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState('');
@@ -124,7 +124,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
       });
       if (!Array.isArray(rows) || !rows[0]?.id) throw new Error('The listing was not returned after saving.');
       createdId = rows[0].id;
-      await uploadCatalogPhotoDataUrl(createdId, photoPreview, session.access_token);
+      const imageUrl = await uploadSupplierPhoto(createdId, session.user.id, photoPreview, session.access_token);\n      setSubmittedImageUrl(imageUrl);
       setMessage(es ? 'Producto enviado para revisión. No será visible hasta la aprobación del administrador.' : 'Listing submitted for review. It will remain hidden until an administrator approves it.');
       setSubmittedProductId(createdId);
     } catch (err) {
@@ -151,7 +151,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
           corrected_common_name: name.trim() || null,
           corrected_scientific_name: scientificName.trim() || null,
           report_notes: reportNotes.trim(),
-          image_url: photoPreview || null
+          image_url: submittedImageUrl || null
         })
       });
       await rest('products?id=eq.' + encodeURIComponent(productId), session.access_token, {
