@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
-import { Calculator, Check, CircleDot, Compass, MapPin, Play, RotateCcw, Square, Trees, Waves } from 'lucide-react';
+import { Activity, Calculator, Check, CircleDot, Compass, Leaf, MapPin, Play, RotateCcw, Square, Sun, Trees, Waves } from 'lucide-react';
 import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
+import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = { lat: number; lon: number; accuracy: number; };
@@ -123,7 +124,29 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [manualWidth, setManualWidth] = useState('8');
   const [waste, setWaste] = useState('10');
   const [bagLiters, setBagLiters] = useState('40');
-  const [tool, setTool] = useState<'area' | 'materials' | 'irrigation'>('area');
+  const [tool, setTool] = useState<'area' | 'materials' | 'irrigation' | 'light'>('area');
+  const [luxInput, setLuxInput] = useState('12000');
+  const [liveLux, setLiveLux] = useState<number | null>(null);
+  const [sensorStatus, setSensorStatus] = useState('');
+  const sensorRef = useRef<{ stop: () => void } | null>(null);
+  const lux = liveLux ?? Math.max(0, Number(luxInput) || 0);
+  const lightAssessment = useMemo(() => assessLight(lux), [lux]);
+  const lightMatches = useMemo(() => recommendPlantsForLight(lux), [lux]);
+  useEffect(() => () => { sensorRef.current?.stop(); }, []);
+  useEffect(() => { if (tool !== 'light' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } }, [tool]);
+  const startLightSensor = () => {
+    type SensorLike = { illuminance?: number; start: () => void; stop: () => void; addEventListener: (name: string, callback: () => void) => void; onerror: ((event: unknown) => void) | null };
+    const Sensor = (window as unknown as { AmbientLightSensor?: new (options?: { frequency?: number }) => SensorLike }).AmbientLightSensor;
+    if (!Sensor) { setSensorStatus(es ? 'El sensor de luz ambiental no está disponible en este dispositivo o navegador. Introduce los lux manualmente.' : 'Ambient light sensor is not available on this device or browser. Enter lux manually.'); return; }
+    try {
+      sensorRef.current?.stop();
+      const sensor = new Sensor({ frequency: 1 });
+      sensor.addEventListener('reading', () => { if (typeof sensor.illuminance === 'number' && Number.isFinite(sensor.illuminance)) setLiveLux(sensor.illuminance); });
+      sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Revisa los permisos o introduce los lux manualmente.' : 'Could not read the sensor. Check device permissions or enter lux manually.');
+      sensor.start(); sensorRef.current = sensor; setSensorStatus(es ? 'Sensor activo: lectura ambiental en tiempo real.' : 'Sensor active: live ambient reading.');
+    } catch { setSensorStatus(es ? 'El dispositivo bloqueó el sensor. Puedes introducir los lux manualmente.' : 'The device blocked the sensor. You can enter lux manually.'); }
+  };
+  const stopLightSensor = () => { sensorRef.current?.stop(); sensorRef.current = null; setLiveLux(null); setSensorStatus(es ? 'Sensor detenido.' : 'Sensor stopped.'); };
   const measurement = useMemo(() => measurePolygon(points), [points]);
   const sodOptions = useMemo(() => catalog.filter((item) => item.kind === 'grass' && /sod|zoysia|natural grass/i.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))), [catalog]);
   const selectedSod = sodOptions.find((item) => item.id === selectedSodId);
@@ -191,12 +214,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const tabs = [
     { id: 'area' as const, label: es ? 'Área GPS' : 'GPS area', icon: MapPin },
     { id: 'materials' as const, label: es ? 'Materiales' : 'Materials', icon: Calculator },
-    { id: 'irrigation' as const, label: es ? 'Riego' : 'Irrigation', icon: Waves }
+    { id: 'irrigation' as const, label: es ? 'Riego' : 'Irrigation', icon: Waves },
+    { id: 'light' as const, label: es ? 'Luz' : 'Light', icon: Sun }
   ];
   return (
     <div className="flex flex-col gap-4 pb-7">
       <header className="px-1"><p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-[var(--palm)]">{es ? 'KIT PROFESIONAL' : 'PROFESSIONAL TOOLKIT'}</p><h1 className="text-2xl font-extrabold">{es ? 'Herramientas de paisajismo' : 'Landscape tools'}</h1><p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Mediciones y cálculos prácticos para planificar tu próximo proyecto.' : 'Practical measurements and calculations for your next project.'}</p></header>
-      <div className="grid grid-cols-3 gap-2 rounded-2xl bg-[var(--surface-2)] p-1">
+      <div className="grid grid-cols-4 gap-2 rounded-2xl bg-[var(--surface-2)] p-1">
         {tabs.map((item) => <button key={item.id} onClick={() => setTool(item.id)} className={`flex flex-col items-center gap-1 rounded-xl px-1 py-3 text-[11px] font-bold ${tool === item.id ? 'bg-[var(--surface)] text-[var(--palm)] shadow-sm' : 'text-[var(--ink-soft)]'}`}><item.icon className="h-5 w-5" />{item.label}</button>)}
       </div>
       {tool === 'area' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
@@ -333,6 +357,18 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         </div>
         <p className="mt-3 text-[10px] text-[var(--ink-soft)]">{es ? 'Cálculo geométrico de volumen. La cantidad real puede variar por compactación, pendiente, asentamiento y densidad del material.' : 'Geometric volume estimate. Actual quantities vary with compaction, slope, settling and material density.'}</p>
         </> : <div className="mt-4 rounded-2xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'Los adoquines se calculan por superficie y dimensiones de cada pieza, no por volumen de relleno. Añade el tamaño y cobertura exactos del producto cuando esté registrado en el catálogo.' : 'Pavers are estimated by surface area and each unit’s dimensions, not by fill volume. Add exact product dimensions and coverage when they are recorded in the catalog.'}</div>}
+      </section>}
+      {tool === 'light' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
+        <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medidor inteligente de luz' : 'Intelligent light meter'}</h2></div>
+        <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Mide la iluminación del lugar y compárala con las necesidades de luz de las plantas del Centro de Conocimiento Botánico.' : 'Measure the site illumination and compare it with plant light requirements from the Botanical Knowledge Center.'}</p>
+        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{Math.round(lux).toLocaleString()} lux</b><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
+        <label className="block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Lectura de luz (lux)' : 'Light reading (lux)'}<input type="number" min="0" max="200000" value={luxInput} onChange={event => { setLuxInput(event.target.value); setLiveLux(null); }} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
+        <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
+        {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
+        <div className="mt-5"><h3 className="flex items-center gap-2 text-base font-extrabold"><Leaf className="h-4 w-4 text-[var(--palm)]" />{es ? 'Plantas recomendadas' : 'Recommended plants'}</h3><p className="mb-3 mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Coincidencias basadas en los requisitos de luz registrados en el Centro de Conocimiento.' : 'Matches based on sunlight requirements recorded in the Botanical Knowledge Center.'}</p>
+          {lightMatches.length ? <div className="space-y-2">{lightMatches.map(match => <div key={match.profile.id} className="rounded-2xl border border-[var(--line)] p-3"><div className="flex items-start justify-between gap-2"><div><b className="text-sm">{match.profile.identification.common_names[es ? 'es' : 'en'][0] || match.profile.taxonomy.scientific_name}</b><p className="text-xs italic text-[var(--ink-soft)]">{match.profile.taxonomy.scientific_name}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${match.fit === 'strong' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{match.fit === 'strong' ? (es ? 'Buena coincidencia' : 'Strong fit') : (es ? 'Posible' : 'Possible fit')}</span></div><p className="mt-1 text-xs text-[var(--ink-soft)]">{match.reason}</p></div>)}</div> : <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay perfiles públicos coincidentes todavía.' : 'No matching public profiles are available yet.'}</p>}
+        </div>
+        <p className="mt-4 rounded-xl border border-dashed border-[var(--line)] p-3 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Una lectura puntual de lux no mide la luz diaria total ni la radiación fotosintética (PPFD/DLI). El sensor depende del hardware y permisos del teléfono. Observa el lugar durante varias horas antes de plantar.' : 'A single lux reading does not measure daily light integral or photosynthetic radiation (PPFD/DLI). Sensor availability depends on phone hardware and permissions. Observe the location across several hours before planting.'}</p>
       </section>}
       {tool === 'irrigation' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm"><div className="flex items-center gap-2"><Waves className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Planificador básico de riego' : 'Basic irrigation planner'}</h2></div><p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Estimación de emisores según separación aproximada.' : 'Estimate emitter count from approximate spacing.'}</p><label className="mt-4 block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Área por planta (m²)' : 'Area per plant (m²)'}<input type="number" min="0.01" step="0.01" value={coverage} onChange={(event) => setCoverage(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label><div className="mt-3 rounded-2xl bg-[var(--surface-2)] p-4"><p className="text-xs text-[var(--ink-soft)]">{es ? 'Plantas / emisores estimados' : 'Estimated plants / emitters'}</p><b className="text-3xl">{Number.isFinite(irrigationEmitters) ? irrigationEmitters : 0}</b><p className="mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Basado en el área medida o introducida: ' : 'Based on measured or manually entered area: '}{m2.toFixed(1)} m²</p></div><p className="mt-3 text-[10px] text-[var(--ink-soft)]">{es ? 'No sustituye el diseño hidráulico: presión, caudal, pendientes y necesidades de cada especie deben verificarse.' : 'Not a hydraulic design. Verify pressure, flow, slope and species-specific water needs.'}</p></section>}
       <div className="flex items-center gap-2 rounded-2xl border border-dashed border-[var(--line)] p-3 text-xs text-[var(--ink-soft)]"><Trees className="h-4 w-4 shrink-0 text-[var(--palm)]" />{es ? 'Más herramientas profesionales se añadirán aquí: diseño de jardines, estimación de plantas y planificación de proyectos.' : 'More professional tools will be added here: garden layouts, plant quantities and project planning.'}</div>
