@@ -252,6 +252,7 @@ export const INITIAL_CATALOG: CatalogItem[] = [
   },
   {
     id: 'p-zoysia',
+    material_spec: { coverage_area_m2: 0.83612736, unit_label: '1 sq yd slab' },
     t: 'plant',
     name: 'Empire Zoysia Sod (Per Sq Yd)',
     sci: 'Zoysia japonica',
@@ -275,6 +276,7 @@ export const INITIAL_CATALOG: CatalogItem[] = [
   // Products
   {
     id: 'prd-coir',
+    material_spec: { package_volume_liters: 40, unit_label: '40 L bag' },
     t: 'product',
     name: 'Organic Roatán Coconut Coir Soil Blend',
     sci: 'Aerated Planting Medium (40L)',
