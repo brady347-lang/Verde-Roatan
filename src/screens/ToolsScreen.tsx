@@ -10,6 +10,7 @@ import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } 
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
 import { estimateCameraBrightness } from '../services/cameraBrightness';
+import { LuxReadingFilter } from '../services/luxReadingFilter';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = TrackPoint;
@@ -126,6 +127,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [bagLiters, setBagLiters] = useState('40');
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation' | 'light'>('area');
   const [liveLux, setLiveLux] = useState<number | null>(null);
+  const [rawLux, setRawLux] = useState<number | null>(null);
+  const luxFilterRef = useRef(new LuxReadingFilter());
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
   const sensorTimeoutRef = useRef<number | null>(null);
@@ -234,6 +237,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
     setLiveLux(null);
+    setRawLux(null);
+    luxFilterRef.current.reset();
     setSensorStatus(es ? 'Esperando la primera lectura del sensor…' : 'Waiting for the first sensor reading…');
     try {
       if (Capacitor.isNativePlatform()) {
@@ -242,7 +247,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           if (!Number.isFinite(event.lux)) return;
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
-          setLiveLux(Math.max(0, event.lux));
+          setRawLux(Math.max(0, event.lux));
+          setLiveLux(luxFilterRef.current.push(Math.max(0, event.lux)));
           setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
         });
         const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
@@ -281,7 +287,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         if (typeof sensor.illuminance === 'number' && Number.isFinite(sensor.illuminance)) {
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
-          setLiveLux(sensor.illuminance);
+          setRawLux(sensor.illuminance);
+          setLiveLux(luxFilterRef.current.push(sensor.illuminance));
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
       });
@@ -307,6 +314,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     sensorTimeoutRef.current = null;
     stopCameraFallback();
     setLiveLux(null);
+    setRawLux(null);
+    luxFilterRef.current.reset();
     setSensorStatus(es ? 'Medición detenida.' : 'Measurement stopped.');
   };
   const openPhoneLocationSettings = async () => {
@@ -637,6 +646,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" />
           {hasLiveLux ? <>
             <b className="mt-2 block text-3xl tabular-nums">{Math.round(liveLux!).toLocaleString()} lux</b>
+            <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Lectura estabilizada para mostrar' : 'Stabilized display reading'} · {es ? 'bruto' : 'raw'}: {rawLux === null ? '—' : rawLux.toFixed(1)} lux</p>
             <p className="text-sm font-bold">{lightAssessment.label}</p>
             <p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p>
             <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p>
