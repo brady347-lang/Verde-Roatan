@@ -225,3 +225,27 @@ html, body {
   .scan-overlay::before { animation: none; }
   .scan-orbit-ring { opacity: .42; }
 }
+
+
+/* Landscape phones: let the app use the full rotated viewport instead of
+   remaining trapped in the 440px portrait shell. CSS responds to orientation
+   and viewport changes without requiring a reload. */
+@media (orientation: landscape) {
+  .app-viewport {
+    align-items: stretch;
+  }
+
+  .app-shell {
+    width: 100%;
+    max-width: none;
+  }
+
+  .app-main {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  .app-bottom-nav {
+    padding-top: 0.25rem;
+  }
+}
