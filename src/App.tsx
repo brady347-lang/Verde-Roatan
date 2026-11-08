@@ -75,6 +75,7 @@ import { CurrencyWidget } from './components/CurrencyWidget';
 import { Navigation, TabType } from './components/Navigation';
 import { BottomSheet } from './components/BottomSheet';
 import { HomeScreen } from './screens/HomeScreen';
+import { CommunityHomeScreen } from './screens/CommunityHomeScreen';
 import { RootWiseHomeScreen } from './screens/RootWiseHomeScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { ShopScreen } from './screens/ShopScreen';
@@ -124,6 +125,7 @@ export default function App() {
     safeSetItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
   const [tab, setTab] = useState<TabType>('home');
+  const [showMyRootWise, setShowMyRootWise] = useState(false);
   const prevTabRef = useRef<TabType>(tab);
   const prevIdx = TAB_ORDER.indexOf(prevTabRef.current);
   const currentIdx = TAB_ORDER.indexOf(tab);
@@ -1861,6 +1863,7 @@ export default function App() {
             }
             setActiveModal(null);
             setIsGardenAdvisorOpen(false);
+            setShowMyRootWise(false);
             setTab('home');
           }}
         />
@@ -1898,7 +1901,17 @@ export default function App() {
               }}
               className="flex flex-col min-h-full will-change-transform"
             >
-              {tab === 'home' && (
+              {tab === 'home' && !showMyRootWise && (
+            <CommunityHomeScreen
+              lang={lang}
+              displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
+              isSignedIn={Boolean(session?.user)}
+              onOpenMyRootWise={() => setShowMyRootWise(true)}
+              onNavigate={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
+            />
+          )}
+
+          {tab === 'home' && showMyRootWise && (
             <RootWiseHomeScreen
               lang={lang}
               displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
@@ -1906,7 +1919,7 @@ export default function App() {
               plantCount={currentCatalog.filter((item) => item.t === 'plant').length}
               catalog={currentCatalog}
               garden={garden}
-              onNavigate={(nextTab) => setTab(nextTab)}
+              onNavigate={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
               onStartIdentify={() => {
                 setIdentifyMode('plant');
                 setIdentifyResult(null);
@@ -2157,7 +2170,7 @@ export default function App() {
         <div className="app-bottom-nav shrink-0 px-3 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
           <Navigation
             activeTab={tab}
-            onSelectTab={(nextTab) => setTab(nextTab)}
+            onSelectTab={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
             cartCount={cartCount}
             activeOrdersCount={activeOrders.length}
             lang={lang}
