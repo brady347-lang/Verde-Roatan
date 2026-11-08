@@ -119,3 +119,20 @@ The user wants hands-on work directly in GitHub, clear continuity between chats,
   - `f66435a9b6f19a58681e86c863a451aba7c4f460` — make natural sod optional and show saved project materials.
 - Source inspection confirms the new categories, conservative package parsing, natural-sod-only filter, paver volume exclusion, and saved-plot fields. Full lint/typecheck/build and Android runtime tests have not been run. No APK build, merge, deployment or inventory reservation was performed.
 - Next: add explicit structured coverage metadata to catalog items (e.g. liters per bag, square meters per unit, or cubic meters per bulk unit) rather than parsing display strings. Then implement paver counts and package-based mulch/gravel/topsoil calculations only for records with verified coverage. Review whether saved plot cards should summarize all selected project materials.
+
+## Structured catalog material specifications (Round 7)
+- Added optional `CatalogMaterialSpec` to `CatalogItem`, with explicit `package_volume_liters`, `coverage_area_m2`, and `unit_label`. Estimators no longer parse package-size display strings.
+- Added verified specs to current starter catalog records:
+  - Empire Zoysia: `coverage_area_m2: 0.83612736`, `unit_label: 1 sq yd slab`.
+  - Organic Roatán Coconut Coir Soil Blend: `package_volume_liters: 40`, `unit_label: 40 L bag`.
+- Sod quantity and subtotal now require explicit per-unit coverage. Other catalog materials require explicit package volume. Pavers use surface coverage rather than fill volume and only calculate when a matching product has verified coverage metadata.
+- App catalog restoration now hydrates older localStorage records with the current starter catalog's verified `material_spec` by matching stable item IDs. Live catalog refresh also preserves the local/default spec when the API payload omits it, without overwriting an explicit remote spec.
+- This avoids losing material coverage after app refresh or on devices with an older cached catalog. Custom catalog records without structured specs remain visible but do not receive guessed quantities/prices.
+- Commits:
+  - `224d288eee733d64682c3eb68ada2ae3c10d715f` — add structured material specification type.
+  - `2eee94c9f78ded2cd6e491be963909ec32034fa7` — annotate starter sod and coir records.
+  - `217d0e9e6741517da6126119e0b2ffcd65803877` — use structured specifications in the estimator.
+  - `61a3f2d107778674cd86b12dead8397d7ce8ee23` — hydrate/preserve specs across cached and refreshed catalog records.
+  - `33247a1ccc879cb465c62203c36006fd06a55b19` — prioritize paver area coverage over package volume.
+- Source inspection is complete. Full TypeScript lint/build, Android runtime and live catalog API validation have not been run. No database schema change was made because the current API response is not yet modeled to expose these optional fields; specs for existing starter items are retained locally by stable ID.
+- Next: expose `material_spec` through the authoritative catalog API and admin create/edit workflow, persist it in the backing catalog schema, then add calculation tests for volume packages, paver coverage, waste factors, and insufficient stock.
