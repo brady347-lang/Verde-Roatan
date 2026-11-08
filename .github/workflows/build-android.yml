@@ -78,7 +78,15 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          # The Gradle distribution download from GitHub/services.gradle.org sometimes returns 504 or times out.
+          # Retry the build instead of failing the whole release on a network blip.
+          for attempt in 1 2 3; do
+            if ./gradlew assembleDebug; then exit 0; fi
+            echo "Gradle build attempt $attempt failed; retrying in $((attempt * 30))s"
+            sleep $((attempt * 30))
+          done
+          echo "Gradle build failed after 3 attempts"
+          exit 1
 
       - name: Show APK signing fingerprint (must stay the same on every build)
         run: keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | grep 'SHA256'
