@@ -1619,16 +1619,30 @@ export default function App() {
       return msg;
     }
   };
+  const isDatabaseCatalogId = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id));
+
   const handleDeleteCatalogItem = async (id: string, name: string) => {
     if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to delete catalog items.'); return; }
-    try { await deleteCatalogItem(id, session.access_token); setCatalog(prev => prev.filter(x => String(x.id) !== String(id))); setCart(prev => prev.filter(x => String(x.id) !== String(id))); showToast('"' + name + '" deleted from the production catalog.'); }
-    catch (error) { console.error('Catalog deletion failed:', error); showToast(error instanceof Error ? error.message : 'Item was not deleted.'); }
+    try {
+      // Seed catalog entries such as "p-areca" are local-only drafts in this
+      // production project (there is no public.catalog_items table). Remove
+      // them locally; only UUID-backed records are sent to Supabase.
+      if (isDatabaseCatalogId(id)) await deleteCatalogItem(id, session.access_token);
+      setCatalog(prev => prev.filter(x => String(x.id) !== String(id)));
+      setCart(prev => prev.filter(x => String(x.id) !== String(id)));
+      setCustomImages(prev => { const next = { ...prev }; delete next[id]; return next; });
+      showToast('"' + name + '" deleted from the catalog.');
+    } catch (error) { console.error('Catalog deletion failed:', error); showToast(error instanceof Error ? error.message : 'Item was not deleted.'); }
   };
   const handleUpdateItemStock = async (id: string, delta: number) => {
     if (!session?.access_token || !isAdmin) { showToast('Administrator sign-in is required to change stock.'); return; }
     const current = catalog.find(x => String(x.id) === String(id)); if (!current) return;
-    try { const qty = await updateCatalogStock(id, current.stock_quantity + delta, session.access_token); setCatalog(prev => prev.map(x => String(x.id) !== String(id) ? x : { ...x, stock_quantity: qty, stock: qty <= 0 ? 'Out of stock' : qty <= 5 ? 'Low stock' : 'In stock' })); showToast('Stock saved: ' + qty + ' units.'); }
-    catch (error) { console.error('Stock update failed:', error); showToast(error instanceof Error ? error.message : 'Stock was not changed.'); }
+    try {
+      const nextQty = Math.max(0, current.stock_quantity + delta);
+      const qty = isDatabaseCatalogId(id) ? await updateCatalogStock(id, nextQty, session.access_token) : nextQty;
+      setCatalog(prev => prev.map(x => String(x.id) !== String(id) ? x : { ...x, stock_quantity: qty, stock: qty <= 0 ? 'Out of stock' : qty <= 5 ? 'Low stock' : 'In stock' }));
+      showToast((isDatabaseCatalogId(id) ? 'Stock saved: ' : 'Draft stock updated: ') + qty + ' units.');
+    } catch (error) { console.error('Stock update failed:', error); showToast(error instanceof Error ? error.message : 'Stock was not changed.'); }
   };
   // 5. Landscaper Add / Edit
   const handleSaveLandscaper = (crew: Landscaper) => {
