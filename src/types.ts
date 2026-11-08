@@ -121,6 +121,12 @@ export interface SupplierSourcingItem {
 }
 
 export interface AIAnalysisResult {
+  ml_visual_evidence?: {
+    status: 'success' | 'unavailable' | 'not_configured' | 'not_applicable';
+    decision?: 'accept' | 'review' | 'reject';
+    model_version?: string;
+    top_predictions?: Array<{ label: string }>;
+  };
   status: 'success' | 'error';
   matched?: boolean;
   model_used?: string;
