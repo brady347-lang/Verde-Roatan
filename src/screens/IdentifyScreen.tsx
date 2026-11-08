@@ -1,4 +1,4 @@
-import { findCatalogMatches } from '../lib/catalogMatch';
+import { classifyCatalogMatches, type CatalogMatches } from '../lib/catalogMatch';
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -184,13 +184,13 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
     await onAnalyze(finalPhoto);
   };
 
-  const getStrictCatalogMatches = (
+  const getCatalogMatches = (
     record: { common_name?: string; scientific_name?: string; alternative_names?: string[] } | undefined,
     plantCatalog: CatalogItem[] = catalog
-  ): CatalogItem[] => {
+  ): CatalogMatches => {
     // Compare the verified record and the top candidate; catalog names may be Spanish or have no scientific name.
     const top = result?.candidates?.[0];
-    return findCatalogMatches([record || {}, top ? { common_name: top.common_name, scientific_name: top.scientific_name } : {}], plantCatalog);
+    return classifyCatalogMatches([record || {}, top ? { common_name: top.common_name, scientific_name: top.scientific_name } : {}], plantCatalog);
   };
 
   const renderDots = (n: number) => {
@@ -952,10 +952,13 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                   result.verified_botanical_record?.scientific_name ||
                   result.candidates?.[0]?.scientific_name ||
                   '';
-                const matchingCatalogPlants = getStrictCatalogMatches(
+                const catalogMatches = getCatalogMatches(
                   result.verified_botanical_record,
                   catalog
                 );
+
+                const isSimilarOnly = catalogMatches.exact.length === 0 && catalogMatches.similar.length > 0;
+                const matchingCatalogPlants = isSimilarOnly ? catalogMatches.similar : catalogMatches.exact;
 
                 if (matchingCatalogPlants.length > 0) {
                   return (
@@ -963,10 +966,10 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                       <div className="flex items-center justify-between">
                         <h3 className="text-[16px] font-extrabold text-[var(--ink)] flex items-center gap-1.5">
                           <Sprout className="w-4 h-4 text-[var(--palm)]" />
-                          {t('inStockNow')} ({matchingCatalogPlants.length})
+                          {isSimilarOnly ? (lang === 'es' ? 'Plantas similares en stock' : 'Similar plants in stock') : t('inStockNow')} ({matchingCatalogPlants.length})
                         </h3>
                         <span className="text-[11px] font-bold text-[var(--palm)] bg-[var(--palm)]/10 px-2 py-0.5 rounded-full">
-                          Verified Island Stock
+                          {isSimilarOnly ? (lang === 'es' ? 'Mismo género, otra especie' : 'Same genus, different species') : 'Verified Island Stock'}
                         </span>
                       </div>
 
