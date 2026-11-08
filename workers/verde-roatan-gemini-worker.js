@@ -1394,6 +1394,75 @@ async function knowledgeReferenceTaxaSearch(request, body, env) {
   return jsonResponse(200, { status: 'success', results: result.data });
 }
 
+async function knowledgeCatalogReferenceCandidates(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\\/$/, '');
+  const primaryKey = env.PRIMARY_SUPABASE_ANON_KEY;
+  if (!primaryUrl || !primaryKey) return jsonResponse(503, { status: 'error', error: 'The primary catalog connection is not configured.' });
+  const tv = reviewDatabaseConfig(env);
+  const [productsRes, taxaRes] = await Promise.all([
+    fetch(`${primaryUrl}/rest/v1/products?select=id,name,scientific_name,image_url&is_active=eq.true&image_url=not.is.null&order=name.asc&limit=500`, { headers: { apikey: primaryKey, Authorization: `Bearer ${primaryKey}` } }),
+    fetch(`${tv.url}/rest/v1/botanical_taxa?select=id,scientific_name,common_name&record_status=eq.published&order=scientific_name.asc&limit=5000`, { headers: tvHeaders(tv.key) })
+  ]);
+  const [products, taxa] = await Promise.all([productsRes.json().catch(() => null), taxaRes.json().catch(() => null)]);
+  if (!productsRes.ok || !Array.isArray(products)) return jsonResponse(502, { status: 'error', error: 'The active nursery catalog could not be loaded.' });
+  if (!taxaRes.ok || !Array.isArray(taxa)) return jsonResponse(502, { status: 'error', error: 'Published botanical records could not be loaded.' });
+  const normalize = value => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const byScientific = new Map(taxa.filter(t => t.scientific_name).map(t => [normalize(t.scientific_name), t]));
+  const candidates = [];
+  for (const product of products) {
+    let image;
+    try { image = new URL(String(product.image_url || '')); } catch { continue; }
+    if (image.protocol !== 'https:' || image.hostname !== new URL(primaryUrl).hostname ||
+        !image.pathname.startsWith('/storage/v1/object/public/product-images/')) continue;
+    const taxon = byScientific.get(normalize(product.scientific_name));
+    if (!taxon) continue;
+    candidates.push({ product_id: product.id, product_name: product.name, scientific_name: taxon.scientific_name,
+      taxon_id: taxon.id, common_name: taxon.common_name || null, image_url: image.toString() });
+  }
+  return jsonResponse(200, { status: 'success', candidates: candidates.slice(0, 200), matched: candidates.length,
+    catalog_images_scanned: products.length, matching_rule: 'exact normalized scientific name; unmatched items excluded' });
+}
+
+async function knowledgeImportCatalogReferenceImage(request, body, env) {
+  const auth = await requireImportAdmin(request, env);
+  if (auth.response) return auth.response;
+  if (!isUuid(body.product_id) || !isUuid(body.taxon_id)) return jsonResponse(400, { status: 'error', error: 'A valid catalog product and published plant record are required.' });
+  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\\/$/, '');
+  const primaryKey = env.PRIMARY_SUPABASE_ANON_KEY;
+  if (!primaryUrl || !primaryKey) return jsonResponse(503, { status: 'error', error: 'The primary catalog connection is not configured.' });
+  const tv = reviewDatabaseConfig(env);
+  const [productRes, taxonRes] = await Promise.all([
+    fetch(`${primaryUrl}/rest/v1/products?id=eq.${body.product_id}&select=id,name,scientific_name,image_url&is_active=eq.true&limit=1`, { headers: { apikey: primaryKey, Authorization: `Bearer ${primaryKey}` } }),
+    fetch(`${tv.url}/rest/v1/botanical_taxa?id=eq.${body.taxon_id}&select=id,scientific_name,common_name&record_status=eq.published&limit=1`, { headers: tvHeaders(tv.key) })
+  ]);
+  const [products, taxa] = await Promise.all([productRes.json().catch(() => null), taxonRes.json().catch(() => null)]);
+  if (!productRes.ok || !Array.isArray(products) || !products[0]) return jsonResponse(404, { status: 'error', error: 'The active catalog product was not found.' });
+  if (!taxonRes.ok || !Array.isArray(taxa) || !taxa[0]) return jsonResponse(404, { status: 'error', error: 'The published botanical record was not found.' });
+  const product = products[0], taxon = taxa[0];
+  const normalize = value => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!product.scientific_name || normalize(product.scientific_name) !== normalize(taxon.scientific_name)) {
+    return jsonResponse(409, { status: 'error', error: 'The catalog and botanical record do not have an exact scientific-name match.' });
+  }
+  let image;
+  try { image = new URL(String(product.image_url || '')); } catch { return jsonResponse(400, { status: 'error', error: 'The catalog product has no valid image.' }); }
+  if (image.protocol !== 'https:' || image.hostname !== new URL(primaryUrl).hostname ||
+      !image.pathname.startsWith('/storage/v1/object/public/product-images/')) {
+    return jsonResponse(400, { status: 'error', error: 'Only images from the configured public product-images bucket can be imported.' });
+  }
+  const saved = await tvJson(await fetch(`${tv.url}/rest/v1/botanical_taxon_images?on_conflict=taxon_id,image_url`, {
+    method: 'POST', headers: tvHeaders(tv.key, { Prefer: 'resolution=ignore-duplicates,return=representation' }),
+    body: JSON.stringify({ taxon_id: taxon.id, image_url: image.toString(), image_type: 'mature_specimen',
+      source_name: 'RootWise nursery catalog', source_url: image.toString(),
+      attribution: 'Catalog photograph submitted for curator review; original photographer and usage rights have not yet been independently verified.',
+      license: null, review_status: 'pending', visibility: 'private', uploaded_by_email: String(auth.user.email || 'unknown') })
+  }));
+  if (!saved.ok) return jsonResponse(502, { status: 'error', error: 'The catalog photograph could not be added to the private review queue.' });
+  return jsonResponse(200, { status: 'success', queued: Array.isArray(saved.data) && saved.data.length > 0,
+    review_status: 'pending', visibility: 'private', note: 'The image is not eligible for identification results until an administrator reviews and approves it for public use.' });
+}
+
 async function knowledgeReferenceImagesList(request, body, env) {
   const auth = await requireImportAdmin(request, env);
   if (auth.response) return auth.response;
@@ -1817,7 +1886,9 @@ const KNOWLEDGE_ROUTES = {
   promote: knowledgePromote,
   'reference-images/list': knowledgeReferenceImagesList,
   'reference-images/review': knowledgeReferenceImageReview,
-  'reference-images/taxa-search': knowledgeReferenceTaxaSearch
+  'reference-images/taxa-search': knowledgeReferenceTaxaSearch,
+  'reference-images/catalog-candidates': knowledgeCatalogReferenceCandidates,
+  'reference-images/import-catalog': knowledgeImportCatalogReferenceImage
 };
 
 // ---------------------------------------------------------------------------------------------
