@@ -49,7 +49,7 @@ import {
   SupplierPurchaseRequest,
   TransactionRecord
 } from '../types';
-import { STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/initialData';
+import { LEGAL_WORKER_URL, STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/initialData';
 import { usePhotoUrl } from '../lib/photoStore';
 import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
@@ -69,7 +69,7 @@ interface AccountScreenProps {
   session: AuthSession | null;
   isAdmin: boolean;
   onSignIn: (email: string, pass: string) => Promise<void>;
-  onSignUp: (email: string, pass: string, name: string) => Promise<void>;
+  onSignUp: (email: string, pass: string, name: string) => Promise<{ requiresEmailConfirmation: boolean }>;
   onSignOut: () => void;
   garden: GardenItem[];
   onRemoveFromGarden: (id: string) => void;
@@ -191,12 +191,12 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
 
     try {
       if (authMode === 'signup') {
-        await onSignUp(email, password, fullName);
-        setAuthSuccessMsg(
-          lang === 'es'
-            ? '¡Cuenta creada con éxito!'
-            : 'Account registered successfully!'
-        );
+        const result = await onSignUp(email, password, fullName);
+        setAuthSuccessMsg(result.requiresEmailConfirmation
+          ? (lang === 'es'
+            ? 'Tu cuenta fue registrada. Revisa tu correo y confirma la dirección antes de iniciar sesión. También revisa spam.'
+            : 'Your account was registered. Check your email and confirm your address before signing in. Check your spam folder too.')
+          : (lang === 'es' ? '¡Cuenta creada y sesión iniciada!' : 'Account created and signed in successfully.'));
       } else if (authMode === 'admin') {
         // Authenticate strictly with the password saved in Supabase
         const targetEmail = getDecodedAdminEmail();
@@ -1168,6 +1168,15 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                     className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl pl-9 pr-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--lagoon)]"
                   />
                 </div>
+              </div>
+            )}
+
+            {authMode === 'login' && (
+              <div className="flex justify-end -mt-1">
+                <a href={LEGAL_WORKER_URL + '/reset-password'} target="_blank" rel="noopener noreferrer"
+                  className="text-[12px] font-semibold text-[var(--lagoon)] underline underline-offset-2">
+                  {lang === 'es' ? '¿Olvidaste tu contraseña?' : 'Forgot password?'}
+                </a>
               </div>
             )}
 
