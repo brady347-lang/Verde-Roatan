@@ -1,14 +1,8 @@
 name: Deploy Verde Roatan Legal Pages Worker
 
+# Production deployment is manual only. Merging a code PR must never deploy this Worker.
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "workers/verde-roatan-legal-worker.js"
-      - "wrangler.legal.toml"
-      - ".github/workflows/deploy-legal-worker.yml"
 
 permissions:
   contents: read
