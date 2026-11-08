@@ -17,6 +17,15 @@ This note preserves the active project context so work can continue in a fresh C
 - Example check: 80 m² area / 50 m² per plant = 1 estimated emitter; changing the area-per-plant input changes the result. This is a rough layout estimate, not a hydraulic design.
 - No merge or deployment has been performed. Full project typecheck/build has not yet been run.
 
+## Area measurement and GPS improvements (Round 2)
+- Added Leaflet / React Leaflet with OpenStreetMap tiles to the landscape area tool. Three or more GPS corners render a shaded polygon; one or two points render location markers / a line. The map auto-fits captured points.
+- Manual length/width now have a proportional rectangular diagram, clearly labeled as a diagram rather than a geographic map.
+- Added Capacitor Geolocation and native permission check/request flow. Web fallback now distinguishes insecure HTTP, unavailable browser geolocation, permission denial and generic GPS failures. Error guidance includes Android Settings → Apps → Rootwise → Permissions → Location.
+- New package dependencies: `@capacitor/geolocation`, `leaflet`, `react-leaflet`, `@types/leaflet`.
+- Important Android follow-through: run `npm install` and `npx cap sync android` in the Android build environment so the Geolocation plugin is registered and its Android manifest permissions are merged. The repository branch does not currently contain a tracked `android/app/src/main/AndroidManifest.xml`, so native manifest merge and runtime permission prompts still need verification in the actual Android project.
+- OpenStreetMap tiles require internet connectivity. The map is not an offline basemap.
+- Validation outstanding: install dependencies, run `npm run lint`, `npm run build`, then test GPS permission grant/deny, precise/coarse location, three-corner polygon, map auto-fit, and manual rectangle on a physical Android device. No build, sync, merge or deployment has been performed in this chat.
+
 ## Current task to resume
 Investigate the Botanical Knowledge Center → Reference Photos screen and the catalog-photo import experience.
 
