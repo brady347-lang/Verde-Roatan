@@ -339,7 +339,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number) => {
     const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp });
-    if (!decision.accept) {
+    if (decision.accept === false) {
       if (decision.reason === 'inaccurate') setTrackingStatus(es ? 'Esperando una señal GPS más precisa…' : 'Waiting for a more accurate GPS fix…');
       else if (decision.reason === 'jump') setTrackingStatus(es ? 'Se ignoró un salto brusco del GPS.' : 'Ignored a sudden GPS jump.');
       return;
