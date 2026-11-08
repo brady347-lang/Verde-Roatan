@@ -263,6 +263,14 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  if (session?.user.temporary_role === 'supplier') {
+    return (
+      <div className="flex flex-col gap-4 pb-8">
+        <SupplierOnboardingPanel lang={lang} session={session} isAdmin={false} temporarySupplier />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4 pb-8">
       <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4">
