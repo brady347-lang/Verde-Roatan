@@ -55,7 +55,7 @@ create policy "Admins manage identification reports"
   using (public.is_app_admin())
   with check (public.is_app_admin());
 
-grant select, insert on public.supplier_identification_reports to authenticated;
+grant select, insert, update, delete on public.supplier_identification_reports to authenticated;
 revoke all on public.supplier_identification_reports from anon;
 
 comment on table public.supplier_identification_reports is
