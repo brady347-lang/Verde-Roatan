@@ -494,6 +494,34 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             </motion.div>
           )}
 
+          {mode === 'plant' && result.ml_visual_evidence?.status === 'success' && (
+            <div className="flex flex-col gap-2 rounded-2xl border border-[var(--palm)]/25 bg-[var(--palm)]/5 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-[12px] font-extrabold text-[var(--palm)]">
+                  <Leaf className="h-4 w-4" />
+                  {lang === 'es' ? 'Evidencia visual independiente' : 'Independent visual evidence'}
+                </span>
+                <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--ink-soft)]">
+                  {result.ml_visual_evidence.decision || 'review'}
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {(result.ml_visual_evidence.top_predictions || []).map((item, idx) => (
+                  <span key={item.label + idx} className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-2 py-1 text-[11px] font-semibold text-[var(--ink)]">
+                    {item.label === 'OUT_OF_CATALOG'
+                      ? (lang === 'es' ? 'Sin coincidencia verificada en catálogo' : 'No verified catalog match yet')
+                      : item.label}
+                  </span>
+                ))}
+              </div>
+              <p className="text-[10.5px] leading-snug text-[var(--ink-soft)]">
+                {lang === 'es'
+                  ? 'Señal de similitud del modelo, no una verificación científica. Confirma los resultados inciertos con un experto.'
+                  : 'Model similarity evidence, not scientific verification. Confirm uncertain results with an expert.'}
+              </p>
+            </div>
+          )}
+
           {/* Pest Mode Diagnostic Dossier */}
           {mode === 'pest' && result.result && (
             <div className="flex flex-col gap-4">
