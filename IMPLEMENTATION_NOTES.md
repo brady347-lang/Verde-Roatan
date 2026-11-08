@@ -15,6 +15,7 @@ This pass preserves the original React/TypeScript application and its existing S
 - Offline currency display fallback is clearly treated as a manual reference rate of 26 HNL/USD. When the currency worker responds, its live rate remains authoritative.
 
 - Catalog ID routing now distinguishes UUID-backed `products` rows from legacy text-keyed `catalog_items` rows. Delete, stock updates, and catalog photo URL updates use the matching table; deletion requires a returned row so the UI cannot report success when Supabase changed nothing.
+- Added `supabase/migrations/20261107_verde_catalog_delete_policy.sql` to permit trusted admins to delete rows from both catalog tables under the existing `app_metadata.role = admin` authorization model. This migration must be applied to the connected Supabase project before testing deletion.
 
 ## Important integration boundaries
 
