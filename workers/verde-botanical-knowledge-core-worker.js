@@ -445,6 +445,54 @@ async function searchKnowledge(request, body, env) {
 // Private-bucket object paths only: no traversal, no leading slash, no empty segments.
 const SAFE_EVIDENCE_PATH = /^(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9][A-Za-z0-9_.\-\/]{0,300}$/;
 
+async function archiveCatalogImage(env, item, payload) {
+  const imageUrl = String(payload.image_url || '');
+  if (!imageUrl) return null;
+  const cfg = config(env);
+  let parsed;
+  try { parsed = new URL(imageUrl); } catch { throw new Error('Catalog image URL is invalid.'); }
+  const primary = new URL(cfg.primaryUrl);
+  if (parsed.protocol !== 'https:' || parsed.hostname !== primary.hostname ||
+      !parsed.pathname.startsWith('/storage/v1/object/public/product-images/')) {
+    throw new Error('Catalog image must come from the configured primary product-images bucket.');
+  }
+  const response = await fetch(imageUrl, { method: 'GET', redirect: 'error' });
+  if (!response.ok) throw new Error('Catalog image could not be retrieved (' + response.status + ').');
+  const mime = String(response.headers.get('content-type') || '').split(';')[0].toLowerCase();
+  if (!['image/jpeg','image/png','image/webp'].includes(mime)) throw new Error('Catalog evidence must be JPEG, PNG, or WebP.');
+  const bytes = await response.arrayBuffer();
+  if (!bytes.byteLength || bytes.byteLength > 15 * 1024 * 1024) throw new Error('Catalog evidence image must be smaller than 15 MB.');
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  const fingerprint = Array.from(new Uint8Array(digest)).map(x => x.toString(16).padStart(2,'0')).join('');
+  const ext = mime === 'image/png' ? 'png' : mime === 'image/webp' ? 'webp' : 'jpg';
+  const path = 'catalog-archive/' + fingerprint + '.' + ext;
+  const stored = await fetch(cfg.reviewUrl + '/storage/v1/object/botanical-health-evidence/' + path, {
+    method: 'POST',
+    headers: { apikey: cfg.serviceKey, Authorization: 'Bearer ' + cfg.serviceKey, 'Content-Type': mime, 'x-upsert': 'true' },
+    body: bytes
+  });
+  if (!stored.ok) throw new Error('Catalog reference image could not be copied to the private botanical archive.');
+  const archive = await db(env, 'botanical_reference_images', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal', 'resolution': 'merge-duplicates' },
+    body: JSON.stringify({
+      source_system: clean(payload.source_system || 'rootwise-catalog',80),
+      source_record_id: clean(item.source_record_id,180) || null,
+      source_name: clean(payload.common_name || payload.name,180) || null,
+      scientific_name: clean(payload.scientific_name,180) || null,
+      image_url: imageUrl,
+      image_storage_path: path,
+      image_fingerprint: fingerprint,
+      evidence_status: 'community_submitted',
+      is_reference_eligible: false,
+      verification_basis: null,
+      source_metadata: { evidence_queue_id: item.id, source_url_host: parsed.hostname }
+    })
+  });
+  if (!archive.ok) throw new Error('Private image was copied but its botanical archive record could not be saved.');
+  return path;
+}
+
 async function runEvidenceCycle(env) {
   const started = new Date().toISOString();
   const report = { status: 'idle', started_at: started, finished_at: null, reviewed: 0, escalated: 0, failed: 0 };
@@ -464,6 +512,13 @@ async function runEvidenceCycle(env) {
     try {
       const payload = item.submitted_payload || {};
       let aiReview = null;
+      if (!payload.image_storage_path && payload.image_url) {
+        payload.image_storage_path = await archiveCatalogImage(env, item, payload);
+        await db(env,'botanical_evidence_queue?id=eq.'+item.id,{
+          method:'PATCH',headers:{Prefer:'return=minimal'},
+          body:JSON.stringify({submitted_payload:payload})
+        });
+      }
       if (payload.image_storage_path && env.GEMINI_WORKER_URL && env.ROOTWISE_INTERNAL_SECRET) {
         const response = await fetch(env.GEMINI_WORKER_URL.replace(/\/$/,'')+'/internal/evidence-review',{
           method:'POST',headers:{'Content-Type':'application/json','x-rootwise-internal-secret':env.ROOTWISE_INTERNAL_SECRET},
