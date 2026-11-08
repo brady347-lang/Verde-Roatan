@@ -1,4 +1,5 @@
 import { checkForAppUpdate, AppUpdateInfo } from './lib/appUpdate';
+import { rootWiseNotificationSounds } from './services/rootwiseNotifications';
 import { LandscaperQuoteForm } from './components/LandscaperQuoteForm';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { putPhoto, deletePhoto, migrateGardenPhotos, requestPersistentStorage, safeSetItem } from './lib/photoStore';
@@ -697,6 +698,10 @@ export default function App() {
         session?.access_token
       );
       setIdentifyResult(res);
+      if (identifyMode === 'plant') {
+        const plantName = res.verified_botanical_record?.common_name || res.candidates?.[0]?.common_name || res.result?.primary_diagnosis || (lang === 'es' ? 'Especimen vegetal' : 'Plant specimen');
+        void rootWiseNotificationSounds.plantIdentified(plantName, lang);
+      }
       setIdentifyLoading(false);
 
     } catch (err: any) {
@@ -857,6 +862,7 @@ export default function App() {
     };
 
     setGarden((prev) => [entry, ...prev]);
+    void rootWiseNotificationSounds.savedSuccess(name, lang);
     showToast(
       photoFailed
         ? (lang === 'es' ? 'Guardado, pero la foto no se pudo almacenar.' : 'Saved, but the photo could not be stored on this device.')
