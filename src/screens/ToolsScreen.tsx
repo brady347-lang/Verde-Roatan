@@ -641,8 +641,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
             <p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p>
             <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p>
           </> : <>
-            <b className="mt-2 block text-base">{es ? 'Esperando medición del sensor' : 'Waiting for sensor measurement'}</b>
-            <p className="mt-1 text-xs text-[var(--ink-soft)]">{es ? 'La lectura y las recomendaciones aparecerán aquí cuando el sensor del dispositivo envíe datos reales.' : 'The reading and recommendations will appear here when the device sensor provides real data.'}</p>
+            <b className="mt-2 block text-base">{cameraActive ? (es ? 'Medición por cámara activa' : 'Camera estimate active') : (es ? 'Esperando medición del sensor' : 'Waiting for sensor measurement')}</b>
+            <p className="mt-1 text-xs text-[var(--ink-soft)]">{cameraActive ? (es ? 'La cámara muestra brillo relativo. No se presenta como lux ni activa recomendaciones de plantas hasta calibrar el dispositivo.' : 'The camera reports relative brightness. It is not shown as lux and will not trigger plant recommendations until the device is calibrated.') : (es ? 'La lectura y las recomendaciones aparecerán aquí cuando el sensor del dispositivo envíe datos reales.' : 'The reading and recommendations will appear here when the device sensor provides real data.')}</p>
           </>}
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Iniciar medición en vivo' : 'Start live measurement'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
