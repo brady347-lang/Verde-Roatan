@@ -71,7 +71,7 @@ export const SupplierOnboardingPanel: React.FC<{
 
   const loadProductReviews = useCallback(async () => {
     if (!isAdmin) return;
-    const rows = await requestRows('products?select=id,name,scientific_name,description,image_url,listing_status,image_review_status,listing_review_notes,image_review_notes,photo_quality_score,photo_quality_status,photo_quality_notes,photo_width,photo_height,photo_file_size_bytes,created_at&listing_status=eq.pending_review&order=created_at.asc', session.access_token);
+    const rows = await requestRows('products?select=id,name,scientific_name,description,image_url,listing_status,image_review_status,listing_review_notes,image_review_notes,photo_quality_score,photo_quality_status,photo_quality_notes,photo_width,photo_height,photo_file_size_bytes,created_at&listing_status=eq.pending_review&is_active=eq.false&order=created_at.asc', session.access_token);
     setProductReviews(Array.isArray(rows) ? rows : []);
   }, [isAdmin, session.access_token]);
 
