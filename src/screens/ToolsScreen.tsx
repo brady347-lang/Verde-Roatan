@@ -55,6 +55,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const area = measurement.area;
   const manualArea = Math.max(0, Number(manualLength) || 0) * Math.max(0, Number(manualWidth) || 0);
   const measuredArea = points.length >= 3 ? area : manualArea;
+  const m2 = measuredArea;
   const safeDepth = Math.max(0, Number(depth) || 0);
   const safeWaste = Math.max(0, Number(waste) || 0);
   const volume = measuredArea * safeDepth * (1 + safeWaste / 100);
