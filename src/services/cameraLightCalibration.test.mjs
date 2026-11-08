@@ -10,7 +10,7 @@ const stages = [
   { stage: 'shade', response: 0.08, referenceLux: 100, capturedAt: '2026-11-08T00:00:10Z' },
   { stage: 'indirect', response: 0.3, referenceLux: 1000, capturedAt: '2026-11-08T00:00:20Z' },
   { stage: 'bright', response: 0.8, referenceLux: 10000, capturedAt: '2026-11-08T00:00:30Z' }
-] as const;
+];
 const profile = buildCalibrationProfile('pixel-test', [...stages]);
 assert.equal(profile.quality, 'reference_calibrated');
 const estimate = estimateLuxFromCamera(0.3, profile);
