@@ -1123,6 +1123,19 @@ export async function uploadBotanicalReferenceImage(token: string, file: File, f
 export async function reviewBotanicalReferenceImage(token: string, image_id: string, action: 'approve' | 'reject', visibility: 'private' | 'public' = 'private'): Promise<void> {
   await knowledgeCall('reference-images/review', { image_id, action, visibility }, token);
 }
+export interface BotanicalCatalogPhotoCandidate {
+  product_id: string; product_name: string; scientific_name: string;
+  taxon_id: string; common_name?: string | null; image_url: string;
+}
+export async function listBotanicalCatalogPhotoCandidates(token: string): Promise<BotanicalCatalogPhotoCandidate[]> {
+  const data = await knowledgeCall('reference-images/catalog-candidates', {}, token);
+  return Array.isArray(data.candidates) ? data.candidates : [];
+}
+export async function importBotanicalCatalogPhoto(token: string, candidate: BotanicalCatalogPhotoCandidate): Promise<{queued:boolean; review_status:string; visibility:string}> {
+  return knowledgeCall('reference-images/import-catalog', {
+    product_id: candidate.product_id, taxon_id: candidate.taxon_id
+  }, token);
+}
 export async function searchBotanicalTaxa(token: string, q: string): Promise<Array<{id:string; scientific_name:string; common_name?:string}>> {
   const data = await knowledgeCall('reference-images/taxa-search', { q }, token);
   return data.results || [];

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, ExternalLink, FileText, Loader2, RefreshCw, Search, Upload } from 'lucide-react';
 import {
   KnowledgeDocument, KnowledgeEntity, KnowledgeSource, extractKnowledgeEntities, getKnowledgeDocument,
-  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf, BotanicalReferenceImage, listBotanicalReferenceImages, uploadBotanicalReferenceImage, reviewBotanicalReferenceImage, searchBotanicalTaxa, searchVerdeKnowledge
+  ingestKnowledgePages, listKnowledgeDocuments, markKnowledgeFailed, promoteKnowledgeDocument, retryKnowledgeDocument, reviewKnowledgeDocument, uploadKnowledgePdf, BotanicalReferenceImage, listBotanicalReferenceImages, uploadBotanicalReferenceImage, reviewBotanicalReferenceImage, searchBotanicalTaxa, searchVerdeKnowledge, listBotanicalCatalogPhotoCandidates, importBotanicalCatalogPhoto, BotanicalCatalogPhotoCandidate
 } from '../../services/api';
 import { extractPdfPages } from '../../lib/pdfText';
 import { askConstitution, ConstitutionAskResult } from '../../lib/constitutionApi';
@@ -305,6 +305,8 @@ const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [catalogCandidates, setCatalogCandidates] = useState<BotanicalCatalogPhotoCandidate[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
@@ -313,6 +315,28 @@ const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, 
   }, [accessToken, status]);
   useEffect(() => { load(); }, [load]);
 
+  const loadCatalogCandidates = async () => {
+    if (!accessToken) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const rows = await listBotanicalCatalogPhotoCandidates(accessToken);
+      setCatalogCandidates(rows); setCatalogLoaded(true);
+      setNotice(es ? rows.length + ' fotos de catálogo coinciden exactamente con una planta publicada.' : rows.length + ' catalog photos exactly match a published plant record.');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Could not load catalog photos.'); }
+    finally { setBusy(false); }
+  };
+
+  const importCatalogCandidate = async (candidate: BotanicalCatalogPhotoCandidate) => {
+    if (!accessToken) return;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const result = await importBotanicalCatalogPhoto(accessToken, candidate);
+      setCatalogCandidates(current => current.filter(item => item.product_id !== candidate.product_id));
+      setNotice(result.queued ? (es ? 'Foto agregada a revisión. Aún no se usa en identificaciones.' : 'Photo added to review. It is not used in identifications yet.') : (es ? 'Esta foto ya estaba en la cola de revisión.' : 'This photo was already in the review queue.'));
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : 'Catalog photo import failed.'); }
+    finally { setBusy(false); }
+  };
   const findTaxa = async () => {
     if (!accessToken || q.trim().length < 2) return;
     setBusy(true); setError('');
@@ -368,6 +392,19 @@ const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, 
       <input className={inputCls} value={attribution} onChange={e => setAttribution(e.target.value)} placeholder={es ? 'Atribución / autor' : 'Attribution / author'} />
       <input className={inputCls} value={license} onChange={e => setLicense(e.target.value)} placeholder={es ? 'Licencia (ej. CC BY 4.0)' : 'License (e.g. CC BY 4.0)'} />
       <button type="button" className={btnCls} disabled={busy || !file || !taxon} onClick={upload}><Upload className="w-4 h-4 inline mr-1" />{es ? 'Subir foto privada' : 'Upload private photo'}</button>
+    </div>
+    <div className="rounded-xl border border-[var(--line)] p-3 flex flex-col gap-2">
+      <div>
+        <b className="text-[13px]">{es ? 'Importar fotos del catálogo' : 'Import catalog photos'}</b>
+        <p className="text-[11.5px] text-[var(--ink-soft)]">{es ? 'Solo coincidencias exactas por nombre científico. Las referencias importadas quedan pendientes de aprobación y no se usan en identificaciones.' : 'Exact scientific-name matches only. Imported references remain pending curator approval and are not used in identifications.'}</p>
+      </div>
+      <button type="button" className={ghostCls} disabled={busy} onClick={loadCatalogCandidates}><Search className="w-3.5 h-3.5 inline mr-1" />{es ? 'Buscar fotos coincidentes' : 'Find matching catalog photos'}</button>
+      {catalogLoaded && catalogCandidates.length === 0 && <p className="text-[11px] text-[var(--ink-soft)]">{es ? 'No hay fotos coincidentes para importar.' : 'No matching catalog photos available to import.'}</p>}
+      {catalogCandidates.map(candidate => <div key={candidate.product_id} className="flex gap-3 items-center border border-[var(--line)] rounded-lg p-2">
+        <img src={candidate.image_url} alt={candidate.product_name} className="w-16 h-16 object-cover rounded-lg bg-[var(--surface-2)]" />
+        <div className="min-w-0 flex-1 text-[11.5px]"><b className="block truncate">{candidate.product_name}</b><span className="block italic">{candidate.scientific_name}</span><span className="text-[var(--ink-soft)]">{candidate.common_name || ''}</span></div>
+        <button type="button" className={btnCls} disabled={!!busy} onClick={() => importCatalogCandidate(candidate)}>{es ? 'Importar' : 'Import'}</button>
+      </div>)}
     </div>
     <div className="flex gap-2 items-center">
       <select className={inputCls} value={status} onChange={e => setStatus(e.target.value as typeof status)}>
