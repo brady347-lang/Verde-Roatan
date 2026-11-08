@@ -20,7 +20,10 @@ const STAGE_ORDER: CalibrationStage[] = ['dark', 'shade', 'indirect', 'bright'];
 
 export function normalizeCameraResponse(red: number, green: number, blue: number): number {
   const luminance = 0.2126 * red + 0.7152 * green + 0.0722 * blue;
-  return Math.max(0, Math.min(1, luminance / 255));
+  // The Rec. 709 weights do not sum to exactly 1.0 in floating point, so pure white would otherwise
+  // normalise to 0.9999999999999999. Round away that noise (far below 8-bit camera precision).
+  const normalized = Math.round((luminance / 255) * 1e9) / 1e9;
+  return Math.max(0, Math.min(1, normalized));
 }
 
 export function summarizeFrame(data: Uint8ClampedArray): number {
