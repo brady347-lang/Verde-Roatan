@@ -15,7 +15,10 @@ async function uploadSupplierPhoto(productId: string, userId: string, dataUrl: s
   if (!upload.ok) throw new Error(uploaded.message || uploaded.error || 'Product photo upload failed.');
   const imageUrl = `${SUPABASE_URL}/storage/v1/object/public/product-images/${path.split('/').map(encodeURIComponent).join('/')}`;
   await rest(`products?id=eq.${encodeURIComponent(productId)}`, token, { method: 'PATCH', body: JSON.stringify({ image_url: imageUrl }) });
-  return imageUrl;\n}\n\nasync function rest(path: string, token: string, init?: RequestInit) {
+  return imageUrl;
+}
+
+async function rest(path: string, token: string, init?: RequestInit) {
   const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...init,
     headers: {
