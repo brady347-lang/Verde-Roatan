@@ -9,6 +9,7 @@ on:
       - safety/supabase-target-hardening
       - feature/verde-knowledge-core
       - fix/verde-knowledge-learning
+      - feature/rootwise-continuous-intelligence-engine
 
 permissions:
   contents: write
@@ -48,6 +49,25 @@ jobs:
         run: |
           if [ ! -d android ]; then
             npx cap add android
+          fi
+
+      - name: Rename approved RootWise icon asset (preserve original bytes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source="branding/file_00000000a2a881f5b2891003f4204cf0.png"
+          target="branding/rootwise-icon.png"
+          if [ -f "$source" ] && [ ! -f "$target" ]; then
+            git mv "$source" "$target"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -m "chore(rootwise): rename approved app icon"
+            git push origin HEAD:feature/rootwise-continuous-intelligence-engine
+          elif [ -f "$target" ]; then
+            echo "RootWise icon already has its final filename."
+          else
+            echo "Neither source nor target icon exists; stopping."
+            exit 1
           fi
 
       - name: Synchronize Capacitor
