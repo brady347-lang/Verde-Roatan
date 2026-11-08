@@ -8,10 +8,11 @@ import { Activity, Camera, Calculator, Check, CircleDot, Compass, Leaf, MapPin, 
 import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
+import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
 import { buildCalibrationProfile, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
-type Point = { lat: number; lon: number; accuracy: number; };
+type Point = TrackPoint;
 const CAMERA_CALIBRATION_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_CAMERA_CALIBRATION === 'true';
 type MaterialType = '' | 'mulch' | 'gravel' | 'topsoil' | 'compost' | 'pavers';
 const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: string; terms: RegExp }> = {
@@ -31,23 +32,6 @@ function MapViewport({ points }: { points: Point[] }) {
   }, [map, points]);
   return null;
 }
-const toRadians = (value: number) => value * Math.PI / 180;
-
-function measurePolygon(points: Point[]) {
-  if (points.length < 3) return { area: 0, perimeter: 0 };
-  const lat0 = toRadians(points.reduce((sum, point) => sum + point.lat, 0) / points.length);
-  const metersPerDegreeLat = 111132.92;
-  const metersPerDegreeLon = 111412.84 * Math.cos(lat0);
-  const xy = points.map((point) => ({ x: point.lon * metersPerDegreeLon, y: point.lat * metersPerDegreeLat }));
-  let twiceArea = 0, perimeter = 0;
-  xy.forEach((point, index) => {
-    const next = xy[(index + 1) % xy.length];
-    twiceArea += point.x * next.y - next.x * point.y;
-    perimeter += Math.hypot(next.x - point.x, next.y - point.y);
-  });
-  return { area: Math.abs(twiceArea) / 2, perimeter };
-}
-
 export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const es = lang === 'es';
   const [points, setPoints] = useState<Point[]>([]);
@@ -121,6 +105,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [trackingStatus, setTrackingStatus] = useState('');
   const gpsWatchRef = useRef<string | number | null>(null);
   const trackingActiveRef = useRef(false);
+  const lastAcceptedFixRef = useRef<(TrackPoint & { timestamp?: number }) | null>(null);
   const [depth, setDepth] = useState('0.08');
   const [coverage, setCoverage] = useState('50');
   const [selectedSodId, setSelectedSodId] = useState('');
@@ -171,8 +156,15 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       setCameraReferenceLux('');
       setCameraStatus(es ? 'Cámara lista. Sigue cada paso.' : 'Camera ready. Follow each step.');
       window.setTimeout(() => { if (cameraVideoRef.current) { cameraVideoRef.current.srcObject = stream; void cameraVideoRef.current.play().catch(() => undefined); } }, 0);
-    } catch {
-      setCameraStatus(es ? 'No se pudo acceder a la cámara. Revisa el permiso e inténtalo de nuevo.' : 'Camera access failed. Check permission and try again.');
+    } catch (error) {
+      const name = error instanceof Error ? error.name : '';
+      setCameraStatus(name === 'NotAllowedError' || name === 'SecurityError'
+        ? (es ? 'El permiso de cámara está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Cámara e inténtalo de nuevo.' : 'Camera permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Camera, then try again.')
+        : name === 'NotFoundError' || name === 'OverconstrainedError'
+          ? (es ? 'No se encontró una cámara trasera utilizable en este dispositivo.' : 'No usable rear camera was found on this device.')
+          : name === 'NotReadableError'
+            ? (es ? 'La cámara está en uso por otra aplicación. Ciérrala e inténtalo de nuevo.' : 'The camera is in use by another app. Close it and try again.')
+            : (es ? 'No se pudo acceder a la cámara. Revisa el permiso e inténtalo de nuevo.' : 'Camera access failed. Check permission and try again.'));
     }
   };
   const captureCameraCalibrationStage = () => {
@@ -235,6 +227,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
     stopCameraCalibration();
   }, []);
+  useEffect(() => { if (tool !== 'area' && trackingActiveRef.current) void stopGpsTracking(); }, [tool]);
   useEffect(() => { if (tool !== 'light' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } }, [tool]);
   const startLightSensor = async () => {
     sensorRef.current?.stop();
@@ -252,15 +245,24 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           setLiveLux(Math.max(0, event.lux));
           setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
         });
+        const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
+          // The native layer could not re-register the sensor after the app resumed. Drop the stale
+          // live value so the manual lux entry is what the guidance is based on.
+          if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+          setLiveLux(null);
+          setSensorStatus(es ? 'El sensor de luz no pudo reanudarse al volver a la app. Toca «Leer sensor» de nuevo o introduce los lux manualmente.' : 'The light sensor could not resume when you returned to the app. Tap Read sensor again or enter lux manually.');
+        });
         try {
           await RootWiseDeviceSensors.startAmbientLight();
         } catch (error) {
           await listener.remove();
+          await errorListener.remove();
           throw error;
         }
         sensorRef.current = { stop: () => {
           void RootWiseDeviceSensors.stopAmbientLight();
           void listener.remove();
+          void errorListener.remove();
         } };
         sensorTimeoutRef.current = window.setTimeout(() => {
           if (!receivedReading) setSensorStatus(es ? 'El sensor inició, pero Android no ha enviado lecturas. Comprueba que el teléfono tenga sensor de luz ambiental y vuelve a intentarlo.' : 'The sensor started, but Android has not delivered a reading. Confirm the phone has an ambient light sensor and try again.');
@@ -290,8 +292,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
       setSensorStatus(es
-        ? (detail.includes('UNAVAILABLE') ? 'Este dispositivo o navegador no expone el sensor de luz. Introduce los lux manualmente.' : 'No se pudo iniciar el sensor de luz. Introduce los lux manualmente.')
-        : (detail.includes('UNAVAILABLE') ? 'This device does not expose an ambient light sensor to the app. Enter lux manually.' : 'Could not start the light sensor. Enter lux manually.'));
+        ? (/UNAVAILABLE|does not expose/i.test(detail) ? 'Este dispositivo o navegador no expone el sensor de luz. Introduce los lux manualmente.' : 'No se pudo iniciar el sensor de luz. Introduce los lux manualmente.')
+        : (/UNAVAILABLE|does not expose/i.test(detail) ? 'This device does not expose an ambient light sensor to the app. Enter lux manually.' : 'Could not start the light sensor. Enter lux manually.'));
     }
   };
   const stopLightSensor = () => {
@@ -310,26 +312,40 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }
   };
   const measurement = useMemo(() => measurePolygon(points), [points]);
+  const selfCrossing = useMemo(() => hasSelfIntersection(points), [points]);
   const sodOptions = useMemo(() => catalog.filter((item) => item.kind === 'grass' && /sod|zoysia|natural grass/i.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))), [catalog]);
   const selectedSod = sodOptions.find((item) => item.id === selectedSodId);
   const materialOptions = useMemo(() => materialType ? catalog.filter((item) => MATERIAL_LABELS[materialType].terms.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))) : [], [catalog, materialType]);
   const selectedMaterial = materialOptions.find((item) => item.id === selectedMaterialId) || materialOptions[0];
-  const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number) => {
-    if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(accuracy) || accuracy > 30) {
-      setTrackingStatus(es ? 'Esperando una señal GPS más precisa…' : 'Waiting for a more accurate GPS fix…');
+  const gpsErrorText = (kind: ReturnType<typeof classifyGpsError>, raw = '') => {
+    switch (kind) {
+      case 'permission_denied':
+        return es ? 'El permiso de ubicación está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación.' : 'Location permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Location.';
+      case 'precise_required':
+        return es ? 'RootWise necesita ubicación precisa para trazar el borde. En Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación, activa «Usar ubicación precisa».' : 'RootWise needs Precise location to trace a boundary. In Android Settings → Apps → Rootwise → Permissions → Location, turn on “Use precise location”.';
+      case 'services_disabled':
+        return es ? 'La ubicación del teléfono está desactivada. Actívala y toca «Iniciar recorrido» de nuevo.' : 'Phone Location is turned off. Turn it on, then tap Start walk again.';
+      case 'timeout':
+        return es ? 'El GPS no obtuvo una posición. Muévete a cielo abierto e inténtalo de nuevo.' : 'GPS could not get a fix. Move to open sky and try again.';
+      case 'unavailable':
+        return es ? 'La posición GPS no está disponible ahora. Muévete a cielo abierto e inténtalo de nuevo.' : 'GPS position is unavailable right now. Move to open sky and try again.';
+      default:
+        return raw || (es ? 'Se perdió la señal GPS.' : 'GPS signal was lost.');
+    }
+  };
+  const reportGpsError = (raw: string | undefined) => {
+    const kind = classifyGpsError(raw);
+    setGpsError(gpsErrorText(kind, raw));
+  };
+  const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number) => {
+    const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp });
+    if (!decision.accept) {
+      if (decision.reason === 'inaccurate') setTrackingStatus(es ? 'Esperando una señal GPS más precisa…' : 'Waiting for a more accurate GPS fix…');
+      else if (decision.reason === 'jump') setTrackingStatus(es ? 'Se ignoró un salto brusco del GPS.' : 'Ignored a sudden GPS jump.');
       return;
     }
-    const nextPoint = { lat: latitude, lon: longitude, accuracy };
-    setPoints((current) => {
-      const previous = current[current.length - 1];
-      if (previous) {
-        const latMean = toRadians((previous.lat + latitude) / 2);
-        const dx = toRadians(longitude - previous.lon) * 6371000 * Math.cos(latMean);
-        const dy = toRadians(latitude - previous.lat) * 6371000;
-        if (Math.hypot(dx, dy) < 2.5) return current;
-      }
-      return [...current, nextPoint];
-    });
+    lastAcceptedFixRef.current = { lat: latitude, lon: longitude, accuracy, timestamp };
+    setPoints((current) => [...current, { lat: latitude, lon: longitude, accuracy }]);
     setTrackingStatus(es ? `Seguimiento en vivo · precisión ±${Math.round(accuracy)} m` : `Live tracking · ±${Math.round(accuracy)} m accuracy`);
   };
   const startGpsTracking = async () => {
@@ -337,30 +353,37 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setGpsBusy(true);
     setGpsError('');
     setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
+    const lastPoint = points[points.length - 1];
+    lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
       const options = { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 };
       if (Capacitor.isNativePlatform()) {
         let permission = await Geolocation.checkPermissions();
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') permission = await Geolocation.requestPermissions();
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') throw new Error('LOCATION_PERMISSION_DENIED');
+        if (!hasPreciseLocation(permission)) permission = await Geolocation.requestPermissions();
+        if (!hasPreciseLocation(permission)) throw new Error(permission.coarseLocation === 'granted' ? 'LOCATION_PRECISE_REQUIRED' : 'LOCATION_PERMISSION_DENIED');
         trackingActiveRef.current = true;
         const watchId = await Geolocation.watchPosition(options, (position, error) => {
           if (!trackingActiveRef.current) return;
           if (error) {
-            setGpsError(error.message || (es ? 'Se perdió la señal GPS.' : 'GPS signal was lost.'));
+            reportGpsError(error.message);
             return;
           }
-          if (position) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy);
+          if (position) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp);
         });
-        if (trackingActiveRef.current) gpsWatchRef.current = watchId;
-        else await Geolocation.clearWatch({ id: watchId });
+        if (!trackingActiveRef.current) {
+          // Stopped (or the screen closed) while the native watcher was still starting: release it and
+          // do not flip the UI back into the tracking state.
+          await Geolocation.clearWatch({ id: watchId }).catch(() => undefined);
+          return;
+        }
+        gpsWatchRef.current = watchId;
       } else {
         if (!navigator.geolocation) throw new Error('GEOLOCATION_UNAVAILABLE');
         if (!window.isSecureContext) throw new Error('GEOLOCATION_REQUIRES_HTTPS');
         trackingActiveRef.current = true;
         gpsWatchRef.current = navigator.geolocation.watchPosition(
-          (position) => { if (trackingActiveRef.current) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy); },
-          (error) => { if (trackingActiveRef.current) setGpsError(error.message || (es ? 'Se perdió la señal GPS.' : 'GPS signal was lost.')); },
+          (position) => { if (trackingActiveRef.current) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp); },
+          (error) => { if (trackingActiveRef.current) reportGpsError(error.code === 1 ? 'LOCATION_PERMISSION_DENIED' : error.message); },
           options
         );
       }
@@ -369,13 +392,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     } catch (error) {
       trackingActiveRef.current = false;
       const message = error instanceof Error ? error.message : '';
-      setGpsError(message === 'LOCATION_PERMISSION_DENIED'
-        ? (es ? 'El permiso de ubicación está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación.' : 'Location permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Location.')
-        : message === 'GEOLOCATION_REQUIRES_HTTPS'
-          ? (es ? 'La ubicación del navegador requiere HTTPS.' : 'Browser location requires HTTPS.')
-          : message === 'GEOLOCATION_UNAVAILABLE'
-            ? (es ? 'Este navegador no ofrece geolocalización.' : 'This browser does not provide geolocation.')
-            : (es ? 'No se pudo iniciar el seguimiento GPS. Comprueba los permisos y la ubicación del teléfono.' : 'Could not start GPS tracking. Check app permission and phone Location settings.'));
+      if (message === 'GEOLOCATION_REQUIRES_HTTPS') {
+        setGpsError(es ? 'La ubicación del navegador requiere HTTPS.' : 'Browser location requires HTTPS.');
+      } else if (message === 'GEOLOCATION_UNAVAILABLE') {
+        setGpsError(es ? 'Este navegador no ofrece geolocalización.' : 'This browser does not provide geolocation.');
+      } else {
+        const kind = classifyGpsError(message);
+        setGpsError(kind === 'unknown'
+          ? (es ? 'No se pudo iniciar el seguimiento GPS. Comprueba los permisos y la ubicación del teléfono.' : 'Could not start GPS tracking. Check app permission and phone Location settings.')
+          : gpsErrorText(kind, message));
+      }
       setTrackingStatus('');
     } finally { setGpsBusy(false); }
   };
@@ -388,8 +414,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       let accuracy: number;
       if (Capacitor.isNativePlatform()) {
         let permission = await Geolocation.checkPermissions();
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') permission = await Geolocation.requestPermissions();
-        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') throw new Error('LOCATION_PERMISSION_DENIED');
+        if (!hasPreciseLocation(permission)) permission = await Geolocation.requestPermissions();
+        if (!hasPreciseLocation(permission)) throw new Error(permission.coarseLocation === 'granted' ? 'LOCATION_PRECISE_REQUIRED' : 'LOCATION_PERMISSION_DENIED');
         const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
         latitude = position.coords.latitude; longitude = position.coords.longitude; accuracy = position.coords.accuracy;
       } else {
@@ -402,6 +428,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
       const code = typeof error === 'object' && error !== null && 'code' in error ? Number((error as { code?: unknown }).code) : 0;
+      if (message === 'LOCATION_PRECISE_REQUIRED') { setGpsError(gpsErrorText('precise_required')); return; }
       const denied = message === 'LOCATION_PERMISSION_DENIED' || code === 1 || /permission|denied/i.test(message);
       setGpsError(denied
         ? (es ? 'El permiso de ubicación está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación y vuelve a intentarlo.' : 'Location permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Location, then try again.')
@@ -469,6 +496,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
             {points.map((point, index) => <CircleMarker key={index} center={[point.lat, point.lon]} radius={7} pathOptions={{ color: "#FFFFFF", weight: 2, fillColor: "#126B4B", fillOpacity: 1 }} />)}
           </MapContainer>
           {points.length < 3 && <p className="bg-[var(--surface-2)] px-3 py-2 text-[11px] text-[var(--ink-soft)]">{es ? "Captura al menos 3 esquinas para cerrar y calcular el área del polígono." : "Capture at least 3 corners to close the boundary and calculate its area."}</p>}
+          {!tracking && selfCrossing && <p role="alert" className="bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">{es ? 'El recorrido se cruza a sí mismo, así que el área mostrada no es fiable. Deshaz los últimos puntos o reinicia y camina el borde sin cruzarlo.' : 'The walked path crosses itself, so the area shown is not reliable. Undo the last points, or reset and walk the boundary without crossing it.'}</p>}
         </div>}
         {points.length === 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)] p-3">
           <b className="text-xs">{es ? "Vista previa del área rectangular" : "Rectangular area preview"}</b>
@@ -530,7 +558,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <label className="mb-2 block text-xs text-[var(--ink-soft)]">{es ? 'Notas del sitio (suelo, sombra, pendientes, obstáculos...)' : 'Site notes (soil, shade, slope, obstacles...)'}
             <textarea value={plotNotes} onChange={(event) => setPlotNotes(event.target.value)} rows={3} maxLength={1200} placeholder={es ? 'Añade detalles útiles para el proyecto...' : 'Add useful project details...'} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] px-3 py-2 text-sm text-[var(--ink)]" />
           </label>
-          <button onClick={handleSavePlot} className="w-full rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{editingPlotId ? (es ? 'Actualizar terreno' : 'Update plot') : (es ? 'Guardar mapa' : 'Save map')}</button>
+          <button disabled={tracking} onClick={handleSavePlot} className="w-full disabled:opacity-40 rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{editingPlotId ? (es ? 'Actualizar terreno' : 'Update plot') : (es ? 'Guardar mapa' : 'Save map')}</button>
           <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Las coordenadas se guardan solo en este dispositivo; no se suben a la nube.' : 'Coordinates are stored only on this device; they are not uploaded to the cloud.'}</p>
         </div>}
         <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
@@ -545,7 +573,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={startGpsTracking} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><Play className="h-4 w-4" />{gpsBusy ? (es ? 'Iniciando…' : 'Starting…') : (es ? 'Iniciar recorrido' : 'Start walk')}</button><button disabled={!tracking} onClick={() => void stopGpsTracking()} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><Square className="h-4 w-4" />{es ? 'Detener recorrido' : 'Stop walk'}</button></div>
         {trackingStatus && <p role="status" className="mt-2 rounded-xl bg-[var(--surface-2)] p-2 text-xs text-[var(--ink-soft)]">{trackingStatus}</p>}
         <div className="mt-2 grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={capturePoint} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><MapPin className="mr-1 inline h-4 w-4" />{es ? 'Capturar punto manual' : 'Add manual point'}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy || tracking} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><RotateCcw className="mr-1 inline h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
-        {points.length > 0 && <button onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
+        {points.length > 0 && <button disabled={tracking} onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full disabled:opacity-40 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
         {points.length > 0 && <ol className="mt-3 space-y-1 text-[11px] text-[var(--ink-soft)]">{points.map((point, index) => <li key={index}>#{index + 1} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)} · ±{point.accuracy.toFixed(0)}m</li>)}</ol>}
         <p className="mt-3 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Estimación de campo, no un levantamiento topográfico. La precisión depende del dispositivo, cielo abierto y señal GPS. Revisa los límites antes de cotizar o construir.' : 'Field estimate, not a certified survey. Accuracy depends on device, open sky and GPS signal. Verify boundaries before quoting or construction.'}</p>
       </section>}

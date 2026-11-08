@@ -1,5 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  <!-- Camera light calibration uses getUserMedia in the WebView; Capacitor can only request the runtime
+       permission if CAMERA is declared in the merged manifest. -->
+  <uses-permission android:name="android.permission.CAMERA" />
+  <uses-feature android:name="android.hardware.camera" android:required="false" />
   <uses-feature android:name="android.hardware.sensor.light" android:required="false" />
 </manifest>
