@@ -156,6 +156,12 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 2, max: 5 } }
       });
       cameraStreamRef.current = stream;
+      for (const track of stream.getVideoTracks()) {
+        track.onended = () => {
+          stopCameraFallback();
+          setSensorStatus(es ? 'La cámara se detuvo. Comprueba los permisos e inténtalo de nuevo.' : 'The camera stopped. Check permissions and try again.');
+        };
+      }
       setCameraActive(true);
       setSensorStatus(es ? 'Medición visual activa. Apunta la cámara hacia la zona que quieres evaluar.' : 'Camera estimate active. Point the camera at the area you want to assess.');
     } catch (error) {
@@ -241,7 +247,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         });
         const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
           // The native layer could not re-register the sensor after the app resumed. Drop the stale
-          // live value so the manual lux entry is what the guidance is based on.
+          // live value so no stale sensor reading is presented.
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(null);
           sensorRef.current?.stop();
