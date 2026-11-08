@@ -116,6 +116,16 @@ export default function App() {
   const [lang, setLang] = useState<Language>(() => {
     return (localStorage.getItem('verde_lang') as Language) || 'en';
   });
+  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>(() => {
+    const saved = localStorage.getItem('rootwise_theme');
+    return saved === 'light' || saved === 'dark' ? saved : 'system';
+  });
+  useEffect(() => {
+    const root = document.documentElement;
+    if (theme === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', theme);
+    safeSetItem('rootwise_theme', theme);
+  }, [theme]);
   const [tab, setTab] = useState<TabType>('home');
   const prevTabRef = useRef<TabType>(tab);
   const prevIdx = TAB_ORDER.indexOf(prevTabRef.current);
@@ -2062,6 +2072,8 @@ export default function App() {
 
           {tab === 'account' && (
             <AccountScreen
+              theme={theme}
+              onThemeChange={setTheme}
               lang={lang}
               session={session}
               isAdmin={isAdmin}
