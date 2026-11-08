@@ -204,6 +204,18 @@ export const SupplierOnboardingPanel: React.FC<{
     return (
       <section className="flex flex-col gap-3">
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
+          <b className="text-[13px] text-[var(--ink)]">Temporary supplier testing workspace</b>
+          <p className="mt-1 text-[11px] text-[var(--ink-soft)]">Access is limited to supplier product management. New listings remain inactive until administrator review.</p>
+        </div>
+        <SupplierProductWorkspace session={session} lang={lang} />
+      </section>
+    );
+  }
+
+  if (isAdmin) {
+    return (
+      <section className="flex flex-col gap-3">
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
           <div className="flex items-center justify-between gap-2">
             <div>
               <b className="text-[13px] text-[var(--ink)]">Temporary testing access</b>
@@ -228,18 +240,6 @@ export const SupplierOnboardingPanel: React.FC<{
             </div>
           )}
         </div>
-        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
-          <b className="text-[13px] text-[var(--ink)]">Temporary supplier testing workspace</b>
-          <p className="mt-1 text-[11px] text-[var(--ink-soft)]">Access is limited to supplier product management. New listings remain inactive until administrator review.</p>
-        </div>
-        <SupplierProductWorkspace session={session} lang={lang} />
-      </section>
-    );
-  }
-
-  if (isAdmin) {
-    return (
-      <section className="flex flex-col gap-3">
         <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
           <div className="flex items-center gap-2 mb-2">
             <KeyRound className="w-4 h-4 text-[var(--palm)]" />
