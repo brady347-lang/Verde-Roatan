@@ -7,3 +7,6 @@ name = "verde-botanical-knowledge-core-worker"
 main = "workers/verde-botanical-knowledge-core-worker.js"
 compatibility_date = "2025-01-01"
 keep_vars = true
+
+[triggers]
+crons = ["*/15 * * * *"] # RootWise evidence queue review; no-op until the queue schema is applied

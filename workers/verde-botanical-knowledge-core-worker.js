@@ -442,12 +442,17 @@ async function searchKnowledge(request, body, env) {
 }
 
 
+// Private-bucket object paths only: no traversal, no leading slash, no empty segments.
+const SAFE_EVIDENCE_PATH = /^(?!.*\.\.)(?!.*\/\/)[A-Za-z0-9][A-Za-z0-9_.\-\/]{0,300}$/;
+
 async function runEvidenceCycle(env) {
   const started = new Date().toISOString();
   const report = { status: 'idle', started_at: started, finished_at: null, reviewed: 0, escalated: 0, failed: 0 };
   const stale = await db(env, 'botanical_evidence_queue?status=eq.processing&locked_at=lt.' + encodeURIComponent(new Date(Date.now()-20*60000).toISOString()), {
     method:'PATCH', headers:{Prefer:'return=minimal'}, body:JSON.stringify({status:'pending',locked_at:null,last_error:'Recovered expired lease.'})
   });
+  // The queue schema is applied separately; until it exists the cycle is a quiet no-op instead of a failure every 15 minutes.
+  if (stale.status === 404) { report.finished_at = new Date().toISOString(); return report; }
   if (!stale.ok) throw new Error('Unable to recover expired evidence leases.');
   const ready = await db(env,'botanical_evidence_queue?select=*&status=in.(pending,failed)&attempts=lt.5&available_at=lte.'+encodeURIComponent(started)+'&order=created_at.asc&limit=10');
   if (!ready.ok || !Array.isArray(ready.data)) throw new Error('Unable to read evidence queue.');
@@ -469,10 +474,9 @@ async function runEvidenceCycle(env) {
       } else if (payload.image_storage_path) {
         throw new Error('Gemini internal review bindings are not configured.');
       }
-      const needsHuman = Boolean(aiReview) || Boolean(payload.image_storage_path) || item.evidence_type==='community_correction' || item.evidence_type==='pest_disease_identification';
       const update = await db(env,'botanical_evidence_queue?id=eq.'+item.id,{
         method:'PATCH',headers:{Prefer:'return=minimal'},
-        body:JSON.stringify({status:needsHuman?'needs_review':'needs_review',locked_at:null,processed_at:new Date().toISOString(),last_error:null,
+        body:JSON.stringify({status:'needs_review',locked_at:null,processed_at:new Date().toISOString(),last_error:null,
           verification_status:'ai_suggested',model_result:aiReview?{gemini:aiReview,human_review_required:true}:{scheduler_reviewed:true,human_review_required:true}})
       });
       if (!update.ok) throw new Error('Unable to save evidence review result.');
@@ -526,6 +530,11 @@ export default {
     try {
       if (path === '/engine/enqueue') {
         const auth = await authenticate(request, env); if (auth.error) return auth.error;
+        // Queued evidence can trigger a Gemini review of a private photo, so only administrators may queue it.
+        if (!isAdmin(auth.user, env)) return json(403, { status: 'error', error: 'Administrator access is required.' });
+        const queuedPath = body.submitted_payload && body.submitted_payload.image_storage_path;
+        if (queuedPath !== undefined && queuedPath !== null && !SAFE_EVIDENCE_PATH.test(String(queuedPath))) return json(400, { status: 'error', error: 'The evidence photo path is not valid.' });
+        if (JSON.stringify(body.submitted_payload || {}).length > 20000) return json(413, { status: 'error', error: 'The evidence payload is too large.' });
         const kind = ['catalog_photo','catalog_record','plant_identification','pest_disease_identification','community_correction','document','field_observation'].includes(body.evidence_type) ? body.evidence_type : '';
         if (!kind || !body.evidence_fingerprint || typeof body.submitted_payload !== 'object' || !body.submitted_payload) return json(400, { status:'error', error:'Evidence type, fingerprint and payload are required.' });
         const row = { evidence_type: kind, source_system: clean(body.source_system || 'rootwise-app',80), source_record_id: clean(body.source_record_id,180)||null, subject_key: clean(body.subject_key,240)||null, submitted_payload: body.submitted_payload, evidence_fingerprint: clean(body.evidence_fingerprint,180), status:'pending', verification_status:'community_submitted' };

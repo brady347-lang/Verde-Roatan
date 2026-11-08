@@ -76,7 +76,6 @@ revoke all on public.botanical_reference_images from anon, authenticated;
 grant select, insert, update, delete on public.botanical_evidence_queue to service_role;
 grant select, insert, update, delete on public.botanical_reference_images to service_role;
 
-commit;
 
 create table if not exists public.botanical_engine_runs (
   id uuid primary key default gen_random_uuid(),
@@ -87,9 +86,12 @@ create table if not exists public.botanical_engine_runs (
   escalated integer not null default 0,
   corroborated integer not null default 0,
   failed integer not null default 0,
+  error_summary text,
   created_at timestamptz not null default now()
 );
 create index if not exists botanical_engine_runs_started_idx on public.botanical_engine_runs(started_at desc);
 alter table public.botanical_engine_runs enable row level security;
 revoke all on public.botanical_engine_runs from anon, authenticated;
 grant select, insert on public.botanical_engine_runs to service_role;
+
+commit;

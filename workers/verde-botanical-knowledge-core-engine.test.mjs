@@ -23,7 +23,7 @@ test('health exposes scheduler cadence without claiming Gemini is running', asyn
 });
 
 test('evidence enqueue requires authentication and validates the evidence contract', async () => {
-  globalThis.fetch = async url => String(url).includes('/auth/v1/user') ? ok({id:'user-1'}) : ok([]);
+  globalThis.fetch = async url => String(url).includes('/auth/v1/user') ? ok({id:'user-1',email:'admin@test'}) : ok([]);
   const denied = await worker.fetch(request('/engine/enqueue', { evidence_type:'catalog_photo', evidence_fingerprint:'abc', submitted_payload:{} }, ''), env);
   assert.equal(denied.status, 401);
   const invalid = await worker.fetch(request('/engine/enqueue', { evidence_type:'unknown', evidence_fingerprint:'abc', submitted_payload:{} }), env);
@@ -32,7 +32,7 @@ test('evidence enqueue requires authentication and validates the evidence contra
 
 test('evidence enqueue is idempotent and reports duplicate fingerprints', async () => {
   globalThis.fetch = async (url, init={}) => {
-    if (String(url).includes('/auth/v1/user')) return ok({id:'user-1'});
+    if (String(url).includes('/auth/v1/user')) return ok({id:'user-1',email:'admin@test'});
     assert.match(String(url), /botanical_evidence_queue/);
     assert.match(init.headers.Prefer, /resolution=ignore-duplicates/);
     return ok([]);
@@ -60,4 +60,38 @@ test('scheduled cycle does not require Gemini when no evidence is queued', async
   await scheduledTask;
   assert.ok(calls.some(c=>c.url.includes('botanical_evidence_queue')));
   assert.ok(!calls.some(c=>/generativelanguage|gemini/i.test(c.url)));
+});
+
+test('only administrators may queue evidence', async () => {
+  globalThis.fetch = async url => String(url).includes('/auth/v1/user') ? ok({id:'customer-1',email:'customer@test'}) : ok([]);
+  const response = await worker.fetch(request('/engine/enqueue', { evidence_type:'catalog_photo', evidence_fingerprint:'abc', submitted_payload:{} }), env);
+  assert.equal(response.status, 403);
+});
+
+test('evidence photo paths must stay inside the private bucket', async () => {
+  globalThis.fetch = async url => String(url).includes('/auth/v1/user') ? ok({id:'a',email:'admin@test'}) : ok([]);
+  for (const bad of ['../secret.jpg', '/etc/passwd', 'a//b.jpg', 'a/../b.jpg', 'x y.jpg', '']) {
+    const response = await worker.fetch(request('/engine/enqueue', { evidence_type:'catalog_photo', evidence_fingerprint:'p'+bad, submitted_payload:{image_storage_path:bad} }), env);
+    assert.equal(response.status, 400, 'path should be refused: ' + JSON.stringify(bad));
+  }
+});
+
+test('cycle is a quiet no-op until the queue schema is installed', async () => {
+  const calls = [];
+  globalThis.fetch = async url => { calls.push(String(url)); return ok(null, 404); };
+  let task;
+  await worker.scheduled({}, env, { waitUntil(p) { task = p; } });
+  await task;
+  assert.ok(!calls.some(u => u.includes('botanical_engine_runs')), 'no failure record is written for a missing schema');
+});
+
+test('deploy config keeps one worker name and registers the 15-minute cron; schema has every column the worker writes', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const toml = readFileSync(new URL('../wrangler.knowledge-core.toml', import.meta.url), 'utf8');
+  assert.match(toml, /name = "verde-botanical-knowledge-core-worker"/);
+  assert.match(toml, /crons = \["\*\/15 \* \* \* \*"\]/);
+  assert.equal(existsSync(new URL('../wrangler-knowledge-core.toml', import.meta.url)), false);
+  const sql = readFileSync(new URL('../supabase/separate-review-db/rootwise_continuous_intelligence_schema.sql', import.meta.url), 'utf8');
+  assert.match(sql, /error_summary text/);
+  assert.equal((sql.match(/\bcommit;/g) || []).length, 1);
 });
