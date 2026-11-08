@@ -581,7 +581,7 @@ function publicBotanicalEvidence(value, depth = 0) {
 }
 
 async function searchApprovedEvidence(env, query) {
-  const terms = [...new Set((String(query || '').toLowerCase().match(/[\\p{L}\\p{N}]{3,}/gu) || []).slice(0, 6))];
+  const terms = [...new Set((String(query || '').toLowerCase().match(/[\p{L}\p{N}]{3,}/gu) || []).slice(0, 6))];
   if (!terms.length) return [];
   const rows = await db(env, 'botanical_evidence_queue?select=id,evidence_type,source_system,source_record_id,subject_key,submitted_payload,model_result,verification_status,approved_by_email,approved_at,approval_note&approval_status=eq.admin_approved&status=eq.admin_approved&order=approved_at.desc&limit=250');
   if (rows.status === 404) return []; // Existing Knowledge Core remains usable before the separate evidence migration is applied.\n  if (!rows.ok || !Array.isArray(rows.data)) throw new Error('Administrator-approved evidence could not be retrieved.');
