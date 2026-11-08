@@ -22,14 +22,22 @@ const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: strin
   compost: { en: 'Compost & soil blend', es: 'Compost y mezcla de suelo', terms: /compost|soil blend|soil mix|coir|worm cast/i },
   pavers: { en: 'Pavers & stepping stones', es: 'Adoquines y losas', terms: /paver|stepping stone|patio block|adoqu[ií]n|losa/i }
 };
-function MapViewport({ points }: { points: Point[] }) {
+function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
   const map = useMap();
   useEffect(() => {
     if (!points.length) return;
+    const latest = points[points.length - 1];
+    if (follow) {
+      // Keep the walker centered at a useful field zoom instead of repeatedly fitting
+      // the ever-growing route (which would zoom farther out as the user walks).
+      if (map.getZoom() < 18) map.setZoom(18, { animate: false });
+      map.panTo([latest.lat, latest.lon], { animate: true, duration: 0.35 });
+      return;
+    }
     const bounds = points.map((point) => [point.lat, point.lon] as [number, number]);
     if (bounds.length === 1) map.setView(bounds[0], 18);
     else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 19 });
-  }, [map, points]);
+  }, [map, points, follow]);
   return null;
 }
 export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
@@ -489,7 +497,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <div className="flex items-center justify-between bg-[var(--surface-2)] px-3 py-2"><b className="text-xs">{es ? "Mapa del terreno medido" : "Measured land map"}</b><span className="text-[10px] text-[var(--ink-soft)]">{points.length >= 3 ? (es ? "Perímetro trazado" : "Boundary plotted") : (es ? "Puntos GPS" : "GPS points")}</span></div>
           <MapContainer center={[points[0].lat, points[0].lon]} zoom={18} scrollWheelZoom={false} style={{ height: "280px", width: "100%" }}>
             <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <MapViewport points={points} />
+            <MapViewport points={points} follow={tracking} />
             {(tracking || points.length < 3) && points.length >= 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 4 }} />}
             {!tracking && points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 3, fillColor: "#39A879", fillOpacity: 0.28 }} />}
             {points.length > 0 && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lon]} radius={7} pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#0b8f62', fillOpacity: 1 }} />}
