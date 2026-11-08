@@ -18,15 +18,20 @@ alter table public.products
     or (
       jsonb_typeof(material_spec) = 'object'
       and (
-        (
-          material_spec ? 'package_volume_liters'
-          and jsonb_typeof(material_spec->'package_volume_liters') = 'number'
+        material_spec ? 'package_volume_liters'
+        or material_spec ? 'coverage_area_m2'
+      )
+      and (
+        not (material_spec ? 'package_volume_liters')
+        or (
+          jsonb_typeof(material_spec->'package_volume_liters') = 'number'
           and (material_spec->>'package_volume_liters')::numeric > 0
         )
-        or
-        (
-          material_spec ? 'coverage_area_m2'
-          and jsonb_typeof(material_spec->'coverage_area_m2') = 'number'
+      )
+      and (
+        not (material_spec ? 'coverage_area_m2')
+        or (
+          jsonb_typeof(material_spec->'coverage_area_m2') = 'number'
           and (material_spec->>'coverage_area_m2')::numeric > 0
         )
       )
