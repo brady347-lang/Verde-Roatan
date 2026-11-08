@@ -472,7 +472,7 @@ async function archiveCatalogImage(env, item, payload) {
     body: bytes
   });
   if (!stored.ok) throw new Error('Catalog reference image could not be copied to the private botanical archive.');
-  const archive = await db(env, 'botanical_reference_images', {
+  const archive = await db(env, 'botanical_reference_images?on_conflict=source_system,source_record_id,image_url', {
     method: 'POST',
     headers: { Prefer: 'return=minimal', 'resolution': 'merge-duplicates' },
     body: JSON.stringify({
