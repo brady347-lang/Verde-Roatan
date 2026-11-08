@@ -1591,6 +1591,7 @@ export default function App() {
     };
     setSession(newSession);
     safeSetItem('verde_auth_session', JSON.stringify(newSession));
+    if (data.user?.temporary_role === 'supplier') setTab('account');
     showToast(data.user?.temporary_role === 'supplier'
       ? 'Temporary supplier workspace opened.'
       : 'Temporary customer access opened.');
@@ -2203,15 +2204,17 @@ export default function App() {
         </main>
 
         {/* Persistent Bottom Tab Navigation */}
-        <div className="app-bottom-nav shrink-0 px-3 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
-          <Navigation
-            activeTab={tab}
-            onSelectTab={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
-            cartCount={cartCount}
-            activeOrdersCount={activeOrders.length}
-            lang={lang}
-          />
-        </div>
+        {session?.user?.temporary_role !== 'supplier' && (
+          <div className="app-bottom-nav shrink-0 px-3 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
+            <Navigation
+              activeTab={tab}
+              onSelectTab={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
+              cartCount={cartCount}
+              activeOrdersCount={activeOrders.length}
+              lang={lang}
+            />
+          </div>
+        )}
 
         {/* Global Toast Notification */}
         {toastMessage && (
