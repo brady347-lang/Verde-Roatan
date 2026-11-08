@@ -37,3 +37,16 @@ export function toNameList(value: unknown): string[] {
   const raw = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[,;|]/) : [];
   return raw.map(clean).filter(Boolean).slice(0, 20);
 }
+
+const BINOMIAL = /^[A-Z][a-z]{2,}(?:\s+(?:x\s+)?[a-z][a-z-]{2,})(?:\s+(?:subsp|var|f|cv)\.?\s+[A-Za-z'-]+)?(?:\s+['‘][^']{1,40}['’])?$/;
+
+/**
+ * The Latin name of a catalog item, or null. Legacy rows stored free text (often a Spanish description) in `sci`,
+ * so `sci` only counts when it actually looks like a Latin binomial. Never feed free text to the knowledge queue as a taxon.
+ */
+export function scientificNameOf(item: Pick<CatalogItem, 'scientific_name' | 'sci'>): string | null {
+  const explicit = clean(item.scientific_name);
+  if (explicit) return explicit;
+  const legacy = clean(item.sci);
+  return legacy.length <= 80 && BINOMIAL.test(legacy) ? legacy : null;
+}

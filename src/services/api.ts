@@ -1,4 +1,4 @@
-import { toNameList } from '../lib/catalogLocale';
+import { scientificNameOf, toNameList } from '../lib/catalogLocale';
 import { buildRuleBasedAdvice } from '../lib/botanicalRules';
 import {
   AI_WORKER_URL,
@@ -1231,7 +1231,7 @@ export async function reviewBotanicalEvidence(token: string, evidenceId: string,
 
 export async function enqueueCatalogBotanicalEvidence(
   token: string,
-  item: Pick<CatalogItem, 'id' | 'name' | 'sci' | 'image_url' | 'category'>
+  item: Pick<CatalogItem, 'id' | 'name' | 'name_es' | 'sci' | 'scientific_name' | 'image_url' | 'category'>
 ): Promise<void> {
   if (!item.image_url || !/^https:\/\//i.test(item.image_url)) return;
   const fingerprint = 'catalog-photo:' + String(item.id) + ':' + item.image_url.slice(-100);
@@ -1239,12 +1239,13 @@ export async function enqueueCatalogBotanicalEvidence(
     evidence_type: 'catalog_photo',
     source_system: 'rootwise-catalog',
     source_record_id: String(item.id),
-    subject_key: item.sci || item.name,
+    subject_key: scientificNameOf(item) || item.name,
     evidence_fingerprint: fingerprint,
     submitted_payload: {
       name: item.name,
       common_name: item.name,
-      scientific_name: item.sci || null,
+      common_name_es: item.name_es || null,
+      scientific_name: scientificNameOf(item),
       category: item.category || null,
       image_url: item.image_url,
       source_system: 'rootwise-catalog'

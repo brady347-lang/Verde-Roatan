@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { localizedName, secondaryName, localizedDescription, localizedCare, alternativeNames, toNameList } from './catalogLocale.ts';
+import { scientificNameOf, localizedName, secondaryName, localizedDescription, localizedCare, alternativeNames, toNameList } from './catalogLocale.ts';
 import { matchesQuery } from './botanicalRules.ts';
 let n = 0; const t = (name, fn) => { fn(); console.log('ok', ++n, name); };
 const full = { id: '1', t: 'plant', name: 'Chinese Hibiscus', name_es: 'Hibisco', scientific_name: 'Hibiscus rosa-sinensis', sci: 'Hibiscus rosa-sinensis', note: 'legacy note', description_en: 'Showy shrub.', description_es: 'Arbusto vistoso.', care_instructions_en: 'Water twice a week.', care_instructions_es: 'Regar dos veces por semana.', alternative_names_en: ['Shoeblack plant'], alternative_names_es: ['Cayena'], category: 'Flowers', kind: 'flower', sun: 'Full', tags: [] };
@@ -38,5 +38,18 @@ t('search finds plants by English, Spanish, alternative and scientific names (ac
 t('legacy rows with no translations still work and are searchable', () => {
   assert.ok(matchesQuery(legacy, 'plumbago'));
   assert.equal(localizedName(legacy, 'en'), 'Blue Plumbago');
+});
+t('only a real Latin name is sent to the knowledge queue as a taxon', () => {
+  assert.equal(scientificNameOf({ scientific_name: 'Hibiscus rosa-sinensis', sci: 'x' }), 'Hibiscus rosa-sinensis');
+  assert.equal(scientificNameOf({ sci: 'Licuala grandis' }), 'Licuala grandis');
+  assert.equal(scientificNameOf({ sci: "Hibiscus rosa-sinensis 'Brilliant'" }), "Hibiscus rosa-sinensis 'Brilliant'");
+  assert.equal(scientificNameOf({ sci: 'Arbusto perennifolio muy ramificado que puede alcanzar de 2 a 5 metros' }), null);
+  assert.equal(scientificNameOf({ sci: 'Flowering shrub with blue flowers' }), null);
+  assert.equal(scientificNameOf({ sci: '' }), null);
+});
+t('translated fields survive the catalog cache (JSON round trip)', () => {
+  const back = JSON.parse(JSON.stringify(full));
+  assert.equal(localizedName(back, 'es'), 'Hibisco');
+  assert.equal(localizedDescription(back, 'es'), 'Arbusto vistoso.');
 });
 console.log(`ALL ${n} PASSED`);
