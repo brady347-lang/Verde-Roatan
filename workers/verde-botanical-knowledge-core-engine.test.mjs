@@ -54,10 +54,10 @@ test('scheduled cycle does not require Gemini when no evidence is queued', async
     if (String(url).includes('botanical_engine_runs')) return ok(null, 404);
     throw new Error('Unexpected upstream call: '+url);
   };
-  await worker.scheduled({}, env, {waitUntil(p){ this.task=p; }});
-  // waitUntil owns the promise; invoke a second run with direct await to assert completion.
-  const response = await worker.fetch(new Request('https://worker.test/health'), {});
-  assert.equal(response.status, 200);
+  let scheduledTask;
+  await worker.scheduled({}, env, { waitUntil(p) { scheduledTask = p; } });
+  assert.ok(scheduledTask, 'scheduled handler must register its work with waitUntil');
+  await scheduledTask;
   assert.ok(calls.some(c=>c.url.includes('botanical_evidence_queue')));
   assert.ok(!calls.some(c=>/generativelanguage|gemini/i.test(c.url)));
 });
