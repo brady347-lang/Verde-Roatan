@@ -4,10 +4,10 @@ import { Geolocation } from '@capacitor/geolocation';
 import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Calculator, Check, CircleDot, Compass, MapPin, Play, RotateCcw, Square, Trees, Waves } from 'lucide-react';
-import { Language } from '../types';
+import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
 
-interface Props { lang: Language; }
+interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = { lat: number; lon: number; accuracy: number; };
 function MapViewport({ points }: { points: Point[] }) {
   const map = useMap();
@@ -36,7 +36,7 @@ function measurePolygon(points: Point[]) {
   return { area: Math.abs(twiceArea) / 2, perimeter };
 }
 
-export const ToolsScreen: React.FC<Props> = ({ lang }) => {
+export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const es = lang === 'es';
   const [points, setPoints] = useState<Point[]>([]);
   const [savedPlots, setSavedPlots] = useState<SavedPlot[]>([]);
@@ -97,6 +97,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const [gpsError, setGpsError] = useState('');
   const [depth, setDepth] = useState('0.08');
   const [coverage, setCoverage] = useState('50');
+  const [selectedSodId, setSelectedSodId] = useState('');
   const [plantSpacing, setPlantSpacing] = useState('0.5');
   const [manualLength, setManualLength] = useState('10');
   const [manualWidth, setManualWidth] = useState('8');
@@ -104,6 +105,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const [bagLiters, setBagLiters] = useState('40');
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation'>('area');
   const measurement = useMemo(() => measurePolygon(points), [points]);
+  const sodOptions = useMemo(() => catalog.filter((item) => /sod|turf|lawn/i.test([item.name, item.sci, item.category, ...item.tags].join(' '))), [catalog]);
+  const selectedSod = sodOptions.find((item) => item.id === selectedSodId) || sodOptions[0];
   const capturePoint = async () => {
     setGpsBusy(true);
     setGpsError('');
@@ -140,6 +143,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const area = measurement.area;
   const manualArea = Math.max(0, Number(manualLength) || 0) * Math.max(0, Number(manualWidth) || 0);
   const measuredArea = points.length >= 3 ? area : manualArea;
+  const sodSquareYards = measuredArea / 0.83612736;
+  const sodUnitsNeeded = Math.ceil(sodSquareYards);
+  const sodTotal = selectedSod ? sodUnitsNeeded * selectedSod.price : 0;
+  const sodAvailable = selectedSod ? Math.max(0, selectedSod.stock_quantity || 0) : 0;
   const m2 = measuredArea;
   const safeDepth = Math.max(0, Number(depth) || 0);
   const safeWaste = Math.max(0, Number(waste) || 0);
@@ -193,6 +200,29 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
           </svg>
           <p className="text-[10px] text-[var(--ink-soft)]">{es ? "Diagrama aproximado, no un mapa geográfico. Captura puntos GPS para ver el terreno sobre el mapa." : "Approximate diagram, not a geographic map. Capture GPS points to see the site on a real map."}</p>
         </div>}
+
+        <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
+          <p className="text-xs font-bold">{es ? 'Planificador de césped y materiales de superficie' : 'Lawn & surface-material planner'}</p>
+          <p className="mt-1 text-[11px] text-[var(--ink-soft)]">{es ? 'Calcula cuánto césped en rollo o losas necesitas para el área medida y comprueba si está en el catálogo.' : 'Calculate how much sod or turf you need for the measured area and check whether it is in the catalog.'}</p>
+          {sodOptions.length > 0 ? <>
+            <label className="mt-3 block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Elegir césped del catálogo' : 'Choose sod from catalog'}
+              <select value={selectedSod ? selectedSod.id : ''} onChange={(event) => setSelectedSodId(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]">
+                {sodOptions.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.size}</option>)}
+              </select>
+            </label>
+            {selectedSod && <div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3">
+              <div className="flex items-start justify-between gap-2"><div><b className="text-sm">{selectedSod.name}</b><p className="text-[10px] text-[var(--ink-soft)]">{selectedSod.size} · {selectedSod.nursery}</p></div><span className="rounded-full bg-[var(--palm)]/15 px-2 py-1 text-[10px] font-bold text-[var(--palm)]">{selectedSod.stock_quantity > 0 && selectedSod.stock !== 'Out of stock' ? (es ? 'En catálogo' : 'In catalog') : (es ? 'Sin existencias' : 'Out of stock')}</span></div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div><p className="text-[var(--ink-soft)]">{es ? 'Cantidad necesaria' : 'Quantity needed'}</p><b className="text-xl">{sodUnitsNeeded} {es ? 'losas yd²' : 'sq yd slabs'}</b></div>
+                <div><p className="text-[var(--ink-soft)]">{es ? 'Existencias registradas' : 'Recorded stock'}</p><b className="text-xl">{sodAvailable}</b></div>
+                <div><p className="text-[var(--ink-soft)]">{es ? 'Precio por unidad' : 'Price per unit'}</p><b>{selectedSod.currency} {selectedSod.price.toFixed(2)}</b></div>
+                <div><p className="text-[var(--ink-soft)]">{es ? 'Subtotal estimado' : 'Estimated subtotal'}</p><b>{selectedSod.currency} {sodTotal.toFixed(2)}</b></div>
+              </div>
+              <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{sodUnitsNeeded > sodAvailable ? (es ? 'La cantidad calculada supera las existencias registradas. Contacta al vivero para confirmar disponibilidad o solicitar abastecimiento.' : 'Calculated quantity exceeds recorded stock. Contact the nursery to confirm availability or request sourcing.') : (es ? 'Existencias suficientes según el registro actual; confirma antes de comprar.' : 'Recorded stock appears sufficient; confirm availability before purchase.')}</p>
+            </div>}
+          </> : <p className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay césped tipo sod/turf registrado actualmente en el catálogo. Puedes seguir usando el área para calcular otros materiales.' : 'No sod/turf products are currently listed in the catalog. You can still use this area to calculate other materials.'}</p>}
+          <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Estimación basada en losas de 1 yd²; incluye redondeo hacia arriba, no contempla cortes, desperdicio ni pendientes.' : 'Estimate assumes 1 sq yd slabs and rounds up; excludes cuts, waste and slopes.'}</p>
+        </div>
         <div className="mb-3 rounded-2xl bg-[var(--surface-2)] p-3">
           <p className="mb-2 text-xs font-bold">{es ? 'O medir manualmente (área rectangular)' : 'Or enter dimensions manually (rectangular area)'}</p>
           <div className="grid grid-cols-2 gap-2">
