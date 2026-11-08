@@ -242,7 +242,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   {lang === 'es' ? 'Asesor Botánico con IA' : 'AI Garden Consultant'}
                 </b>
                 <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-[var(--palm)]/20 text-[var(--palm)]">
-                  Gemini 3.8
+                  Rootwise AI
                 </span>
               </div>
               <p className="text-[12px] text-[var(--ink-soft)] leading-snug mt-0.5">

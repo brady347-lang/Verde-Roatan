@@ -1,3 +1,4 @@
+import { findCatalogMatches } from '../lib/catalogMatch';
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import {
@@ -187,56 +188,9 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
     record: { common_name?: string; scientific_name?: string; alternative_names?: string[] } | undefined,
     plantCatalog: CatalogItem[] = catalog
   ): CatalogItem[] => {
-    if (!record) return [];
-    const sci = (record.scientific_name || '').toLowerCase().trim();
-    const common = (record.common_name || '').toLowerCase().trim();
-    const alts = (record.alternative_names || []).map((a) => a.toLowerCase().trim());
-
-    // Extract genus and species tokens from scientific name
-    const sciParts = sci.split(/\s+/).filter((w) => w.length > 2 && !/^(var|spp|sp|subsp)\.?$/i.test(w));
-    const genus = sciParts[0] || '';
-    const species = sciParts[1] || '';
-
-    return catalog.filter((item) => {
-      if (item.t !== 'plant') return false;
-      const itemSci = (item.sci || '').toLowerCase().trim();
-      const itemName = (item.name || '').toLowerCase().trim();
-
-      // 1. Exact scientific name match
-      if (itemSci && sci && (itemSci === sci || itemSci.startsWith(sci) || sci.startsWith(itemSci))) {
-        return true;
-      }
-
-      // 2. Both genus AND species present in catalog scientific name
-      if (genus && species && itemSci.includes(genus) && itemSci.includes(species)) {
-        return true;
-      }
-
-      // 3. Exact common name equality (normalizing punctuation)
-      const normItemName = itemName.replace(/[()\-–]/g, ' ').replace(/\s+/g, ' ').trim();
-      const normCommon = common.replace(/[()\-–]/g, ' ').replace(/\s+/g, ' ').trim();
-      if (normItemName === normCommon) {
-        return true;
-      }
-
-      // 4. Exact match against known alternative botanical names
-      if (alts.some((alt) => {
-        const normAlt = alt.replace(/[()\-–]/g, ' ').replace(/\s+/g, ' ').trim();
-        return normAlt === normItemName;
-      })) {
-        return true;
-      }
-
-      // 5. Genus specific match IF item name also explicitly matches the specific epithet or species
-      if (genus && itemSci.includes(genus)) {
-        if (species && (itemSci.includes(species) || itemName.includes(species))) {
-          return true;
-        }
-      }
-
-      // Never match broad tags like 'palm', 'flower', 'shrub' or unrelated families
-      return false;
-    });
+    // Compare the verified record and the top candidate; catalog names may be Spanish or have no scientific name.
+    const top = result?.candidates?.[0];
+    return findCatalogMatches([record || {}, top ? { common_name: top.common_name, scientific_name: top.scientific_name } : {}], plantCatalog);
   };
 
   const renderDots = (n: number) => {
@@ -271,7 +225,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
         <p className="text-[13px] text-[var(--ink-soft)]">
           {lang === 'es'
             ? 'Diagnóstico botánico con inteligencia artificial adaptada a la flora y plagas de Roatán.'
-            : 'Gemini plant intelligence & pest pathology trained for Roatán and Caribbean flora.'}
+            : 'Rootwise plant intelligence & pest pathology trained for Roatán and Caribbean flora.'}
         </p>
       </header>
 
@@ -364,7 +318,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
 
           <p className="text-[11.5px] text-[var(--ink-soft)] mt-1 flex items-center gap-1.5 justify-center">
             <Sparkles className="w-3.5 h-3.5 text-[var(--sun)]" />
-            Gemini Botanical Intelligence analyzes foliage, blooms, fronds & pathology.
+            Rootwise Botanical Intelligence analyzes foliage, blooms, fronds & pathology.
           </p>
         </div>
       )}
@@ -415,7 +369,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
             <div className="flex items-center justify-between text-[12px] font-extrabold text-[var(--ink)]">
               <span className="flex items-center gap-1.5 text-[var(--palm)]">
                 <Sparkles className="w-4 h-4 animate-spin text-[var(--lagoon)]" />
-                Gemini 3.8 Flash Botanical Search
+                Rootwise Botanical Search
               </span>
               <span className="tabular-nums font-mono bg-[var(--surface-2)] px-2 py-0.5 rounded-md text-[11px] text-[var(--ink-soft)] font-bold">
                 {elapsedTime.toFixed(0)}s
@@ -494,8 +448,8 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                 <div>
                   <b className="font-extrabold block text-[13px] text-[var(--ink)]">
                     {lang === 'es'
-                      ? 'Gemini 3.8 Flash: Refinamiento Continuo en Curso'
-                      : 'Gemini 3.8 Flash: Continuous Accuracy Refinement'}
+                      ? 'Rootwise AI: Refinamiento Continuo en Curso'
+                      : 'Rootwise AI: Continuous Accuracy Refinement'}
                   </b>
                   <span className="text-[11.5px] text-[var(--ink-soft)] block">
                     {lang === 'es'
@@ -1102,7 +1056,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
           {result.model_used && (
             <div className="text-center">
               <span className="text-[11px] font-semibold text-[var(--ink-soft)] bg-[var(--surface-2)] px-2.5 py-1 rounded-full">
-                Verified via {result.model_used}
+                Identified by Rootwise AI
               </span>
             </div>
           )}
