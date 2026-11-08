@@ -4,6 +4,9 @@ export type SavedPlot = {
   points: { lat: number; lon: number; accuracy: number }[];
   areaM2: number;
   perimeterM: number;
+  notes?: string;
+  plantSpacingM?: number;
+  estimatedPlants?: number;
   createdAt: string;
   updatedAt: string;
 };
