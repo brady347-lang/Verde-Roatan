@@ -3,6 +3,7 @@ import { CheckCircle2, Clipboard, KeyRound, RefreshCw, ShieldCheck } from 'lucid
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from '../data/initialData';
 import { supabaseRpcRequest } from '../services/api';
 import { AuthSession, Language } from '../types';
+import { SupplierProductWorkspace } from './SupplierProductWorkspace';
 
 type Application = {
   id: string;
@@ -194,7 +195,7 @@ export const SupplierOnboardingPanel: React.FC<{
           </form>
         </>
       )}
-      {error && <p role="alert" className="rounded-xl bg-red-50 p-2.5 text-[12px] text-red-700">{error}</p>}
+      {application?.status === 'approved' && <SupplierProductWorkspace session={session} lang={lang} />}\n      {error && <p role="alert" className="rounded-xl bg-red-50 p-2.5 text-[12px] text-red-700">{error}</p>}
       {message && <p className="rounded-xl bg-emerald-50 p-2.5 text-[12px] text-emerald-800">{message}</p>}
     </section>
   );
