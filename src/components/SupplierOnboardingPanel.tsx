@@ -7,6 +7,7 @@ import { SupplierProductWorkspace } from './SupplierProductWorkspace';
 
 type IdentificationReport = { id: string; product_id: string; supplier_user_id: string; ai_common_name: string | null; ai_scientific_name: string | null; corrected_common_name: string | null; corrected_scientific_name: string | null; report_notes: string; image_url: string | null; status: string; created_at: string; };
 
+type ProductReview = { id: string; name: string; scientific_name: string | null; description: string | null; image_url: string | null; listing_status: string; image_review_status: string; listing_review_notes: string | null; image_review_notes: string | null; photo_quality_score: number | null; photo_quality_status: string; photo_quality_notes: string | null; photo_width: number | null; photo_height: number | null; photo_file_size_bytes: number | null; created_at: string; };
 type Application = {
   id: string;
   user_id: string;
@@ -56,6 +57,8 @@ export const SupplierOnboardingPanel: React.FC<{
   const [application, setApplication] = useState<Application | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
   const [identificationReports, setIdentificationReports] = useState<IdentificationReport[]>([]);
+  const [productReviews, setProductReviews] = useState<ProductReview[]>([]);
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -64,6 +67,12 @@ export const SupplierOnboardingPanel: React.FC<{
     if (!isAdmin) return;
     const rows = await requestRows('supplier_identification_reports?select=*&order=created_at.desc', session.access_token);
     setIdentificationReports(Array.isArray(rows) ? rows : []);
+  }, [isAdmin, session.access_token]);
+
+  const loadProductReviews = useCallback(async () => {
+    if (!isAdmin) return;
+    const rows = await requestRows('products?select=id,name,scientific_name,description,image_url,listing_status,image_review_status,listing_review_notes,image_review_notes,photo_quality_score,photo_quality_status,photo_quality_notes,photo_width,photo_height,photo_file_size_bytes,created_at&listing_status=eq.pending_review&order=created_at.asc', session.access_token);
+    setProductReviews(Array.isArray(rows) ? rows : []);
   }, [isAdmin, session.access_token]);
 
   const loadApplications = useCallback(async () => {
@@ -80,9 +89,12 @@ export const SupplierOnboardingPanel: React.FC<{
   useEffect(() => {
     let active = true;
     loadApplications().catch((err) => { if (active) setError(err.message); });
-    if (isAdmin) loadIdentificationReports().catch((err) => { if (active) setError(err.message); });
+    if (isAdmin) {
+      loadIdentificationReports().catch((err) => { if (active) setError(err.message); });
+      loadProductReviews().catch((err) => { if (active) setError(err.message); });
+    }
     return () => { active = false; };
-  }, [loadApplications, loadIdentificationReports, isAdmin]);
+  }, [loadApplications, loadIdentificationReports, loadProductReviews, isAdmin]);
 
   const reviewIdentificationReport = async (item: IdentificationReport, status: 'reviewed' | 'resolved' | 'dismissed') => {
     setLoading(true); setError('');
@@ -90,6 +102,29 @@ export const SupplierOnboardingPanel: React.FC<{
       await requestRows('supplier_identification_reports?id=eq.' + encodeURIComponent(item.id), session.access_token, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status, reviewed_by: session.user.id, reviewed_at: new Date().toISOString() }) });
       await loadIdentificationReports();
     } catch (err: any) { setError(err.message || 'Could not update identification report.'); }
+    finally { setLoading(false); }
+  };
+
+  const reviewProduct = async (item: ProductReview, decision: 'approve' | 'reject') => {
+    setLoading(true); setError(''); setMessage('');
+    const note = (reviewNotes[item.id] || '').trim();
+    try {
+      await requestRows('products?id=eq.' + encodeURIComponent(item.id), session.access_token, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          listing_status: decision === 'approve' ? 'approved' : 'rejected',
+          image_review_status: decision === 'approve' ? 'approved' : 'rejected',
+          listing_review_notes: note || null,
+          image_review_notes: note || null,
+          reviewed_by: session.user.id,
+          reviewed_at: new Date().toISOString(),
+          is_active: decision === 'approve'
+        })
+      });
+      setMessage(spanish ? (decision === 'approve' ? 'Producto aprobado y publicado.' : 'Producto rechazado.') : (decision === 'approve' ? 'Product approved and published.' : 'Product rejected.'));
+      await loadProductReviews();
+    } catch (err: any) { setError(err.message || 'Could not review product.'); }
     finally { setLoading(false); }
   };
 
@@ -181,6 +216,18 @@ export const SupplierOnboardingPanel: React.FC<{
             <button type="button" disabled={loading} onClick={() => reviewApplication(item, 'rejected')} className="rounded-xl border border-red-200 px-3 py-2 text-[11px] font-bold text-red-600">{spanish ? 'Rechazar' : 'Reject'}</button>
           </div>}
         </article>)}
+        <div className="border-t border-[var(--line)] pt-3 flex flex-col gap-2">
+          <div className="flex items-center justify-between"><b className="text-[13px] text-[var(--ink)]">{spanish ? 'Revisión de productos' : 'Product listing review'} ({productReviews.length} {spanish ? 'pendientes' : 'pending'})</b><button type="button" onClick={() => loadProductReviews().catch(err => setError(err.message))} className="p-2 rounded-lg border border-[var(--line)] text-[var(--ink-soft)]"><RefreshCw className="w-4 h-4" /></button></div>
+          {productReviews.length === 0 && <p className="rounded-xl bg-[var(--surface-2)] p-3 text-[12px] text-[var(--ink-soft)]">{spanish ? 'No hay productos pendientes de revisión.' : 'No products are waiting for review.'}</p>}
+          {productReviews.map(item => <article key={item.id} className="rounded-xl border border-[var(--line)] p-3 flex flex-col gap-2">
+            <div><b className="text-[13px] text-[var(--ink)]">{item.name}</b><p className="text-[11px] text-[var(--ink-soft)]">{item.scientific_name || 'Scientific name not provided'}</p></div>
+            {item.image_url && <img src={item.image_url} alt={item.name} className="w-full max-h-48 rounded-lg object-contain bg-[var(--surface-2)]" />}
+            <p className="text-[11px] text-[var(--ink-soft)]">{item.description || ''}</p>
+            <div className="rounded-lg bg-[var(--surface-2)] p-2 text-[11px] text-[var(--ink-soft)]"><b className="text-[var(--ink)]">{spanish ? 'Calidad técnica de foto' : 'Technical photo quality'}:</b> {item.photo_quality_score ?? '—'}/100 · {item.photo_quality_status || 'not checked'}{item.photo_width && item.photo_height ? <span> · {item.photo_width} × {item.photo_height}px</span> : null}{item.photo_quality_notes && <p className="mt-1">{item.photo_quality_notes}</p>}</div>
+            <textarea value={reviewNotes[item.id] || ''} onChange={e => setReviewNotes(prev => ({ ...prev, [item.id]: e.target.value }))} rows={2} placeholder={spanish ? 'Notas para el proveedor (opcional)' : 'Review notes for supplier (optional)'} className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[11px] text-[var(--ink)]" />
+            <div className="flex gap-2"><button type="button" disabled={loading || !item.image_url} onClick={() => reviewProduct(item, 'approve')} className="flex-1 rounded-lg bg-[var(--palm)] p-2 text-[11px] font-bold text-white disabled:opacity-50">{spanish ? 'Aprobar y publicar' : 'Approve & publish'}</button><button type="button" disabled={loading} onClick={() => reviewProduct(item, 'reject')} className="rounded-lg border border-red-200 p-2 text-[11px] font-bold text-red-600">{spanish ? 'Rechazar' : 'Reject'}</button></div>
+          </article>)}
+        </div>
         <div className="border-t border-[var(--line)] pt-3 flex flex-col gap-2">
           <div className="flex items-center justify-between"><b className="text-[13px] text-[var(--ink)]">{spanish ? 'Reportes de identificación' : 'Identification reports'} ({identificationReports.filter(r => r.status === 'pending_review').length} {spanish ? 'pendientes' : 'pending'})</b><button type="button" onClick={() => loadIdentificationReports().catch(err => setError(err.message))} className="p-2 rounded-lg border border-[var(--line)] text-[var(--ink-soft)]"><RefreshCw className="w-4 h-4" /></button></div>
           {identificationReports.length === 0 && <p className="rounded-xl bg-[var(--surface-2)] p-3 text-[12px] text-[var(--ink-soft)]">{spanish ? 'Aún no hay reportes.' : 'No identification reports yet.'}</p>}
