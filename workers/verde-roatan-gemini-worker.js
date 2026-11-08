@@ -800,6 +800,52 @@ async function handleIdentificationReview(request, body, env) {
     throw new Error('The review could not be completed. Please try again.');
   }
 
+  // Feed the same private photo and the user's correction into the botanical evidence queue.
+  // This is a community signal only; it never changes the scientific verification level.
+  try {
+    const archivePath = 'identification-review/' + user.id + '/' + reviewId + '.' + extension;
+    const archiveUpload = await fetch(`${url}/storage/v1/object/botanical-health-evidence/${archivePath}`, {
+      method: 'POST',
+      headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': mimeType, 'x-upsert': 'false' },
+      body: bytes
+    });
+    if (!archiveUpload.ok && archiveUpload.status !== 409) {
+      console.warn('Identification feedback saved, but its botanical evidence photo copy failed:', archiveUpload.status);
+    } else {
+      const fingerprintInput = reviewId + ':' + user.id + ':' + (correctedScientific || correctedCommon || decision);
+      const fingerprintBytes = new TextEncoder().encode(fingerprintInput);
+      const fingerprintHash = await crypto.subtle.digest('SHA-256', fingerprintBytes);
+      const fingerprint = Array.from(new Uint8Array(fingerprintHash)).map(v => v.toString(16).padStart(2, '0')).join('');
+      const queued = await fetch(url + '/rest/v1/botanical_evidence_queue', {
+        method: 'POST',
+        headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', Prefer: 'return=minimal,resolution=ignore-duplicates' },
+        body: JSON.stringify({
+          evidence_type: 'community_correction',
+          source_system: 'rootwise-identification-review',
+          source_record_id: reviewId,
+          subject_key: sciName || correctedScientific || correctedCommon || candidate.common_name || null,
+          evidence_fingerprint: fingerprint,
+          submitted_payload: {
+            image_storage_path: archivePath,
+            identification_result: { common_name: candidate.common_name || null, scientific_name: sciName || null, confidence_score: candidate.confidence_score ?? null },
+            decision,
+            corrected_common_name: correctedCommon || null,
+            corrected_scientific_name: correctedScientific || null,
+            notes: noteText.slice(0, 1000),
+            submitted_by: user.id,
+            review_id: reviewId
+          },
+          status: 'pending',
+          verification_status: 'community_submitted'
+        })
+      });
+      if (!queued.ok) console.warn('Identification feedback saved, but botanical evidence queue insert failed:', queued.status);
+    }
+  } catch (queueError) {
+    // Keep the already-saved customer review intact; retry/repair can ingest it later.
+    console.warn('Identification feedback could not be forwarded to botanical evidence:', queueError);
+  }
+
   return new Response(JSON.stringify({
     status: 'success',
     review_id: reviewId,
