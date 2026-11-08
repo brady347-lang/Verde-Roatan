@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
+import { RootWiseDeviceSensors } from '@rootwise/device-sensors';
 import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Activity, Calculator, Check, CircleDot, Compass, Leaf, MapPin, Play, RotateCcw, Square, Sun, Trees, Waves } from 'lucide-react';
@@ -134,19 +135,60 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const lightMatches = useMemo(() => recommendPlantsForLight(lux), [lux]);
   useEffect(() => () => { sensorRef.current?.stop(); }, []);
   useEffect(() => { if (tool !== 'light' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } }, [tool]);
-  const startLightSensor = () => {
-    type SensorLike = { illuminance?: number; start: () => void; stop: () => void; addEventListener: (name: string, callback: () => void) => void; onerror: ((event: unknown) => void) | null };
-    const Sensor = (window as unknown as { AmbientLightSensor?: new (options?: { frequency?: number }) => SensorLike }).AmbientLightSensor;
-    if (!Sensor) { setSensorStatus(es ? 'El sensor de luz ambiental no está disponible en este dispositivo o navegador. Introduce los lux manualmente.' : 'Ambient light sensor is not available on this device or browser. Enter lux manually.'); return; }
+  const startLightSensor = async () => {
+    sensorRef.current?.stop();
+    sensorRef.current = null;
+    setLiveLux(null);
     try {
-      sensorRef.current?.stop();
+      if (Capacitor.isNativePlatform()) {
+        const listener = await RootWiseDeviceSensors.addListener('lightReading', (event) => {
+          if (Number.isFinite(event.lux)) setLiveLux(Math.max(0, event.lux));
+        });
+        try {
+          await RootWiseDeviceSensors.startAmbientLight();
+        } catch (error) {
+          await listener.remove();
+          throw error;
+        }
+        sensorRef.current = { stop: () => {
+          void RootWiseDeviceSensors.stopAmbientLight();
+          void listener.remove();
+        } };
+        setSensorStatus(es ? 'Sensor nativo activo: lectura ambiental en tiempo real.' : 'Native ambient light sensor is active.');
+        return;
+      }
+
+      type SensorLike = { illuminance?: number; start: () => void; stop: () => void; addEventListener: (name: string, callback: () => void) => void; onerror: ((event: unknown) => void) | null };
+      const Sensor = (window as unknown as { AmbientLightSensor?: new (options?: { frequency?: number }) => SensorLike }).AmbientLightSensor;
+      if (!Sensor) throw new Error('AMBIENT_LIGHT_SENSOR_UNAVAILABLE');
       const sensor = new Sensor({ frequency: 1 });
-      sensor.addEventListener('reading', () => { if (typeof sensor.illuminance === 'number' && Number.isFinite(sensor.illuminance)) setLiveLux(sensor.illuminance); });
-      sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Revisa los permisos o introduce los lux manualmente.' : 'Could not read the sensor. Check device permissions or enter lux manually.');
-      sensor.start(); sensorRef.current = sensor; setSensorStatus(es ? 'Sensor activo: lectura ambiental en tiempo real.' : 'Sensor active: live ambient reading.');
-    } catch { setSensorStatus(es ? 'El dispositivo bloqueó el sensor. Puedes introducir los lux manualmente.' : 'The device blocked the sensor. You can enter lux manually.'); }
+      sensor.addEventListener('reading', () => {
+        if (typeof sensor.illuminance === 'number' && Number.isFinite(sensor.illuminance)) setLiveLux(sensor.illuminance);
+      });
+      sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Introduce los lux manualmente.' : 'Sensor read failed. Enter lux manually.');
+      sensor.start();
+      sensorRef.current = sensor;
+      setSensorStatus(es ? 'Sensor del navegador activo.' : 'Browser ambient light sensor is active.');
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : '';
+      setSensorStatus(es
+        ? (detail.includes('UNAVAILABLE') ? 'Este dispositivo o navegador no expone el sensor de luz. Introduce los lux manualmente.' : 'No se pudo iniciar el sensor de luz. Introduce los lux manualmente.')
+        : (detail.includes('UNAVAILABLE') ? 'This device does not expose an ambient light sensor to the app. Enter lux manually.' : 'Could not start the light sensor. Enter lux manually.'));
+    }
   };
-  const stopLightSensor = () => { sensorRef.current?.stop(); sensorRef.current = null; setLiveLux(null); setSensorStatus(es ? 'Sensor detenido.' : 'Sensor stopped.'); };
+  const stopLightSensor = () => {
+    sensorRef.current?.stop();
+    sensorRef.current = null;
+    setLiveLux(null);
+    setSensorStatus(es ? 'Sensor detenido.' : 'Sensor stopped.');
+  };
+  const openPhoneLocationSettings = async () => {
+    try {
+      await RootWiseDeviceSensors.openLocationSettings();
+    } catch {
+      setGpsError(es ? 'No se pudieron abrir los ajustes de ubicación. Abre Ajustes del teléfono → Ubicación.' : 'Could not open Location settings. Open your phone Settings → Location.');
+    }
+  };
   const measurement = useMemo(() => measurePolygon(points), [points]);
   const sodOptions = useMemo(() => catalog.filter((item) => item.kind === 'grass' && /sod|zoysia|natural grass/i.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))), [catalog]);
   const selectedSod = sodOptions.find((item) => item.id === selectedSodId);
@@ -294,7 +336,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <div className="mt-2 grid grid-cols-2 gap-2 text-xs"><div className="rounded-xl bg-[var(--surface-2)] p-2"><b className="text-xl">{plants}</b><p className="text-[var(--ink-soft)]">{es ? 'Plantas estimadas' : 'Estimated plants'}</p></div><div className="rounded-xl bg-[var(--surface-2)] p-2"><b className="text-xl">{spacing > 0 ? (1/(spacing*spacing)).toFixed(1) : '—'}</b><p className="text-[var(--ink-soft)]">{es ? 'Plantas por m²' : 'Plants per m²'}</p></div></div>
           <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Estimación con patrón cuadrado; descuenta caminos, bordes y obstáculos. La separación real depende de la especie y tamaño adulto.' : 'Square-grid estimate; subtract paths, edges and obstacles. Actual spacing depends on species and mature size.'}</p>
         </div>
-        {gpsError && <div role="alert" className="mb-3 rounded-xl bg-red-50 p-3 text-xs text-red-700"><p>{gpsError}</p>{Capacitor.isNativePlatform() && <button type="button" onClick={capturePoint} disabled={gpsBusy} className="mt-3 w-full rounded-xl border border-red-200 bg-white px-3 py-2 font-bold text-red-700 disabled:opacity-50">{gpsBusy ? (es ? 'Solicitando permiso…' : 'Requesting permission…') : (es ? 'Volver a solicitar permiso de ubicación' : 'Request location permission again')}</button>}</div>}
+        {gpsError && <div role="alert" className="mb-3 rounded-xl bg-red-50 p-3 text-xs text-red-700"><p>{gpsError}</p>{Capacitor.isNativePlatform() && <div className="mt-3 grid grid-cols-1 gap-2"><button type="button" onClick={capturePoint} disabled={gpsBusy} className="w-full rounded-xl border border-red-200 bg-white px-3 py-2 font-bold text-red-700 disabled:opacity-50">{gpsBusy ? (es ? 'Solicitando permiso…' : 'Requesting permission…') : (es ? 'Volver a solicitar permiso de ubicación' : 'Request location permission again')}</button><button type="button" onClick={openPhoneLocationSettings} className="w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] px-3 py-2 font-bold text-[var(--ink)]">{es ? 'Activar ubicación del teléfono' : 'Turn on phone Location Services'}</button></div>}</div>}
         {plotStorageError && <p role="alert" className="mb-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">{plotStorageError}</p>}
         {points.length >= 3 && <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
           <p className="mb-2 text-xs font-bold">{es ? 'Guardar este mapa en el dispositivo' : 'Save this map on this device'}</p>
