@@ -13,7 +13,8 @@
     "test:worker": "node workers/verde-roatan-gemini-worker.test.mjs && node workers/verde-roatan-constitution-worker.test.mjs && node workers/botanical-recognition-engine.test.mjs && node workers/verde-botanical-knowledge-core-worker.test.mjs && node workers/verde-roatan-legal-worker.test.mjs && node workers/verde-botanical-knowledge-core-engine.test.mjs && node src/lib/catalogMatch.test.mjs && node src/lib/theme.test.mjs && node src/lib/catalogLocale.test.mjs",
     "db:update": "tsx scripts/update-supabase.ts",
     "db:migrate": "tsx scripts/update-supabase.ts",
-    "android:sync": "npm run build && cap sync android"
+    "android:sync": "npm run build && cap sync android",
+    "test:light": "node --import tsx src/services/lightIntelligence.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
