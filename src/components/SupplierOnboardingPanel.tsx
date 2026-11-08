@@ -43,7 +43,8 @@ export const SupplierOnboardingPanel: React.FC<{
   lang: Language;
   session: AuthSession;
   isAdmin: boolean;
-}> = ({ lang, session, isAdmin }) => {
+  temporarySupplier?: boolean;
+}> = ({ lang, session, isAdmin, temporarySupplier = false }) => {
   const spanish = lang === 'es';
   const [businessName, setBusinessName] = useState('');
   const [contactName, setContactName] = useState(session.user.full_name || '');
@@ -62,6 +63,7 @@ export const SupplierOnboardingPanel: React.FC<{
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [temporaryCodes, setTemporaryCodes] = useState<Array<{ role: string; code: string; expires_at: string }>>([]);
 
   const loadIdentificationReports = useCallback(async () => {
     if (!isAdmin) return;
@@ -128,6 +130,29 @@ export const SupplierOnboardingPanel: React.FC<{
     finally { setLoading(false); }
   };
 
+  const createTemporaryCodes = async () => {
+    setLoading(true); setError(''); setMessage(''); setTemporaryCodes([]);
+    try {
+      const response = await fetch(`${SUPABASE_URL}/functions/v1/temporary-access`, {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ action: 'create' })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !Array.isArray(result.codes) || result.codes.length !== 4) {
+        throw new Error(result.error || 'Could not create the four temporary login codes.');
+      }
+      setTemporaryCodes(result.codes);
+      setMessage(spanish ? 'Se crearon dos códigos de cliente y dos de proveedor. Copia los códigos ahora.' : 'Created two customer codes and two supplier codes. Copy them now.');
+    } catch (err: any) {
+      setError(err.message || 'Could not create temporary login codes.');
+    } finally { setLoading(false); }
+  };
+
   const issueCode = async (event: React.FormEvent) => {
     event.preventDefault();
     setLoading(true); setError(''); setMessage(''); setIssuedCode('');
@@ -174,6 +199,43 @@ export const SupplierOnboardingPanel: React.FC<{
     } catch (err: any) { setError(err.message || 'Could not update application.'); }
     finally { setLoading(false); }
   };
+
+  if (temporarySupplier) {
+    return (
+      <section className="flex flex-col gap-3">
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <b className="text-[13px] text-[var(--ink)]">Temporary testing access</b>
+              <p className="mt-1 text-[11px] text-[var(--ink-soft)]">Generate four reusable login codes: two customers and two suppliers. Codes expire in 30 days.</p>
+            </div>
+            <button type="button" disabled={loading} onClick={createTemporaryCodes} className="rounded-xl bg-[var(--palm)] px-3 py-2 text-[11px] font-bold text-white disabled:opacity-60">
+              {loading ? '…' : 'Generate 4 codes'}
+            </button>
+          </div>
+          {temporaryCodes.length > 0 && (
+            <div className="mt-3 grid grid-cols-1 gap-2">
+              {temporaryCodes.map((item, index) => (
+                <div key={item.code} className="flex items-center justify-between gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-bold uppercase text-[var(--ink-soft)]">{item.role} {item.role === 'customer' ? (temporaryCodes.slice(0,index+1).filter(x=>x.role==='customer').length) : (temporaryCodes.slice(0,index+1).filter(x=>x.role==='supplier').length)}</p>
+                    <code className="break-all text-[12px] font-black text-[var(--ink)]">{item.code}</code>
+                  </div>
+                  <button type="button" onClick={() => navigator.clipboard?.writeText(item.code)} className="shrink-0 rounded-lg border border-[var(--line)] p-2 text-[var(--ink)]" aria-label="Copy temporary login code"><Clipboard className="w-4 h-4" /></button>
+                </div>
+              ))}
+              <p className="text-[10px] text-[var(--ink-soft)]">Copy and store these now. The full codes are not retrievable later.</p>
+            </div>
+          )}
+        </div>
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
+          <b className="text-[13px] text-[var(--ink)]">Temporary supplier testing workspace</b>
+          <p className="mt-1 text-[11px] text-[var(--ink-soft)]">Access is limited to supplier product management. New listings remain inactive until administrator review.</p>
+        </div>
+        <SupplierProductWorkspace session={session} lang={lang} />
+      </section>
+    );
+  }
 
   if (isAdmin) {
     return (
