@@ -165,17 +165,24 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const area = measurement.area;
   const manualArea = Math.max(0, Number(manualLength) || 0) * Math.max(0, Number(manualWidth) || 0);
   const measuredArea = points.length >= 3 ? area : manualArea;
-  const sodSquareYards = measuredArea / 0.83612736;
-  const sodUnitsNeeded = Math.ceil(sodSquareYards);
-  const sodTotal = selectedSod ? sodUnitsNeeded * selectedSod.price : 0;
+  const sodCoverageM2 = Number(selectedSod?.material_spec?.coverage_area_m2) || 0;
+  const sodUnitsNeeded = sodCoverageM2 > 0 ? Math.ceil(measuredArea / sodCoverageM2) : 0;
+  const sodTotal = selectedSod && sodUnitsNeeded > 0 ? sodUnitsNeeded * selectedSod.price : 0;
   const sodAvailable = selectedSod ? Math.max(0, selectedSod.stock_quantity || 0) : 0;
+  const sodUnitLabel = selectedSod?.material_spec?.unit_label || (es ? 'unidades' : 'units');
   const m2 = measuredArea;
   const safeDepth = Math.max(0, Number(depth) || 0);
   const safeWaste = Math.max(0, Number(waste) || 0);
   const volume = measuredArea * safeDepth * (1 + safeWaste / 100);
   const bags = Number(bagLiters) > 0 ? Math.ceil(volume * 1000 / Number(bagLiters)) : 0;
-  const selectedMaterialLiters = selectedMaterial ? Number(([selectedMaterial.size, selectedMaterial.sci, selectedMaterial.name].join(' ').match(/(\d+(?:\.\d+)?)\s*(?:l|liter|litre)s?\b/i) || [])[1]) : 0;
-  const materialUnitsNeeded = selectedMaterialLiters > 0 ? Math.ceil(volume * 1000 / selectedMaterialLiters) : 0;
+  const selectedMaterialLiters = Number(selectedMaterial?.material_spec?.package_volume_liters) || 0;
+  const selectedMaterialCoverage = Number(selectedMaterial?.material_spec?.coverage_area_m2) || 0;
+  const materialUnitsNeeded = selectedMaterialLiters > 0
+    ? Math.ceil(volume * 1000 / selectedMaterialLiters)
+    : materialType === 'pavers' && selectedMaterialCoverage > 0
+      ? Math.ceil(measuredArea / selectedMaterialCoverage)
+      : 0;
+  const materialUnitLabel = selectedMaterial?.material_spec?.unit_label || (es ? 'unidades' : 'units');
   const materialTotal = selectedMaterial && materialUnitsNeeded > 0 ? materialUnitsNeeded * selectedMaterial.price : 0;
   const spacing = Math.max(0, Number(plantSpacing) || 0);
   const plants = spacing > 0 ? Math.floor(measuredArea / (spacing * spacing)) : 0;
@@ -238,13 +245,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
             </label>
             {selectedSod && <div className="mt-3 rounded-xl bg-[var(--surface-2)] p-3">
               <div className="flex items-start justify-between gap-2"><div><b className="text-sm">{selectedSod.name}</b><p className="text-[10px] text-[var(--ink-soft)]">{selectedSod.size} · {selectedSod.nursery}</p></div><span className="rounded-full bg-[var(--palm)]/15 px-2 py-1 text-[10px] font-bold text-[var(--palm)]">{selectedSod.stock_quantity > 0 && selectedSod.stock !== 'Out of stock' ? (es ? 'En catálogo' : 'In catalog') : (es ? 'Sin existencias' : 'Out of stock')}</span></div>
-              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                <div><p className="text-[var(--ink-soft)]">{es ? 'Cantidad necesaria' : 'Quantity needed'}</p><b className="text-xl">{sodUnitsNeeded} {es ? 'losas yd²' : 'sq yd slabs'}</b></div>
+              {sodCoverageM2 > 0 ? <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                <div><p className="text-[var(--ink-soft)]">{es ? 'Cantidad necesaria' : 'Quantity needed'}</p><b className="text-xl">{sodUnitsNeeded} {sodUnitLabel}</b></div>
                 <div><p className="text-[var(--ink-soft)]">{es ? 'Existencias registradas' : 'Recorded stock'}</p><b className="text-xl">{sodAvailable}</b></div>
                 <div><p className="text-[var(--ink-soft)]">{es ? 'Precio por unidad' : 'Price per unit'}</p><b>{selectedSod.currency} {selectedSod.price.toFixed(2)}</b></div>
                 <div><p className="text-[var(--ink-soft)]">{es ? 'Subtotal estimado' : 'Estimated subtotal'}</p><b>{selectedSod.currency} {sodTotal.toFixed(2)}</b></div>
               </div>
-              <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{sodUnitsNeeded > sodAvailable ? (es ? 'La cantidad calculada supera las existencias registradas. Contacta al vivero para confirmar disponibilidad o solicitar abastecimiento.' : 'Calculated quantity exceeds recorded stock. Contact the nursery to confirm availability or request sourcing.') : (es ? 'Existencias suficientes según el registro actual; confirma antes de comprar.' : 'Recorded stock appears sufficient; confirm availability before purchase.')}</p>
+              <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{sodUnitsNeeded > sodAvailable ? (es ? 'La cantidad calculada supera las existencias registradas. Contacta al vivero para confirmar disponibilidad o solicitar abastecimiento.' : 'Calculated quantity exceeds recorded stock. Contact the nursery to confirm availability or request sourcing.') : (es ? 'Existencias suficientes según el registro actual; confirma antes de comprar.' : 'Recorded stock appears sufficient; confirm availability before purchase.')}</p> : <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Este producto no tiene cobertura por unidad verificada. Se muestra en el catálogo, pero no se calculará cantidad ni precio estimado.' : 'This product has no verified coverage per unit. It is listed in the catalog, but quantity and estimated price will not be calculated.'}</p>}
             </div>}
           </> : <p className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay césped natural en rollo o losa registrado actualmente en el catálogo. Puedes seguir usando el área para otros cálculos.' : 'No natural sod products are currently listed in the catalog. You can still use the area for other calculations.'}</p>}
           <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Estimación basada en losas de 1 yd²; incluye redondeo hacia arriba, no contempla cortes, desperdicio ni pendientes.' : 'Estimate assumes 1 sq yd slabs and rounds up; excludes cuts, waste and slopes.'}</p>
@@ -309,8 +316,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
             </label>
             {selectedMaterial && <div className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs">
               <b>{selectedMaterial.name}</b><p className="text-[10px] text-[var(--ink-soft)]">{selectedMaterial.size} · {selectedMaterial.nursery}</p>
-              {selectedMaterialLiters > 0 ? <div className="mt-2 grid grid-cols-2 gap-2"><div><p className="text-[var(--ink-soft)]">{es ? 'Unidades calculadas' : 'Calculated units'}</p><b className="text-lg">{materialUnitsNeeded}</b></div><div><p className="text-[var(--ink-soft)]">{es ? 'Subtotal estimado' : 'Estimated subtotal'}</p><b>{selectedMaterial.currency} {materialTotal.toFixed(2)}</b></div><div><p className="text-[var(--ink-soft)]">{es ? 'Existencias registradas' : 'Recorded stock'}</p><b>{selectedMaterial.stock_quantity}</b></div></div> : <p className="mt-2 text-[var(--ink-soft)]">{es ? 'El tamaño del paquete no especifica litros o cobertura. No se calculará cantidad ni precio automáticamente.' : 'Package size does not specify liters or coverage. Quantity and price will not be calculated automatically.'}</p>}
-              {selectedMaterialLiters > 0 && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{materialUnitsNeeded > selectedMaterial.stock_quantity ? (es ? 'Supera las existencias registradas; confirma disponibilidad.' : 'Exceeds recorded stock; confirm availability.') : (es ? 'Existencias registradas; confirma antes de comprar.' : 'Recorded stock; confirm before purchase.')}</p>}
+              {materialUnitsNeeded > 0 ? <div className="mt-2 grid grid-cols-2 gap-2"><div><p className="text-[var(--ink-soft)]">{es ? 'Unidades calculadas' : 'Calculated units'}</p><b className="text-lg">{materialUnitsNeeded} {materialUnitLabel}</b></div><div><p className="text-[var(--ink-soft)]">{es ? 'Subtotal estimado' : 'Estimated subtotal'}</p><b>{selectedMaterial.currency} {materialTotal.toFixed(2)}</b></div><div><p className="text-[var(--ink-soft)]">{es ? 'Existencias registradas' : 'Recorded stock'}</p><b>{selectedMaterial.stock_quantity}</b></div></div> : <p className="mt-2 text-[var(--ink-soft)]">{es ? 'El registro del catálogo no tiene volumen de paquete ni cobertura de superficie verificados. No se calculará cantidad ni precio automáticamente.' : 'Package size does not specify liters or coverage. Quantity and price will not be calculated automatically.'}</p>}
+              {materialUnitsNeeded > 0 && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{materialUnitsNeeded > selectedMaterial.stock_quantity ? (es ? 'Supera las existencias registradas; confirma disponibilidad.' : 'Exceeds recorded stock; confirm availability.') : (es ? 'Existencias registradas; confirma antes de comprar.' : 'Recorded stock; confirm before purchase.')}</p>}
             </div>}
           </> : <p className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'Este material no aparece actualmente en el catálogo. Puedes calcular el volumen manualmente abajo, pero no se mostrará un precio ni existencias inventadas.' : 'This material is not currently listed in the catalog. You can calculate volume manually below, but no price or stock will be invented.'}</p>)}
         </div>
