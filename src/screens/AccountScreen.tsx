@@ -1,3 +1,4 @@
+import { localizedName } from '../lib/catalogLocale';
 import React, { useState } from 'react';
 import {
   BookmarkCheck,
@@ -269,7 +270,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
         <div className="grid grid-cols-3 gap-2">
           {(['light', 'dark', 'system'] as const).map((mode) => (
             <button key={mode} type="button" aria-pressed={theme === mode} onClick={() => onThemeChange(mode)}
-              className={`rounded-xl border px-2 py-2.5 text-[12px] font-bold transition-colors ${theme === mode ? 'border-[var(--palm)] bg-[var(--palm)] text-white' : 'border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink)]'}`}>
+              className={`rounded-xl border px-2 py-2.5 text-[12px] font-bold transition-colors ${theme === mode ? 'border-[var(--palm)] bg-[var(--palm)] text-[var(--on-palm)]' : 'border-[var(--line)] bg-[var(--surface-2)] text-[var(--ink)]'}`}>
               {mode === 'light' ? (lang === 'es' ? 'Claro' : 'Light') : mode === 'dark' ? (lang === 'es' ? 'Oscuro' : 'Dark') : (lang === 'es' ? 'Sistema' : 'System')}
             </button>
           ))}
@@ -629,7 +630,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div className="w-10 h-10 rounded-xl bg-[var(--surface)] overflow-hidden shrink-0 flex items-center justify-center">
                                 {item.image_url ? (
-                                  <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                                  <img src={item.image_url} alt={localizedName(item, lang)} className="w-full h-full object-cover" />
                                 ) : item.t === 'plant' ? (
                                   <Palmtree className="w-5 h-5 text-[var(--palm)]" />
                                 ) : (
@@ -638,7 +639,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                               </div>
                               <div className="flex flex-col min-w-0">
                                 <b className="text-[13px] text-[var(--ink)] font-bold truncate">
-                                  {item.name}
+                                  {localizedName(item, lang)}
                                 </b>
                                 <small className="text-[11px] text-[var(--ink-soft)] truncate">
                                   {item.category} · {formatMoney(item.price, item.currency)} · {item.size}

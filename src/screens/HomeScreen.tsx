@@ -1,3 +1,4 @@
+import { localizedName } from '../lib/catalogLocale';
 import React, { useState } from 'react';
 import {
   Bug,
@@ -190,7 +191,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           onClick={() => onNavigate('plants')}
           className="flex flex-col items-start gap-2 text-left bg-[var(--surface)] hover:bg-[var(--surface-2)] active:scale-98 border border-[var(--line)] rounded-2xl p-3.5 transition-all shadow-xs group"
         >
-          <span className="w-10 h-10 rounded-xl bg-[var(--sun)]/25 text-[#7c580d] flex items-center justify-center group-hover:scale-105 transition-transform">
+          <span className="w-10 h-10 rounded-xl bg-[var(--sun)]/25 text-[var(--note-ink)] flex items-center justify-center group-hover:scale-105 transition-transform">
             <Flower2 className="w-5 h-5" />
           </span>
           <div>
@@ -339,7 +340,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 {item.image_url ? (
                   <img
                     src={item.image_url}
-                    alt={item.name}
+                    alt={localizedName(item, lang)}
                     className="w-full h-full object-cover transition-transform hover:scale-105 duration-300"
                     loading="lazy"
                   />
@@ -351,7 +352,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               </div>
               <div className="flex flex-col gap-0.5">
                 <b className="text-[13.5px] leading-snug font-bold text-[var(--ink)] line-clamp-1">
-                  {item.name}
+                  {localizedName(item, lang)}
                 </b>
                 <small className="text-[11px] text-[var(--ink-soft)] italic line-clamp-1">
                   {item.sci}

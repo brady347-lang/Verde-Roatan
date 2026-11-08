@@ -1,3 +1,4 @@
+import { toNameList } from '../lib/catalogLocale';
 import { buildRuleBasedAdvice } from '../lib/botanicalRules';
 import {
   AI_WORKER_URL,
@@ -64,8 +65,23 @@ function catalogHeaders(token: string) {
   return { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json', Accept: 'application/json', Prefer: 'return=representation' };
 }
 
+/**
+ * Translation columns come from supabase/migrations/20261108_catalog_bilingual_fields.sql. They are sent only when a
+ * person entered a value, so saves keep working on a database that has not received that migration yet.
+ */
+export function catalogTranslationFields(item: CatalogItem): Record<string, string> {
+  const out: Record<string, string> = {};
+  const put = (key: string, value?: string) => { const v = String(value || '').trim(); if (v) out[key] = v; };
+  put('name_es', item.name_es);
+  put('description_en', item.description_en);
+  put('description_es', item.description_es);
+  put('care_instructions_en', item.care_instructions_en);
+  put('care_instructions_es', item.care_instructions_es);
+  return out;
+}
+
 function catalogBody(item: CatalogItem) {
-  return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true };
+  return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true, ...catalogTranslationFields(item) };
 }
 
 /** Thrown when the database row saved but a follow-up step (photo) failed, so the UI can still show what was saved. */
@@ -282,6 +298,13 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
           t: 'plant',
           name,
           name_es: String(p.name_es || p.common_name_es || p.spanish_name || '').trim() || undefined,
+          scientific_name: String(p.scientific_name || '').trim() || undefined,
+          description_en: String(p.description_en || '').trim() || undefined,
+          description_es: String(p.description_es || '').trim() || undefined,
+          care_instructions_en: String(p.care_instructions_en || '').trim() || undefined,
+          care_instructions_es: String(p.care_instructions_es || '').trim() || undefined,
+          alternative_names_en: toNameList(p.alternative_names_en),
+          alternative_names_es: toNameList(p.alternative_names_es),
           sci: String(p.scientific_name || p.sci || p.description || ''),
           kind,
           salt: 2,

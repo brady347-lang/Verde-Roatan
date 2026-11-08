@@ -1,3 +1,4 @@
+import { localizedName } from '../lib/catalogLocale';
 import React, { useState } from 'react';
 import {
   AlertCircle,
@@ -753,7 +754,7 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
                           {item.image_url ? (
                             <img
                               src={item.image_url}
-                              alt={item.name}
+                              alt={localizedName(item, lang)}
                               className="w-full h-full object-cover"
                             />
                           ) : (
@@ -763,7 +764,7 @@ export const DeliveryScreen: React.FC<DeliveryScreenProps> = ({
 
                         <div className="flex flex-col min-w-0">
                           <b className="text-[14px] text-[var(--ink)] font-bold truncate">
-                            {item.name}
+                            {localizedName(item, lang)}
                           </b>
                           <small className="text-[11.5px] text-[var(--ink-soft)] truncate">
                             {item.size} · {formatMoney(itemPriceInCur, currency)}

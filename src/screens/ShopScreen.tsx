@@ -1,3 +1,4 @@
+import { localizedName } from '../lib/catalogLocale';
 import { matchesQuery } from '../lib/botanicalRules';
 import React, { useMemo, useState } from 'react';
 import { Edit2, Filter, Flower2, Palmtree, Plus, Search, Shovel, Sparkles, Sprout, Trash2, X } from 'lucide-react';
@@ -87,7 +88,7 @@ export const ShopScreen: React.FC<ShopScreenProps> = ({
     }
     if (stock === 'Low stock') {
       return (
-        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[var(--sun)]/25 text-[#7c580d]">
+        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[var(--sun)]/25 text-[var(--note-ink)]">
           {t('lowStock')}
         </span>
       );
@@ -362,7 +363,7 @@ export const ShopScreen: React.FC<ShopScreenProps> = ({
                   {item.image_url ? (
                     <img
                       src={item.image_url}
-                      alt={lang === 'es' ? (item.name_es || item.name) : item.name}
+                      alt={localizedName(item, lang)}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       loading="lazy"
                     />
@@ -379,10 +380,10 @@ export const ShopScreen: React.FC<ShopScreenProps> = ({
                 {/* Title & Specs */}
                 <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                   <b className="text-[14.5px] leading-snug font-bold text-[var(--ink)] truncate">
-                    {item.name}
+                    {localizedName(item, lang)}
                   </b>
                   <small className="text-[11.5px] text-[var(--ink-soft)] italic truncate">
-                    {item.sci}
+                    {item.scientific_name || item.sci}
                   </small>
                   <div className="text-[13px] font-extrabold text-[var(--ink)] mt-0.5">
                     {formatMoney(item.price, item.currency)}{' '}

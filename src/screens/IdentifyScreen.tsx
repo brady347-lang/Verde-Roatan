@@ -1,3 +1,4 @@
+import { localizedName } from '../lib/catalogLocale';
 import { classifyCatalogMatches, type CatalogMatches } from '../lib/catalogMatch';
 import React, { useEffect, useRef, useState } from 'react';
 import { motion } from 'motion/react';
@@ -517,7 +518,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                     Pest & Disease Diagnosis
                   </span>
                   {result.result.severity && (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[var(--sun)]/25 text-[#7c580d]">
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-[var(--sun)]/25 text-[var(--note-ink)]">
                       {result.result.severity}
                     </span>
                   )}
@@ -982,14 +983,14 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                             <div className="flex items-center gap-2.5 min-w-0">
                               <div className="w-12 h-12 rounded-xl bg-[var(--surface)] overflow-hidden shrink-0 flex items-center justify-center">
                                 {item.image_url ? (
-                                  <img src={item.image_url} alt={item.name} className="w-full h-full object-cover" />
+                                  <img src={item.image_url} alt={localizedName(item, lang)} className="w-full h-full object-cover" />
                                 ) : (
                                   <Palmtree className="w-6 h-6 text-[var(--palm)]" />
                                 )}
                               </div>
                               <div className="flex flex-col min-w-0">
                                 <b className="text-[13.5px] text-[var(--ink)] font-bold truncate">
-                                  {item.name}
+                                  {localizedName(item, lang)}
                                 </b>
                                 <small className="text-[11px] text-[var(--ink-soft)] truncate">
                                   {item.size} · {item.nursery}

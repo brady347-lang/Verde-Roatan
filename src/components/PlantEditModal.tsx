@@ -38,6 +38,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
 
   const [name, setName] = useState(initialPlant?.name || '');
   const [sci, setSci] = useState(initialPlant?.sci || '');
+  const [nameEs, setNameEs] = useState(initialPlant?.name_es || '');
   const [category, setCategory] = useState(initialPlant?.category || 'Palms');
   const [kind, setKind] = useState<'palm' | 'shrub' | 'flower' | 'grass'>(
     initialPlant?.kind === 'palm' || initialPlant?.kind === 'shrub' || initialPlant?.kind === 'flower' || initialPlant?.kind === 'grass'
@@ -288,6 +289,8 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
       id: initialPlant?.id || `p-${Date.now()}`,
       t: 'plant',
       name: name.trim(),
+      // Only a name the admin typed or kept; the AI never fills this field.
+      name_es: nameEs.trim() || undefined,
       sci: sci.trim(),
       category: category.trim(),
       kind,
@@ -484,6 +487,16 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Blue Latan Palm"
+                className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:border-[var(--lagoon)]"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[12px] font-bold text-[var(--ink)]">Nombre común en español (optional, verified)</label>
+              <input
+                type="text"
+                value={nameEs}
+                onChange={(e) => setNameEs(e.target.value)}
+                placeholder="e.g. Palma azul"
                 className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2 text-[13.5px] focus:outline-none focus:border-[var(--lagoon)]"
               />
             </div>

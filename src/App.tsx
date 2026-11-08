@@ -1,3 +1,5 @@
+import { localizedCare, localizedDescription, localizedName, secondaryName } from './lib/catalogLocale';
+import { applyTheme, readStoredTheme, THEME_STORAGE_KEY, type ThemeMode } from './lib/theme';
 import { checkForAppUpdate, AppUpdateInfo } from './lib/appUpdate';
 import { rootWiseNotificationSounds } from './services/rootwiseNotifications';
 import { LandscaperQuoteForm } from './components/LandscaperQuoteForm';
@@ -116,15 +118,10 @@ export default function App() {
   const [lang, setLang] = useState<Language>(() => {
     return (localStorage.getItem('verde_lang') as Language) || 'en';
   });
-  const [theme, setTheme] = useState<'system' | 'light' | 'dark'>(() => {
-    const saved = localStorage.getItem('rootwise_theme');
-    return saved === 'light' || saved === 'dark' ? saved : 'system';
-  });
+  const [theme, setTheme] = useState<ThemeMode>(() => readStoredTheme(typeof localStorage === 'undefined' ? null : localStorage));
   useEffect(() => {
-    const root = document.documentElement;
-    if (theme === 'system') root.removeAttribute('data-theme');
-    else root.setAttribute('data-theme', theme);
-    safeSetItem('rootwise_theme', theme);
+    applyTheme(document.documentElement, theme);
+    safeSetItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
   const [tab, setTab] = useState<TabType>('home');
   const prevTabRef = useRef<TabType>(tab);
@@ -2176,7 +2173,7 @@ export default function App() {
                 {detailItem.image_url ? (
                   <img
                     src={detailItem.image_url}
-                    alt={detailItem.name}
+                    alt={localizedName(detailItem, lang)}
                     className="w-full h-full object-cover"
                   />
                 ) : (
@@ -2187,10 +2184,10 @@ export default function App() {
               {/* Title & Scientific Name */}
               <div className="flex flex-col gap-0.5">
                 <h2 className="text-[22px] font-extrabold text-[var(--ink)] leading-tight pr-8">
-                  {detailItem.name}
+                  {localizedName(detailItem, lang)}
                 </h2>
                 <small className="text-[12.5px] text-[var(--ink-soft)] italic">
-                  {detailItem.sci}
+                  {detailItem.scientific_name || detailItem.sci}
                 </small>
               </div>
 
@@ -2262,8 +2259,19 @@ export default function App() {
 
               {/* Note / Description */}
               <p className="text-[13px] text-[var(--ink)] leading-relaxed">
-                {detailItem.note}
+                {localizedDescription(detailItem, lang)}
               </p>
+              {localizedCare(detailItem, lang) && (
+                <div className="rounded-xl bg-[var(--surface-2)] border border-[var(--line)] p-3">
+                  <b className="text-[11.5px] uppercase tracking-wider text-[var(--ink-soft)]">{lang === 'es' ? 'Cuidados' : 'Care'}</b>
+                  <p className="mt-1 text-[13px] text-[var(--ink)] leading-relaxed">{localizedCare(detailItem, lang)}</p>
+                </div>
+              )}
+              {secondaryName(detailItem, lang) && (
+                <small className="text-[11.5px] text-[var(--ink-soft)]">
+                  {lang === 'es' ? 'También llamada' : 'Also called'}: {secondaryName(detailItem, lang)}
+                </small>
+              )}
 
               <small className="text-[11.5px] text-[var(--ink-soft)]">
                 Registered Supplier: <b className="text-[var(--ink)]">{detailItem.nursery}</b>. Island-wide delivery available.
@@ -2352,7 +2360,7 @@ export default function App() {
                   {/* Photo Update direct */}
                   <label
                     htmlFor="admin-photo-input"
-                    className="flex items-center justify-center gap-2 w-full py-2 bg-[var(--surface)] hover:bg-white text-[var(--ink)] font-bold text-[12.5px] rounded-xl border border-[var(--line)] cursor-pointer active:scale-95 transition-all"
+                    className="flex items-center justify-center gap-2 w-full py-2 bg-[var(--surface)] hover:bg-[var(--surface-2)] text-[var(--ink)] font-bold text-[12.5px] rounded-xl border border-[var(--line)] cursor-pointer active:scale-95 transition-all"
                   >
                     <Camera className="w-4 h-4 text-[var(--palm)]" />
                     {t('adminPhotoUpdate')}

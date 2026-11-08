@@ -50,11 +50,11 @@ export const AccountPrivacySection: React.FC<Props> = ({ lang, accessToken, isAd
           </p>
           <label className="text-[12px] font-bold text-red-900">
             {es ? `Escribe ${word} para confirmar` : `Type ${word} to confirm`}
-            <input value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" className="mt-1 w-full rounded-xl border border-red-300 bg-white px-3 py-2 text-[14px]" />
+            <input value={typed} onChange={(e) => setTyped(e.target.value)} autoCapitalize="characters" className="mt-1 w-full rounded-xl border border-red-300 bg-[var(--surface)] text-[var(--ink)] px-3 py-2 text-[14px]" />
           </label>
           {error && <p role="alert" className="text-[12px] font-semibold text-red-700">{error}</p>}
           <div className="flex gap-2">
-            <button type="button" onClick={() => { setOpen(false); setTyped(''); setError(''); }} disabled={busy} className="flex-1 min-h-[42px] rounded-xl bg-white border border-[var(--line)] text-[13px] font-bold text-[var(--ink)]">{es ? 'Cancelar' : 'Cancel'}</button>
+            <button type="button" onClick={() => { setOpen(false); setTyped(''); setError(''); }} disabled={busy} className="flex-1 min-h-[42px] rounded-xl bg-[var(--surface)] border border-[var(--line)] text-[13px] font-bold text-[var(--ink)]">{es ? 'Cancelar' : 'Cancel'}</button>
             <button type="button" onClick={() => void remove()} disabled={busy || typed.trim().toUpperCase() !== word} className="flex-1 min-h-[42px] rounded-xl bg-red-600 text-white text-[13px] font-extrabold disabled:opacity-40">
               {busy ? <Loader2 className="w-4 h-4 inline animate-spin" /> : (es ? 'Eliminar para siempre' : 'Delete forever')}
             </button>

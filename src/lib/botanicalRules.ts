@@ -37,7 +37,7 @@ export function levenshtein(a: string, b: string, max = 3): number {
 }
 
 function haystack(item: CatalogItem): { text: string; words: string[] } {
-  const text = normalizeText([item.name, item.sci, item.note, item.category, item.kind, item.sun, ...(item.tags || [])].join(' '));
+  const text = normalizeText([item.name, item.name_es, item.scientific_name, item.sci, item.note, item.description_en, item.description_es, ...(item.alternative_names_en || []), ...(item.alternative_names_es || []), item.category, item.kind, item.sun, ...(item.tags || [])].join(' '));
   return { text, words: [...new Set(text.split(' ').filter((w) => w.length >= 3))] };
 }
 

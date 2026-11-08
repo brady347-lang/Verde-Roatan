@@ -18,6 +18,15 @@ export interface CatalogItem {
   name: string;
   /** Optional verified Spanish common name; never machine-invented. */
   name_es?: string;
+  /** Scientific (Latin) name. Never translated. Legacy rows keep it in `sci`. */
+  scientific_name?: string;
+  /** Optional per-language texts. Empty means "fall back to the legacy `note` / `name`". */
+  description_en?: string;
+  description_es?: string;
+  care_instructions_en?: string;
+  care_instructions_es?: string;
+  alternative_names_en?: string[];
+  alternative_names_es?: string[];
   sci: string;
   kind: PlantCategory;
   salt: number; // 1 to 3
