@@ -18,10 +18,10 @@ export const Navigation: React.FC<NavigationProps> = ({
 }) => {
   const tabs: Array<{ id: TabType; label: string; icon: React.ReactNode; featured?: boolean }> = [
     { id: 'home', label: lang === 'es' ? 'Inicio' : 'Home', icon: <Home className="h-5 w-5" /> },
-    { id: 'tools', label: lang === 'es' ? 'Herramientas' : 'Tools', icon: <Wrench className="h-5 w-5" /> },
-    { id: 'id', label: lang === 'es' ? 'Identificar' : 'Identify', icon: <ScanLine className="h-5 w-5" />, featured: true },
     { id: 'explore', label: lang === 'es' ? 'Explorar' : 'Explore', icon: <Compass className="h-5 w-5" /> },
-    { id: 'account', label: lang === 'es' ? 'Mi espacio' : 'My RootWise', icon: <UserRound className="h-5 w-5" /> }
+    { id: 'id', label: lang === 'es' ? 'Identificar' : 'Identify', icon: <ScanLine className="h-5 w-5" />, featured: true },
+    { id: 'tools', label: lang === 'es' ? 'Herramientas' : 'Tools', icon: <Wrench className="h-5 w-5" /> },
+    { id: 'account', label: lang === 'es' ? 'Perfil' : 'Profile', icon: <UserRound className="h-5 w-5" /> }
   ];
   const exploreActive = ['explore', 'plants', 'svc', 'request'].includes(activeTab);
 
