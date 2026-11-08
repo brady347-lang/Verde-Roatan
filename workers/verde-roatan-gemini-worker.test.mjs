@@ -360,6 +360,14 @@ function idMock({ migrated = true, reviewRow = {} } = {}) {
   return log;
 }
 const idBody = (extra = {}) => ({ image: IMG, identification: { candidate: { common_name: 'Monstera', scientific_name: 'Monstera deliciosa', confidence_score: 0.9 }, family: 'Araceae', model_used: 'gemini-x' }, decision: 'confirmed', source: { app: 'verde', platform: 'android', language: 'en' }, ...extra });
+await t('identification-review rejects oversized declared request bodies before JSON parsing', async () => {
+  const r = await worker.fetch(new Request('https://w.test/identification-review', {
+    method: 'POST', headers: { 'content-length': String(18 * 1024 * 1024) }, body: '{}'
+  }), { ...impEnv });
+  assert.equal(r.status, 413);
+  assert.match((await r.json()).error, /smaller than 12 MB/i);
+});
+
 await t('identification: "Yes" is only user_confirmed, never scientifically_verified; saves taxonomy and source', async () => {
   const log = idMock(); const r = await authed('/identification-review', idBody()); const j = await r.json();
   assert.equal(r.status, 200); assert.equal(j.verification_level, 'user_confirmed');
