@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, Activity, AlertTriangle, Compass, Flower2, Leaf, Map, ScanLine, Sparkles, Sprout, Users, Wrench } from 'lucide-react';
+import { ArrowUpRight, Activity, AlertTriangle, Compass, Leaf, ScanLine, Sparkles, Sprout, UserRound, Wrench } from 'lucide-react';
 import { CatalogItem, GardenItem, Language } from '../types';
 
 interface Props {
@@ -33,6 +33,7 @@ export const RootWiseHomeScreen: React.FC<Props> = ({
   };
   return (
     <div className="flex flex-col gap-5 pb-7">
+      <header className="px-1"><p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-[var(--palm)]">{es ? 'TU ESPACIO PERSONAL' : 'YOUR PERSONAL SPACE'}</p><h1 className="text-2xl font-extrabold">My RootWise</h1><p className="mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Tu jardín, tus observaciones y tu guía inteligente.' : 'Your garden, your observations and your intelligent guide.'}</p></header>
       <section className="relative overflow-hidden rounded-[28px] min-h-[250px] bg-[#0b3829] text-white shadow-lg">
         {featured?.image_url && <img src={featured.image_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-25" />}
         <div className="absolute inset-0 bg-gradient-to-br from-[#092f23]/95 via-[#0d4a34]/90 to-[#102f35]/80" />
@@ -80,6 +81,9 @@ export const RootWiseHomeScreen: React.FC<Props> = ({
       <section className="flex flex-col gap-3">
         <div className="flex items-end justify-between"><div><p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-[var(--palm)]">{es ? 'HISTORIAL' : 'ACTIVITY HISTORY'}</p><h2 className="text-lg font-extrabold">{es ? 'Actividad reciente' : 'Recent activity'}</h2></div><span className="text-[10px] text-[var(--ink-soft)]">{garden.length} {es ? 'registros' : 'records'}</span></div>
         {recentGarden.length ? recentGarden.slice(0,4).map((item) => <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3"><span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.mode === 'pest' ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>{item.mode === 'pest' ? <AlertTriangle className="h-5 w-5"/> : <Leaf className="h-5 w-5"/>}</span><div className="min-w-0 flex-1"><b className="block truncate text-sm">{item.data?.verified_botanical_record?.common_name || item.name}</b><span className="text-[10px] text-[var(--ink-soft)]">{item.mode === 'pest' ? (es ? 'Revisión de plaga o problema' : 'Pest or plant issue check') : (es ? 'Identificación de planta' : 'Plant identification')} · {dateLabel(item.date)}</span></div><span className="text-[10px] font-semibold text-[var(--palm)]">{item.data?.status === 'success' ? (es ? 'Analizado' : 'Analyzed') : (es ? 'Guardado' : 'Saved')}</span></div>) : <p className="rounded-2xl bg-[var(--surface-2)] p-4 text-xs text-[var(--ink-soft)]">{es ? 'Tu historial aparecerá aquí cuando guardes tus primeras observaciones.' : 'Your history will appear here after you save your first observations.'}</p>}
+      </section>
+      <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3">
+        <button onClick={() => onNavigate('account')} className="flex w-full items-center gap-3 text-left"><span className="rounded-xl bg-[var(--surface-2)] p-2 text-[var(--ink-soft)]"><UserRound className="h-5 w-5"/></span><span className="flex-1"><b className="block text-sm">{es ? 'Configuración de cuenta' : 'Account settings'}</b><small className="text-xs text-[var(--ink-soft)]">{es ? 'Datos personales, seguridad y preferencias' : 'Personal details, security and preferences'}</small></span><ArrowUpRight className="h-4 w-4 text-[var(--ink-soft)]"/></button>
       </section>
       <section className="flex flex-col gap-3">
         <div><p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-[var(--palm)]">{es ? 'HERRAMIENTAS ROOTWISE' : 'ROOTWISE TOOLS'}</p><h2 className="text-lg font-extrabold">{es ? 'Sigue trabajando en tu espacio verde' : 'Keep working on your green space'}</h2></div>
