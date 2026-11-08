@@ -38,6 +38,22 @@ create table if not exists public.botanical_evidence_queue (
   updated_at timestamptz not null default now(),
   processed_at timestamptz
 );
+-- Safe on an already-created queue: the migration may be applied after the original foundation.
+alter table public.botanical_evidence_queue
+  add column if not exists approval_status text not null default 'pending',
+  add column if not exists approved_by uuid,
+  add column if not exists approved_by_email text,
+  add column if not exists approved_at timestamptz,
+  add column if not exists reviewed_by uuid,
+  add column if not exists reviewed_by_email text,
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists approval_note text;
+alter table public.botanical_evidence_queue drop constraint if exists botanical_evidence_queue_status_check;
+alter table public.botanical_evidence_queue add constraint botanical_evidence_queue_status_check
+  check (status in ('pending','processing','corroborated','needs_review','rejected','failed','admin_approved'));
+alter table public.botanical_evidence_queue drop constraint if exists botanical_evidence_queue_approval_status_check;
+alter table public.botanical_evidence_queue add constraint botanical_evidence_queue_approval_status_check
+  check (approval_status in ('pending','admin_approved','community_corroborated','rejected'));
 create index if not exists botanical_evidence_queue_ready_idx
   on public.botanical_evidence_queue(status, available_at, created_at)
   where status in ('pending','failed');
