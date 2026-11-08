@@ -8,6 +8,7 @@ This file is the shared handoff between ChatGPT and Claude. Keep entries concise
 - Default branch inspected: `main`
 - Collaboration bootstrap branch: `chore/rootwise-ai-collaboration-foundation`
 - Current task: establish shared AI collaboration protocol and prepare the botanical knowledge learning audit.
+- Tracking Issue: #37 — https://github.com/brady347-lang/Verde-Roatan/issues/37
 - Status: documentation bootstrap in progress.
 - Implementation owner: ChatGPT (initial documentation setup).
 - Reviewer: Claude (requested independent review after these files are available).
