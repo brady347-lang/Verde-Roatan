@@ -136,3 +136,18 @@ The user wants hands-on work directly in GitHub, clear continuity between chats,
   - `33247a1ccc879cb465c62203c36006fd06a55b19` — prioritize paver area coverage over package volume.
 - Source inspection is complete. Full TypeScript lint/build, Android runtime and live catalog API validation have not been run. No database schema change was made because the current API response is not yet modeled to expose these optional fields; specs for existing starter items are retained locally by stable ID.
 - Next: expose `material_spec` through the authoritative catalog API and admin create/edit workflow, persist it in the backing catalog schema, then add calculation tests for volume packages, paver coverage, waste factors, and insufficient stock.
+
+## Catalog admin editor and persistence for material specs (Round 8)
+- Product editor now exposes optional verified package volume (liters), per-unit surface coverage (m²), and a selling-unit label. Plant editor exposes per-unit coverage and label only for grass records.
+- The admin forms include bilingual English/Spanish labels and leave unknown dimensions blank; no measurements are auto-inferred from package-size text.
+- Catalog API serialization now includes `material_spec` when present, and the `/plants` response mapper reads the structured object when the worker supplies it.
+- Added `supabase/migrations/20261108_catalog_material_specs.sql` to add nullable JSONB `material_spec` to `public.products` and validate positive numeric volume/coverage plus a bounded unit label. The migration is **prepared but NOT applied**. Until the owner approves and applies it, saving a catalog record with `material_spec` against the current database may fail because the column may not exist.
+- Existing production catalog uses `public.products`; historical `public.catalog_items` is absent in the connected project. This migration targets the active `products` table only. The legacy starter catalog specs continue to work locally and are hydrated from `INITIAL_CATALOG` for older cached devices.
+- Commits:
+  - `8711a200dc88d41fa6d4fb81c403d6f57d84b775` — add package volume and coverage fields to product editor.
+  - `3cd40aac7a854a751b72faa154ed9ec356dce22f` — add grass coverage fields to plant editor.
+  - `277ddee176a9ab5df7f5cf01ad0fde6589f5caef` — serialize and read material specs through catalog API.
+  - `e765c23fe4515bd7ffdfcafd8fed43ffa28e30c1` — prepare JSONB material-spec migration.
+  - `81499b6a1decfcf98d5aee03f24ce7b8554e30de` — strengthen migration constraints.
+- Static source inspection is complete. No migration was applied, no Supabase schema changed, and no production deployment or build was triggered. Full lint/build and live API round-trip remain outstanding.
+- Next: after owner approval, apply the migration to the correct production Supabase project, then verify admin save/read round-trip for both product and grass records. Afterwards add calculation tests and support paver quantity estimates only when verified coverage exists.
