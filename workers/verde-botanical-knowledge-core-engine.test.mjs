@@ -62,9 +62,28 @@ test('scheduled cycle does not require Gemini when no evidence is queued', async
   assert.ok(!calls.some(c=>/generativelanguage|gemini/i.test(c.url)));
 });
 
-test('only administrators may queue evidence', async () => {
+test('authenticated customers may submit their own evidence without granting approval', async () => {
+  let inserted;
+  globalThis.fetch = async (url, init={}) => {
+    if (String(url).includes('/auth/v1/user')) return ok({id:'customer-1',email:'customer@test'});
+    inserted = JSON.parse(init.body);
+    return ok([{id:'queue-1'}]);
+  };
+  const response = await worker.fetch(request('/engine/enqueue', {
+    evidence_type:'catalog_photo', evidence_fingerprint:'customer-photo-1',
+    submitted_payload:{image_storage_path:'customer-1/photo.jpg'}
+  }), env);
+  assert.equal(response.status, 200);
+  assert.equal(inserted.verification_status, 'community_submitted');
+  assert.equal(inserted.status, 'pending');
+});
+
+test('authenticated customers cannot queue another users private photo', async () => {
   globalThis.fetch = async url => String(url).includes('/auth/v1/user') ? ok({id:'customer-1',email:'customer@test'}) : ok([]);
-  const response = await worker.fetch(request('/engine/enqueue', { evidence_type:'catalog_photo', evidence_fingerprint:'abc', submitted_payload:{} }), env);
+  const response = await worker.fetch(request('/engine/enqueue', {
+    evidence_type:'catalog_photo', evidence_fingerprint:'foreign-photo',
+    submitted_payload:{image_storage_path:'other-user/photo.jpg'}
+  }), env);
   assert.equal(response.status, 403);
 });
 
