@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - safety/supabase-target-hardening
+      - feature/rootwise-unified-development
   pull_request:
     branches:
       - main
