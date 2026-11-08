@@ -430,12 +430,14 @@ async function searchKnowledge(request, body, env) {
       if (safetyCheck) safetyCheck.detail = 'Missing safety information is explicitly flagged.';
     }
   }
-  const answered = result.data.length > 0;
+  const adminEvidence = await searchApprovedEvidence(env, q);
+  const combinedResults = [...adminEvidence, ...result.data].slice(0, 30);
+  const answered = combinedResults.length > 0;
   return json(200, {
     status: 'success', source: 'verde_knowledge_core', ai_used: false,
     answered,
-    answer: answered ? result.data.map((hit, i) => '[' + (i + 1) + '] ' + hit.content + (hit.source_title ? ' (' + hit.source_title + (hit.page_start ? ', pages ' + hit.page_start + (hit.page_end && hit.page_end !== hit.page_start ? '-' + hit.page_end : '') : '') + ')' : '')).join('\n\n') : 'Not recorded in the approved botanical knowledge.',
-    results: result.data,
+    answer: answered ? combinedResults.map((hit, i) => '[' + (i + 1) + '] ' + hit.content + (hit.source_title ? ' (' + hit.source_title + (hit.page_start ? ', pages ' + hit.page_start + (hit.page_end && hit.page_end !== hit.page_start ? '-' + hit.page_end : '') : '') + ')' : '')).join('\n\n') : 'Not recorded in the approved botanical knowledge.',
+    results: combinedResults,
     safety_note,
     constitution: { rules_in_force: rules.length, checks: reportedChecks }
   });
@@ -491,6 +493,85 @@ async function archiveCatalogImage(env, item, payload) {
   });
   if (!archive.ok) throw new Error('Private image was copied but its botanical archive record could not be saved.');
   return path;
+}
+
+
+async function reviewQueuedEvidence(request, body, env) {
+  const auth = await admin(request, env);
+  if (auth.error) return auth.error;
+  if (!isUuid(body.evidence_id) || !['approve', 'reject'].includes(body.decision)) {
+    return json(400, { status: 'error', error: 'Choose evidence and approve or reject it.' });
+  }
+  const found = await db(env, 'botanical_evidence_queue?id=eq.' + body.evidence_id + '&select=id,status,approval_status,verification_status,subject_key,submitted_payload&limit=1');
+  const item = found.ok && Array.isArray(found.data) ? found.data[0] : null;
+  if (!item) return json(404, { status: 'error', error: 'Evidence item was not found.' });
+  if (item.approval_status === 'rejected' || item.approval_status === 'admin_approved') {
+    return json(409, { status: 'error', error: 'This evidence item has already received a final administrator decision.' });
+  }
+  const approved = body.decision === 'approve';
+  const patch = {
+    status: approved ? 'admin_approved' : 'rejected',
+    approval_status: approved ? 'admin_approved' : 'rejected',
+    approved_by: approved ? auth.user.id : null,
+    approved_by_email: approved ? clean(auth.user.email || auth.user.id, 254) : null,
+    approved_at: new Date().toISOString(),
+    approval_note: clean(body.note, 1200) || null,
+    locked_at: null,
+    // Administrator approval makes the evidence retrievable; it does NOT claim scientific verification.
+    verification_status: item.verification_status || 'community_submitted'
+  };
+  const saved = await db(env, 'botanical_evidence_queue?id=eq.' + item.id + '&approval_status=eq.pending', {
+    method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch)
+  });
+  if (!saved.ok) throw new Error('The administrator decision could not be saved.');
+  if (!Array.isArray(saved.data) || !saved.data.length) return json(409, { status: 'error', error: 'The evidence was changed by another reviewer. Refresh and try again.' });
+  return json(200, { status: 'success', approval_status: patch.approval_status, immediately_retrievable: approved, verification_status: patch.verification_status });
+}
+
+async function voteOnEvidence(request, body, env) {
+  const auth = await authenticate(request, env);
+  if (auth.error) return auth.error;
+  if (!isUuid(body.evidence_id) || !['support', 'flag'].includes(body.vote)) {
+    return json(400, { status: 'error', error: 'Choose an evidence item and support or flag it.' });
+  }
+  const found = await db(env, 'botanical_evidence_queue?id=eq.' + body.evidence_id + '&select=id,approval_status&limit=1');
+  const item = found.ok && Array.isArray(found.data) ? found.data[0] : null;
+  if (!item || item.approval_status !== 'pending') return json(409, { status: 'error', error: 'This evidence is no longer open for community review.' });
+  const vote = await db(env, 'botanical_evidence_votes?on_conflict=evidence_id,user_id', {
+    method: 'POST',
+    headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+    body: JSON.stringify({ evidence_id: item.id, user_id: auth.user.id, vote: body.vote, note: clean(body.note, 500) || null })
+  });
+  if (!vote.ok) throw new Error('Your community review could not be saved.');
+  const tally = await db(env, 'botanical_evidence_votes?evidence_id=eq.' + item.id + '&vote=eq.support&select=user_id');
+  const supporters = tally.ok && Array.isArray(tally.data) ? new Set(tally.data.map(row => row.user_id)).size : 0;
+  if (supporters >= 3) {
+    await db(env, 'botanical_evidence_queue?id=eq.' + item.id + '&approval_status=eq.pending', {
+      method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ approval_status: 'community_corroborated', status: 'corroborated' })
+    });
+  }
+  return json(200, { status: 'success', distinct_supporters: supporters, community_threshold_reached: supporters >= 3, requires_admin_approval_for_retrieval: true });
+}
+
+async function searchApprovedEvidence(env, query) {
+  const terms = [...new Set((String(query || '').toLowerCase().match(/[\\p{L}\\p{N}]{3,}/gu) || []).slice(0, 6))];
+  if (!terms.length) return [];
+  const rows = await db(env, 'botanical_evidence_queue?select=id,evidence_type,source_system,source_record_id,subject_key,submitted_payload,model_result,verification_status,approved_by_email,approved_at,approval_note&approval_status=eq.admin_approved&status=eq.admin_approved&order=approved_at.desc&limit=250');
+  if (!rows.ok || !Array.isArray(rows.data)) throw new Error('Administrator-approved evidence could not be retrieved.');
+  return rows.data.filter(row => {
+    const haystack = JSON.stringify([row.subject_key, row.submitted_payload, row.model_result]).toLowerCase();
+    return terms.some(term => haystack.includes(term));
+  }).slice(0, 8).map(row => ({
+    id: row.id, source_type: 'admin_approved_evidence', source_title: row.subject_key || row.evidence_type,
+    content: clean(JSON.stringify({ submitted: row.submitted_payload, review: row.model_result }), 1800),
+    citation: row.source_system + (row.source_record_id ? ':' + row.source_record_id : ''),
+    verification_status: row.verification_status,
+    approval_status: 'admin_approved',
+    approved_by: row.approved_by_email,
+    approved_at: row.approved_at,
+    approval_note: row.approval_note
+  }));
 }
 
 async function runEvidenceCycle(env) {
@@ -583,7 +664,7 @@ export default {
     if (request.method !== 'POST') return json(405, { status: 'error', error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     try {
-      if (path === '/engine/enqueue') {
+      if (path === '/engine/admin/review') return await reviewQueuedEvidence(request, body, env);\n      if (path === '/engine/vote') return await voteOnEvidence(request, body, env);\n      if (path === '/engine/enqueue') {
         const auth = await authenticate(request, env); if (auth.error) return auth.error;
         // Authenticated customers and staff may submit evidence. Submission never grants verification or approval.
         // A private photo must be stored under the submitter's own user-ID folder.
