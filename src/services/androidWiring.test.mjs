@@ -40,13 +40,15 @@ assert.match(tools, /MapViewport points=\{points\} follow=\{tracking\}/, 'map fo
 assert.match(tools, /evaluateFix\(previousPoint, \{ lat: latitude, lon: longitude, accuracy, timestamp: Date\.now\(\) \}\)/, 'manual GPS points must pass accuracy and duplicate filtering');
 
 // Light measurements must come from the device sensor, never user-entered lux values.
-assert.doesNotMatch(tools, /luxInput|Lux measured with a lux meter|Lectura de luz \\(lux\\)/, 'manual lux entry must not be exposed');
-assert.match(tools, /RootWiseDeviceSensors\\.addListener\\('lightReading'/, 'live lux must come from the native device sensor');
-assert.match(tools, /hasLiveLux \\? <>/, 'light guidance must wait until a real sensor reading exists');
-assert.match(tools, /Recommendations will appear automatically when a real sensor reading is received/, 'plant recommendations must wait for real sensor data');
-assert.match(tools, /getUserMedia\(/, 'camera fallback must request a live camera stream');
-assert.match(tools, /estimateCameraBrightness\(/, 'camera frames must be analyzed for relative brightness');
-assert.match(tools, /Camera brightness estimate/, 'camera measurements must be clearly labeled as estimates');
-assert.match(tools, /startCameraFallback\(\)/, 'camera fallback must start when the ambient sensor is unavailable');
+assert.ok(!tools.includes('luxInput'), 'manual lux state must not exist');
+assert.ok(!tools.includes('Lux measured with a lux meter'), 'manual reference lux must not be requested');
+assert.ok(!tools.includes('Lectura de luz (lux)'), 'manual lux label must not be exposed');
+assert.ok(tools.includes("RootWiseDeviceSensors.addListener('lightReading'"), 'live lux must come from the native device sensor');
+assert.ok(tools.includes('hasLiveLux ? <>'), 'light guidance must wait until a real sensor reading exists');
+assert.ok(tools.includes('Recommendations will appear automatically when a real sensor reading is received'), 'plant recommendations must wait for real sensor data');
+assert.ok(tools.includes('getUserMedia('), 'camera fallback must request a live camera stream');
+assert.ok(tools.includes('estimateCameraBrightness('), 'camera frames must be analyzed for relative brightness');
+assert.ok(tools.includes('Camera brightness estimate'), 'camera measurements must be clearly labeled as estimates');
+assert.ok(tools.includes('startCameraFallback()'), 'camera fallback must start when the ambient sensor is unavailable');
 
 console.log('androidWiring tests passed');
