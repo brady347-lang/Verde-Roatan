@@ -159,6 +159,31 @@ async function callGemini(env, apiKey, parts, { totalMs = 62000, perCallMs = 280
   throw new Error(lastError);
 }
 
+
+async function handleInternalEvidenceReview(request, body, env) {
+  const expected = String(env.ROOTWISE_INTERNAL_SECRET || '');
+  const supplied = String(request.headers.get('x-rootwise-internal-secret') || '');
+  if (!expected || supplied.length !== expected.length) return jsonResponse(403, { status:'error', error:'Internal review is not authorized.' });
+  let mismatch = 0; for (let i=0;i<expected.length;i++) mismatch |= expected.charCodeAt(i) ^ supplied.charCodeAt(i);
+  if (mismatch) return jsonResponse(403, { status:'error', error:'Internal review is not authorized.' });
+  const path = String(body.image_storage_path || '');
+  if (!path || path.includes('..') || path.startsWith('/') || path.length > 500) return jsonResponse(400, {status:'error',error:'A valid private evidence path is required.'});
+  const {url,key} = reviewDatabaseConfig(env);
+  const imageResponse = await fetch(url+'/storage/v1/object/botanical-health-evidence/'+path,{
+    headers:{apikey:key,Authorization:'Bearer '+key}
+  });
+  if (!imageResponse.ok) return jsonResponse(404,{status:'error',error:'The private evidence photo was not found.'});
+  const mime = imageResponse.headers.get('content-type') || 'image/jpeg';
+  if (!/^image\/(jpeg|png|webp)$/i.test(mime)) return jsonResponse(415,{status:'error',error:'Unsupported evidence image type.'});
+  const bytes = new Uint8Array(await imageResponse.arrayBuffer());
+  if (!bytes.length || bytes.length > 12*1024*1024) return jsonResponse(413,{status:'error',error:'Evidence photo size is invalid.'});
+  let binary=''; for(let i=0;i<bytes.length;i+=0x8000) binary += String.fromCharCode(...bytes.subarray(i,i+0x8000));
+  const dataUrl='data:'+mime+';base64,'+btoa(binary);
+  if (!env.GEMINI_API_KEY) return jsonResponse(503,{status:'error',error:'Gemini is not configured.'});
+  const result = await handleAnalyze({image:dataUrl,mode:body.mode==='pest'?'pest':'plant',lang:'en'},env.GEMINI_API_KEY,env);
+  return new Response(result.body,{status:result.status,headers:{...CORS_HEADERS,'Content-Type':'application/json','Cache-Control':'no-store'}});
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') {
@@ -202,6 +227,7 @@ export default {
       if (pathname === '/knowledge/reference-images/upload') return await knowledgeReferenceImageUpload(request, env);
 
       const body = await request.json().catch(() => ({}));
+      if (pathname === '/internal/evidence-review') return await handleInternalEvidenceReview(request, body, env);
 
       // Authenticated review submission uses the primary app session and writes
       // through a server-only service-role key to the separate review project.
