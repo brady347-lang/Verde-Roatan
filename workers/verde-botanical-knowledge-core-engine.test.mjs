@@ -121,7 +121,7 @@ test('one administrator approval makes evidence immediately retrievable without 
   globalThis.fetch = async (url, init={}) => {
     const target=String(url); calls.push({target,init});
     if (target.includes('/auth/v1/user')) return ok({id:'admin-1',email:'admin@test'});
-    if (target.includes('botanical_evidence_queue?id=eq.evidence-1')) {
+    if (target.includes('botanical_evidence_queue?id=eq.')) {
       if (init.method === 'PATCH') {
         const patch=JSON.parse(init.body);
         assert.equal(patch.status,'admin_approved');
