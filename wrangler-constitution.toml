@@ -1,9 +1,0 @@
-# Separate configuration for verde-roatan-constitution-worker.
-# Deploy only after review-project validation and explicit release approval.
-name = "verde-roatan-constitution-worker"
-main = "workers/verde-roatan-constitution-worker.js"
-compatibility_date = "2025-01-01"
-keep_vars = true
-
-[triggers]
-crons = ["0 9 * * *"] # 03:00 Honduras time (UTC-6); writes pending proposals only.

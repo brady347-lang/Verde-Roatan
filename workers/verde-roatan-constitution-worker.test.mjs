@@ -226,4 +226,11 @@ await t('scheduled study creates pending proposals only and never edits Constitu
   assert.equal(correctionProposal.evidence.distinct_customers, 3);
   assert.ok(!db.log.some((entry) => entry.url.includes('/constitution_rules') && ['PATCH', 'DELETE'].includes(entry.m)));
 });
+await t('deploy config registers the daily scheduled study the worker implements', async () => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const toml = readFileSync(new URL('../wrangler.constitution.toml', import.meta.url), 'utf8');
+  assert.match(toml, /crons\s*=\s*\["0 9 \* \* \*"\]/);
+  assert.equal(typeof worker.scheduled, 'function');
+  assert.equal(existsSync(new URL('../wrangler-constitution.toml', import.meta.url)), false, 'duplicate config must not return');
+});
 console.log(`ALL ${n} PASSED`);
