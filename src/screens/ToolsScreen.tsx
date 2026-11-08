@@ -1,9 +1,23 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { Geolocation } from '@capacitor/geolocation';
+import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
 import { Calculator, Check, CircleDot, Compass, MapPin, Play, RotateCcw, Square, Trees, Waves } from 'lucide-react';
 import { Language } from '../types';
 
 interface Props { lang: Language; }
 type Point = { lat: number; lon: number; accuracy: number; };
+function MapViewport({ points }: { points: Point[] }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!points.length) return;
+    const bounds = points.map((point) => [point.lat, point.lon] as [number, number]);
+    if (bounds.length === 1) map.setView(bounds[0], 18);
+    else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 19 });
+  }, [map, points]);
+  return null;
+}
 const toRadians = (value: number) => value * Math.PI / 180;
 
 function measurePolygon(points: Point[]) {
@@ -35,20 +49,38 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const [bagLiters, setBagLiters] = useState('40');
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation'>('area');
   const measurement = useMemo(() => measurePolygon(points), [points]);
-  const capturePoint = () => {
-    if (!navigator.geolocation) { setGpsError(es ? 'Este dispositivo no admite GPS en el navegador.' : 'GPS is not available in this browser.'); return; }
-    setGpsBusy(true); setGpsError('');
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setPoints((current) => [...current, { lat: position.coords.latitude, lon: position.coords.longitude, accuracy: position.coords.accuracy }]);
-        setGpsBusy(false);
-      },
-      (error) => {
-        setGpsError(error.code === error.PERMISSION_DENIED ? (es ? 'Permite el acceso a la ubicación para medir.' : 'Allow location access to measure the area.') : (es ? 'No se pudo obtener una posición GPS. Inténtalo de nuevo al aire libre.' : 'Could not get a GPS position. Try again outdoors.'));
-        setGpsBusy(false);
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
-    );
+  const capturePoint = async () => {
+    setGpsBusy(true);
+    setGpsError('');
+    try {
+      let latitude: number;
+      let longitude: number;
+      let accuracy: number;
+      if (Capacitor.isNativePlatform()) {
+        let permission = await Geolocation.checkPermissions();
+        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') permission = await Geolocation.requestPermissions();
+        if (permission.location !== 'granted' && permission.coarseLocation !== 'granted') throw new Error('LOCATION_PERMISSION_DENIED');
+        const position = await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
+        latitude = position.coords.latitude; longitude = position.coords.longitude; accuracy = position.coords.accuracy;
+      } else {
+        if (!navigator.geolocation) throw new Error('GEOLOCATION_UNAVAILABLE');
+        if (!window.isSecureContext) throw new Error('GEOLOCATION_REQUIRES_HTTPS');
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }));
+        latitude = position.coords.latitude; longitude = position.coords.longitude; accuracy = position.coords.accuracy;
+      }
+      setPoints((current) => [...current, { lat: latitude, lon: longitude, accuracy }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      const code = typeof error === 'object' && error !== null && 'code' in error ? Number((error as { code?: unknown }).code) : 0;
+      const denied = message === 'LOCATION_PERMISSION_DENIED' || code === 1 || /permission|denied/i.test(message);
+      setGpsError(denied
+        ? (es ? 'El permiso de ubicación está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Ubicación y vuelve a intentarlo.' : 'Location permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Location, then try again.')
+        : message === 'GEOLOCATION_REQUIRES_HTTPS'
+          ? (es ? 'La ubicación del navegador requiere una conexión segura HTTPS.' : 'Browser location requires a secure HTTPS connection.')
+          : message === 'GEOLOCATION_UNAVAILABLE'
+            ? (es ? 'Este navegador no ofrece geolocalización. Usa la aplicación Android o introduce las medidas manualmente.' : 'This browser does not provide geolocation. Use the Android app or enter dimensions manually.')
+            : (es ? 'No se pudo obtener GPS. Comprueba que la ubicación del teléfono esté activada, permite ubicación precisa para Rootwise y vuelve a intentarlo al aire libre.' : 'GPS could not get a position. Check that phone Location is on, allow precise location for Rootwise, and try again outdoors.'));
+    } finally { setGpsBusy(false); }
   };
   const area = measurement.area;
   const manualArea = Math.max(0, Number(manualLength) || 0) * Math.max(0, Number(manualWidth) || 0);
