@@ -1397,7 +1397,7 @@ async function knowledgeReferenceTaxaSearch(request, body, env) {
 async function knowledgeCatalogReferenceCandidates(request, body, env) {
   const auth = await requireImportAdmin(request, env);
   if (auth.response) return auth.response;
-  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\\/$/, '');
+  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\/$/, '');
   const primaryKey = env.PRIMARY_SUPABASE_ANON_KEY;
   if (!primaryUrl || !primaryKey) return jsonResponse(503, { status: 'error', error: 'The primary catalog connection is not configured.' });
   const tv = reviewDatabaseConfig(env);
@@ -1408,7 +1408,7 @@ async function knowledgeCatalogReferenceCandidates(request, body, env) {
   const [products, taxa] = await Promise.all([productsRes.json().catch(() => null), taxaRes.json().catch(() => null)]);
   if (!productsRes.ok || !Array.isArray(products)) return jsonResponse(502, { status: 'error', error: 'The active nursery catalog could not be loaded.' });
   if (!taxaRes.ok || !Array.isArray(taxa)) return jsonResponse(502, { status: 'error', error: 'Published botanical records could not be loaded.' });
-  const normalize = value => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const normalize = value => String(value || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const byScientific = new Map(taxa.filter(t => t.scientific_name).map(t => [normalize(t.scientific_name), t]));
   const candidates = [];
   for (const product of products) {
@@ -1429,7 +1429,7 @@ async function knowledgeImportCatalogReferenceImage(request, body, env) {
   const auth = await requireImportAdmin(request, env);
   if (auth.response) return auth.response;
   if (!isUuid(body.product_id) || !isUuid(body.taxon_id)) return jsonResponse(400, { status: 'error', error: 'A valid catalog product and published plant record are required.' });
-  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\\/$/, '');
+  const primaryUrl = String(env.PRIMARY_SUPABASE_URL || '').replace(/\/$/, '');
   const primaryKey = env.PRIMARY_SUPABASE_ANON_KEY;
   if (!primaryUrl || !primaryKey) return jsonResponse(503, { status: 'error', error: 'The primary catalog connection is not configured.' });
   const tv = reviewDatabaseConfig(env);
@@ -1441,7 +1441,7 @@ async function knowledgeImportCatalogReferenceImage(request, body, env) {
   if (!productRes.ok || !Array.isArray(products) || !products[0]) return jsonResponse(404, { status: 'error', error: 'The active catalog product was not found.' });
   if (!taxonRes.ok || !Array.isArray(taxa) || !taxa[0]) return jsonResponse(404, { status: 'error', error: 'The published botanical record was not found.' });
   const product = products[0], taxon = taxa[0];
-  const normalize = value => String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const normalize = value => String(value || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   if (!product.scientific_name || normalize(product.scientific_name) !== normalize(taxon.scientific_name)) {
     return jsonResponse(409, { status: 'error', error: 'The catalog and botanical record do not have an exact scientific-name match.' });
   }
