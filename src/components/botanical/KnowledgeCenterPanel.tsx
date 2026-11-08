@@ -480,7 +480,7 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
                   : (es ? 'No se encontró evidencia aprobada · no se generó una respuesta con IA' : 'No approved evidence found · no AI-generated answer')}
             </p>
           )}
-          <div className={`rounded-2xl p-3 text-[13.5px] whitespace-pre-line ${res.answered ? 'bg-emerald-50 text-[var(--ink)]' : 'bg-amber-50 text-amber-900'}`}>
+          <div className={`rounded-2xl border p-3.5 text-[13.5px] leading-relaxed whitespace-pre-wrap break-words ${res.answered ? 'bg-[var(--surface-2)] text-[var(--ink)] border-[var(--line)]' : 'bg-amber-50 text-amber-950 border-amber-200'}`}>
             {!res.answered && <AlertTriangle className="w-4 h-4 inline mr-1" />}{res.answer}
           </div>
           {(coreSafetyNote || gate?.safety_note) && <p className="text-[12.5px] font-bold text-amber-800 bg-amber-50 rounded-xl p-2.5"><AlertTriangle className="w-4 h-4 inline mr-1" />{coreSafetyNote || gate?.safety_note}</p>}
@@ -497,7 +497,7 @@ const Playground: React.FC<{ es: boolean; accessToken?: string }> = ({ es, acces
           {res.sources.map((s) => (
             <div key={s.n} className={`border rounded-xl p-2.5 text-[12px] ${s.used ? 'border-emerald-300' : 'border-[var(--line)]'}`}>
               <b>[{s.n}] {s.document}</b> · {es ? 'pág.' : 'page'} {s.page ?? '?'} · {es ? 'similitud' : 'similarity'} {s.similarity}{s.citation ? ` · ${s.citation}` : ''}
-              <div className="text-[var(--ink-soft)] mt-1">{s.snippet}</div>
+              <div className="text-[var(--ink)] mt-1.5 leading-relaxed whitespace-pre-wrap break-words">{s.snippet}</div>
             </div>
           ))}
         </div>
