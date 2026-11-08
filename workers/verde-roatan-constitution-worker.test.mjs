@@ -20,6 +20,7 @@ function mock(db) {
     if (url.includes('/rpc/search_knowledge_text')) return ok(db.chunks || []);
     if (url.includes('/knowledge_entities?')) return ok(db.entities || []);
     if (url.includes('/identification_reviews?')) return ok(db.reviews || []);
+    if (url.includes('/identification_confirmations?')) return ok(db.confirmations || []);
     if (url.includes('/botanical_taxa?')) return ok(db.taxa || []);
     if (url.includes('/constitution_amendments?') && m === 'GET' && url.includes('signal_key=in.')) return ok(db.existing || []);
     if (url.includes('/constitution_amendments?') && m === 'GET' && url.includes('id=eq.')) return ok(db.amendment ? [db.amendment] : []);
@@ -161,4 +162,68 @@ await t('ask: published records are listed with their own verification level', a
   assert.equal(j.answered, true); assert.equal(j.records[0].verification_status, 'ai_identified'); assert.equal(j.safety_note, null);
 });
 await t('ask: too-short question rejected', async () => { mock({ rules: RULES }); assert.equal((await call('/constitution/ask', { question: 'hi' })).status, 400); });
+await t('lessons: repeated common-name corrections from distinct customers create expert-review signals only', async () => {
+  const reviews = ['r1', 'r2', 'r3'].map((id, i) => ({
+    id, ai_scientific_name: 'Hibiscus rosa-sinensis', user_decision: 'confirmed', status: 'pending', submitted_by: 'u' + i
+  }));
+  const confirmations = ['u1', 'u2', 'u3'].map((user_id, i) => ({
+    id: 'c' + i, review_id: 'r' + (i + 1), user_id, decision: 'not_my_plant',
+    corrected_common_name: 'Chinese hibiscus', corrected_scientific_name: null
+  }));
+  mock({ entities: [], reviews, confirmations, taxa: [] });
+  const j = await (await call('/constitution/lessons', {})).json();
+  const signal = j.signals.find((s) => s.signal_key.startsWith('customer_correction:'));
+  assert.ok(signal);
+  assert.equal(signal.evidence.distinct_customers, 3);
+  assert.equal(signal.evidence.corrected_name, 'Chinese hibiscus');
+  assert.match(signal.body, /community signal only/i);
+  assert.equal(j.stats.customer_corrections, 3);
+});
+await t('lessons: corrected scientific names are separately grouped and never auto-verified', async () => {
+  const reviews = ['s1', 's2', 's3'].map((id, i) => ({
+    id, ai_scientific_name: 'Acalypha wilkesiana', user_decision: 'confirmed', status: 'pending', submitted_by: 'u' + i
+  }));
+  const confirmations = ['u1', 'u2', 'u3'].map((user_id, i) => ({
+    id: 'sc' + i, review_id: 's' + (i + 1), user_id, decision: 'not_my_plant',
+    corrected_common_name: null, corrected_scientific_name: 'Acalypha hispida'
+  }));
+  mock({ entities: [], reviews, confirmations, taxa: [] });
+  const j = await (await call('/constitution/lessons', {})).json();
+  const signal = j.signals.find((s) => s.evidence?.correction_type === 'scientific_name');
+  assert.ok(signal);
+  assert.equal(signal.evidence.corrected_name, 'Acalypha hispida');
+  assert.match(signal.body, /qualified botanical reviewer/i);
+});
+await t('lessons: one customer repeating a correction does not meet the threshold', async () => {
+  const reviews = ['r1', 'r2', 'r3'].map((id, i) => ({
+    id, ai_scientific_name: 'Hibiscus rosa-sinensis', user_decision: 'confirmed', status: 'pending', submitted_by: 'same-user'
+  }));
+  const confirmations = ['c1', 'c2', 'c3'].map((id, i) => ({
+    id, review_id: reviews[i].id, user_id: 'same-user', decision: 'not_my_plant',
+    corrected_common_name: 'Chinese hibiscus', corrected_scientific_name: null
+  }));
+  mock({ entities: [], reviews, confirmations, taxa: [] });
+  const j = await (await call('/constitution/lessons', {})).json();
+  assert.equal(j.signals.filter((s) => s.signal_key.startsWith('customer_correction:')).length, 0);
+});
+await t('scheduled study creates pending proposals only and never edits Constitution rules', async () => {
+  const reviews = ['r1', 'r2', 'r3'].map((id, i) => ({
+    id, ai_scientific_name: 'Hibiscus rosa-sinensis', user_decision: 'confirmed', status: 'pending', submitted_by: 'u' + i
+  }));
+  const confirmations = ['u1', 'u2', 'u3'].map((user_id, i) => ({
+    id: 'c' + i, review_id: 'r' + (i + 1), user_id, decision: 'not_my_plant',
+    corrected_common_name: 'Chinese hibiscus', corrected_scientific_name: null
+  }));
+  const db = mock({ entities: [], reviews, confirmations, taxa: [], existing: [] });
+  let scheduledTask;
+  await worker.scheduled({ cron: '0 9 * * *' }, env, { waitUntil: (task) => { scheduledTask = task; } });
+  await scheduledTask;
+  const post = db.log.find((entry) => entry.url.includes('/constitution_amendments') && entry.m === 'POST');
+  assert.ok(post);
+  const correctionProposal = post.body.find((row) => row.signal_key.startsWith('customer_correction:'));
+  assert.ok(correctionProposal);
+  assert.equal(correctionProposal.status, 'pending');
+  assert.equal(correctionProposal.evidence.distinct_customers, 3);
+  assert.ok(!db.log.some((entry) => entry.url.includes('/constitution_rules') && ['PATCH', 'DELETE'].includes(entry.m)));
+});
 console.log(`ALL ${n} PASSED`);

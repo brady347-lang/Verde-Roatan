@@ -265,27 +265,43 @@ async function reviewHealthRecord(request, body, env) {
   return json(200, { status: 'success', record: Array.isArray(updated.data) ? updated.data[0] : null });
 }
 
-function makeChunks(summary, facts, critical, warnings) {
+function makeChunks(summary, facts, critical, warnings, sourcePages = []) {
+  const fallbackPages = [...new Set((Array.isArray(sourcePages) ? sourcePages : [])
+    .map(Number).filter(n => Number.isInteger(n) && n > 0))].sort((x, y) => x - y);
   const source = [summary, ...(Array.isArray(facts) ? facts : []), ...(Array.isArray(critical) ? critical : []), ...(Array.isArray(warnings) ? warnings.map(v => 'Safety warning: ' + (typeof v === 'string' ? v : v?.text || JSON.stringify(v))) : [])]
     .map(v => typeof v === 'string' ? clean(v, 5000) : clean(v?.text || v?.value || JSON.stringify(v), 1200))
     .filter(Boolean);
   const chunks = [];
   let current = '';
+  let currentPages = new Set();
+  const flush = () => {
+    if (!current) return;
+    const pages = [...currentPages].sort((x, y) => x - y);
+    chunks.push({
+      content: current,
+      page_start: pages.length ? pages[0] : (fallbackPages.length ? fallbackPages[0] : null),
+      page_end: pages.length ? pages[pages.length - 1] : (fallbackPages.length ? fallbackPages[fallbackPages.length - 1] : null)
+    });
+    current = '';
+    currentPages = new Set();
+  };
   for (const part of source) {
+    // Precise pages are used only when the source text explicitly marks them.
+    // Otherwise retain the declared source-page range rather than guessing.
+    const markedPages = [...part.matchAll(/\(\s*p(?:age)?\.?\s*(\d+)\s*\)/gi)]
+      .map(match => Number(match[1])).filter(n => Number.isInteger(n) && n > 0);
+    const partPages = markedPages.length ? [...new Set(markedPages)] : fallbackPages;
     const pieces = part.match(/[\s\S]{1,1100}(?:\s|$)/g) || [part];
     for (const piece of pieces) {
-      const next = (current ? current + '\n' : '') + piece.trim();
-      if (next.length > 1200 && current) { chunks.push(current); current = piece.trim(); }
-      else current = next;
+      const trimmed = piece.trim();
+      if (current && (current + '\n' + trimmed).length > 1200) flush();
+      current = current ? current + '\n' + trimmed : trimmed;
+      partPages.forEach(page => currentPages.add(page));
     }
   }
-  if (current) {
-    if (current.length < 20 && chunks.length) chunks[chunks.length - 1] += '\n' + current;
-    else chunks.push(current);
-  }
+  flush();
   return chunks.slice(0, 30);
 }
-
 async function listSummaries(request, body, env) {
   const auth = await admin(request, env);
   if (auth.error) return auth.error;
@@ -342,13 +358,11 @@ async function reviewSummary(request, body, env) {
     if (!rejected.ok) throw new Error('The summary rejection could not be saved.');
     return json(200, { status: 'success', review_status: 'rejected' });
   }
-  const chunks = makeChunks(summary.summary, summary.key_facts, summary.critical_details, summary.safety_warnings);
+  const chunks = makeChunks(summary.summary, summary.key_facts, summary.critical_details, summary.safety_warnings, summary.source_pages);
   if (!chunks.length) return json(400, { status: 'error', error: 'The summary contains no searchable text.' });
   const pageList = Array.isArray(summary.source_pages) ? summary.source_pages : [];
   if (!pageList.length) return json(400, { status: 'error', error: 'Add at least one source page before approving this summary.' });
-  const pageStart = pageList.length ? Math.min(...pageList) : null;
-  const pageEnd = pageList.length ? Math.max(...pageList) : null;
-  const rows = chunks.map((content, chunk_index) => ({ chunk_index, page_start: pageStart, page_end: pageEnd, content }));
+  const rows = chunks.map((chunk, chunk_index) => ({ chunk_index, ...chunk }));
   const approved = await db(env, 'rpc/approve_knowledge_document_summary', {
     method: 'POST',
     body: JSON.stringify({

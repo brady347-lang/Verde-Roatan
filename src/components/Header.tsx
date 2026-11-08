@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { MapPin, Palmtree } from 'lucide-react';
+import { MapPin } from 'lucide-react';
 import { Language } from '../types';
 
 interface HeaderProps {
@@ -10,6 +10,7 @@ interface HeaderProps {
   onOpenZonePicker: () => void;
   rateHnl: number | null;
   onToggleCurrencyWidget: () => void;
+  onHomeClick: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -18,7 +19,8 @@ export const Header: React.FC<HeaderProps> = ({
   zoneName,
   onOpenZonePicker,
   rateHnl,
-  onToggleCurrencyWidget
+  onToggleCurrencyWidget,
+  onHomeClick
 }) => {
   return (
     <motion.header
@@ -29,19 +31,25 @@ export const Header: React.FC<HeaderProps> = ({
       style={{ paddingTop: '0.625rem' }}
     >
       {/* Brand */}
-      <motion.div
+      <motion.button
+        type="button"
+        onClick={onHomeClick}
         whileHover={{ scale: 1.02 }}
-        className="flex items-center gap-2 font-display font-extrabold text-[17px] text-[var(--ink)] tracking-tight cursor-default"
+        whileTap={{ scale: 0.96 }}
+        aria-label="Go to Rootwise home"
+        title="Rootwise home"
+        className="flex min-w-0 items-center gap-2 font-display font-extrabold text-[17px] text-[var(--ink)] tracking-tight text-left"
       >
-        <motion.span
-          whileHover={{ rotate: 12 }}
+        <motion.img
+          whileHover={{ rotate: 5 }}
           transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-          className="w-8 h-8 rounded-lg bg-[var(--palm)] text-[var(--on-palm)] flex items-center justify-center shadow-xs"
-        >
-          <Palmtree className="w-5 h-5 stroke-[2.2]" />
-        </motion.span>
-        <span className="truncate">Verde Roatán</span>
-      </motion.div>
+          src="/rootwise-mark.svg"
+          alt=""
+          aria-hidden="true"
+          className="w-9 h-9 rounded-xl object-cover shadow-xs shrink-0"
+        />
+        <span className="truncate">Rootwise</span>
+      </motion.button>
 
       {/* Top Actions with motion buttons */}
       <div className="flex items-center gap-1.5">

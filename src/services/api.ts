@@ -78,6 +78,16 @@ export class CatalogSaveError extends Error {
   }
 }
 
+/** Preserve the HTTP status so the UI can refresh an expired session without retrying permission failures. */
+export class CatalogRequestError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'CatalogRequestError';
+    this.status = status;
+  }
+}
+
 /** Explain a failed catalog write. RLS blocks return 200 with zero rows, which is easy to mistake for success. */
 function tokenEmail(token?: string): string {
   try {
@@ -90,12 +100,15 @@ function tokenEmail(token?: string): string {
 }
 
 function catalogWriteError(response: Response, rows: any, action: string, token?: string): Error {
-  if (response.status === 401 || response.status === 403) {
+  if (response.status === 401) {
+    return new CatalogRequestError('Your administrator session has expired or is no longer valid. Refreshing the sign-in may fix this.', 401);
+  }
+  if (response.status === 403) {
     const who = tokenEmail(token);
-    return new Error('The database rejected this save' + (who ? ' for ' + who : '') + '. That account is not the administrator, or the session expired. Sign out, sign back in as the administrator, then try again.');
+    return new CatalogRequestError('Supabase denied this catalog change (403)' + (who ? ' for ' + who : '') + '. That account may not be the administrator, or its database role or Row Level Security policy does not permit this action. Sign in as the administrator and try again.', 403);
   }
   if (response.ok && Array.isArray(rows) && rows.length === 0) {
-    return new Error('Supabase did not ' + action + ' this record: the database blocked the change (administrator permission) or the record no longer exists. Sign out and back in as the administrator, then try again.');
+    return new Error('Supabase returned no saved row for this ' + action + '. The database may have blocked the change or the record may no longer exist. Check the administrator catalog permissions.');
   }
   return new Error(rows?.message || rows?.details || 'Supabase could not ' + action + ' the record (' + response.status + ').');
 }

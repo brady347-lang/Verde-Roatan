@@ -223,7 +223,26 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
                   <span className="text-[10px] font-extrabold uppercase text-[var(--ink-soft)]">{summary.review_status}</span>
                 </div>
                 <p className="text-[12px] leading-relaxed text-[var(--ink-soft)] whitespace-pre-wrap">{summary.summary}</p>
-                <p className="text-[10px] text-[var(--ink-soft)]">{es ? 'Páginas' : 'Pages'}: {(summary.source_pages || []).join(', ') || '—'} · {summary.generation_method}</p>
+                {[
+                  { key: 'key_facts', title: es ? 'Hechos clave' : 'Key facts', values: summary.key_facts },
+                  { key: 'critical_details', title: es ? 'Detalles críticos y limitaciones' : 'Critical details & limitations', values: summary.critical_details },
+                  { key: 'safety_warnings', title: es ? 'Advertencias de seguridad' : 'Safety warnings', values: summary.safety_warnings }
+                ].map(section => {
+                  const values = Array.isArray(section.values) ? section.values : [];
+                  return <section key={section.key} className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] p-2">
+                    <b className="text-[11px] text-[var(--ink)]">{section.title} ({values.length})</b>
+                    {values.length ? <ul className="mt-1 list-disc pl-4 space-y-1 text-[11px] leading-relaxed text-[var(--ink-soft)]">
+                      {values.map((item: any, index: number) => {
+                        const value = typeof item === 'string' ? item
+                          : typeof item?.text === 'string' ? item.text
+                          : typeof item?.value === 'string' ? item.value
+                          : JSON.stringify(item);
+                        return <li key={section.key + '-' + index}>{value}</li>;
+                      })}
+                    </ul> : <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'No se proporcionó contenido.' : 'No content supplied.'}</p>}
+                  </section>;
+                })}
+                <p className="text-[10px] text-[var(--ink-soft)]">{es ? 'Páginas fuente' : 'Source pages'}: {(summary.source_pages || []).join(', ') || '—'} · {summary.generation_method}</p>
                 {summary.review_status === 'pending' && <div className="grid grid-cols-2 gap-2">
                   <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || !canApprove} onClick={() => void decideSummary(summary.id, 'approve')}>{es ? 'Aprobar e indexar' : 'Approve & index'}</button>
                   <button type="button" className={buttonClass + ' border border-red-500/40 text-red-600'} disabled={!!busy} onClick={() => void decideSummary(summary.id, 'reject')}>{es ? 'Rechazar' : 'Reject'}</button>
