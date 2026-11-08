@@ -226,6 +226,14 @@ export default {
       if (pathname === '/knowledge/upload') return await handleKnowledgeUpload(request, url, env);
       if (pathname === '/knowledge/reference-images/upload') return await knowledgeReferenceImageUpload(request, env);
 
+      // Reject oversized identification-review uploads before parsing the JSON body.
+      // A 12 MiB image expands to at most 16 MiB of base64 plus small JSON metadata.
+      if (pathname === '/identification-review') {
+        const contentLength = Number(request.headers.get('content-length') || 0);
+        if (Number.isFinite(contentLength) && contentLength > 17 * 1024 * 1024) {
+          return jsonResponse(413, { status: 'error', error: 'The review photo must be smaller than 12 MB.' });
+        }
+      }
       const body = await request.json().catch(() => ({}));
       if (pathname === '/internal/evidence-review') return await handleInternalEvidenceReview(request, body, env);
 
@@ -676,6 +684,12 @@ async function handleIdentificationReview(request, body, env) {
     });
   }
   const mimeType = imageMatch[1];
+  // Check encoded length before atob() so oversized uploads cannot force a large decode allocation.
+  if (imageMatch[2].length > 16 * 1024 * 1024) {
+    return new Response(JSON.stringify({ status: 'error', error: 'The review photo must be smaller than 12 MB.' }), {
+      status: 413, headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
+    });
+  }
   const binary = atob(imageMatch[2]);
   if (binary.length > 12 * 1024 * 1024) {
     return new Response(JSON.stringify({ status: 'error', error: 'The review photo must be smaller than 12 MB.' }), {
