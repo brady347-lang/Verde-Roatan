@@ -77,6 +77,11 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
         if (event == null || event.sensor.getType() != Sensor.TYPE_LIGHT || event.values.length == 0) return;
         JSObject payload = new JSObject();
         payload.put("lux", Math.max(0, event.values[0]));
+        payload.put("accuracy", event.accuracy);
+        payload.put("sensorName", event.sensor.getName());
+        payload.put("sensorVendor", event.sensor.getVendor());
+        payload.put("maximumRange", event.sensor.getMaximumRange());
+        payload.put("resolution", event.sensor.getResolution());
         notifyListeners("lightReading", payload);
     }
 
