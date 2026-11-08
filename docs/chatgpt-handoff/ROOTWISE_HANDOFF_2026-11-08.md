@@ -62,3 +62,15 @@ Verified source finding:
 
 ## Collaboration preference
 The user wants hands-on work directly in GitHub, clear continuity between chats, and practical follow-through. Avoid asking them to repeat context already recorded here.
+
+## Area measurement persistence (Round 3 — in progress)
+- Added `src/lib/measuredPlotStore.ts`: IndexedDB storage for measured plot names, GPS corner coordinates, estimated area/perimeter and timestamps.
+- Updated `src/screens/ToolsScreen.tsx`: users can name and save a polygon after capturing at least three GPS points, reopen saved maps (restoring the points and map), and delete saved maps.
+- Saved plot coordinates remain local to the device. This implementation does not upload or cloud-sync location data.
+- Storage is separate from the existing photo database and uses its own IndexedDB database/store.
+- Commits:
+  - `5c769bf4e05245b961a40013f479f94aae3bf11c` — add local measured-plot storage.
+  - `150443a5581ed1d505e52e8a3d7653566b13e7a2` — add save/reopen/delete UI.
+  - `31a678d00ad49c424e21a2070c3961eb35605669` — harden IndexedDB result handling.
+- Basic source inspection confirms the screen imports the store and includes save/open/delete handlers. Full typecheck/build and device runtime tests remain outstanding; no dependency install, Android sync, APK build, merge or deployment has been performed.
+- Next validation: install project dependencies in a proper build environment, run `npm run lint` and `npm run build`, then on Android verify save → app restart → reopen → delete, plus behavior when IndexedDB is unavailable or storage is full.
