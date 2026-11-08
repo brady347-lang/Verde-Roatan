@@ -238,6 +238,7 @@ test('public knowledge search excludes private data, reports no-AI retrieval and
       return ok([{ source_type: 'research', source_title: 'Palm guide.pdf', citation: 'University extension', page_start: 4, content: 'Potassium deficiency symptoms.', verification_status: 'source_supported', rank: 0.2 }]);
     }
     if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
+    if (url.includes('/rest/v1/botanical_evidence_queue')) return ok([], 404);
     if (url.includes('/rest/v1/botanical_evidence_queue')) return ok([]);
     throw new Error('Unexpected request: ' + url);
   }, null);
@@ -271,6 +272,7 @@ test('safety questions without approved safety data return an explicit warning a
   setup((url) => {
     if (url.includes('/rest/v1/rpc/search_verde_knowledge')) return ok([]);
     if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
+    if (url.includes('/rest/v1/botanical_evidence_queue')) return ok([], 404);
     throw new Error('Unexpected request: ' + url);
   }, null);
   const r = await worker.fetch(request('/knowledge/search', { query: 'Is this plant toxic to cats?' }, null), env);
@@ -292,6 +294,7 @@ test('plant names containing cat or dog do not count as safety evidence', async 
       }]);
     }
     if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
+    if (url.includes('/rest/v1/botanical_evidence_queue')) return ok([], 404);
     throw new Error('Unexpected request: ' + url);
   }, null);
   const r = await worker.fetch(request('/knowledge/search', { query: 'Is cat palm toxic to cats?' }, null), env);
@@ -311,6 +314,7 @@ test('Spanish safety questions also warn when evidence only contains a plant nam
       }]);
     }
     if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
+    if (url.includes('/rest/v1/botanical_evidence_queue')) return ok([], 404);
     throw new Error('Unexpected request: ' + url);
   }, null);
   const r = await worker.fetch(request('/knowledge/search', { query: '¿La palma de gato es segura para mascotas?' }, null), env);
@@ -337,6 +341,7 @@ test('private knowledge search is allowed only for authenticated admins', async 
       return ok([]);
     }
     if (url.includes('/rest/v1/constitution_rules')) return ok(ACTIVE_RULES);
+    if (url.includes('/rest/v1/botanical_evidence_queue')) return ok([], 404);
     throw new Error('Unexpected request: ' + url);
   });
   const r = await worker.fetch(request('/knowledge/search', { query: 'hibiscus leaf', include_private: true }), env);
