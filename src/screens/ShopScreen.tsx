@@ -194,7 +194,7 @@ export const ShopScreen: React.FC<ShopScreenProps> = ({
                   {lang === 'es' ? 'Asesor Botánico con IA' : 'AI Garden Consultant'}
                 </b>
                 <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-[var(--palm)]/20 text-[var(--palm)] uppercase tracking-wider">
-                  Gemini 3.8 Flash
+                  Rootwise AI
                 </span>
               </div>
               <p className="text-[11.5px] text-[var(--ink-soft)] truncate">

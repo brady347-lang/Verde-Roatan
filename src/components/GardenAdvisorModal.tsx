@@ -165,7 +165,7 @@ Location: Roatán Island, Bay Islands, Honduras
                   {isEs ? 'Asesor Botánico de Jardín' : 'AI Garden Consultant'}
                 </h2>
                 <span className="text-[10px] font-extrabold tracking-wider uppercase px-2 py-0.5 rounded-full bg-[var(--palm)]/15 text-[var(--palm)] border border-[var(--palm)]/25">
-                  Gemini 3.8 Flash
+                  Rootwise AI
                 </span>
               </div>
               <p className="text-[12.5px] text-[var(--ink-soft)] font-medium">

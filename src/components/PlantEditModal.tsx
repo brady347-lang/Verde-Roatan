@@ -99,7 +99,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Auto-detect botanical specimen from base64 image using Gemini 3.8 Flash
+  // Auto-detect botanical specimen from base64 image using Rootwise AI
   const runAutoBotanicalDetection = async (base64Data: string) => {
     setIsDetectingAI(true);
     // Snapshot existing values for Undo option
@@ -364,7 +364,7 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
               <Loader2 className="w-5 h-5 text-[var(--lagoon)] animate-spin shrink-0" />
               <div className="flex-1">
                 <p className="text-[12.5px] font-bold text-[var(--ink)]">
-                  Gemini Botanical Intelligence is analyzing your photo…
+                  Rootwise Botanical Intelligence is analyzing your photo…
                 </p>
                 <p className="text-[11px] text-[var(--ink-soft)]">
                   Detecting specimen genus/species and auto-filling parameters.
