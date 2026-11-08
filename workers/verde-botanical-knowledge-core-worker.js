@@ -565,6 +565,21 @@ async function voteOnEvidence(request, body, env) {
   return json(200, { status: 'success', distinct_supporters: supporters, community_threshold_reached: supporters >= 3, requires_admin_approval_for_retrieval: true });
 }
 
+const PUBLIC_BOTANICAL_FIELDS = new Set(['common_name','scientific_name','botanical_name','family','genus','species','cultivar','description','summary','identification','identification_features','key_features','characteristics','growth_habit','mature_size','height','spread','habitat','native_range','distribution','origin','climate','light','sunlight','water','soil','drainage','flowering','fruiting','propagation','uses','toxicity','safety_warnings','pests','diseases','symptoms','likely_cause','treatment','prevention','findings','observations','facts','key_facts','confidence','reasoning']);
+function publicBotanicalEvidence(value, depth = 0) {
+  if (depth > 4 || value == null) return undefined;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) return value.slice(0, 20).map(v => publicBotanicalEvidence(v, depth + 1)).filter(v => v !== undefined);
+  if (typeof value !== 'object') return undefined;
+  const safe = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (!PUBLIC_BOTANICAL_FIELDS.has(key.toLowerCase())) continue;
+    const cleaned = publicBotanicalEvidence(item, depth + 1);
+    if (cleaned !== undefined && cleaned !== '') safe[key] = cleaned;
+  }
+  return Object.keys(safe).length ? safe : undefined;
+}
+
 async function searchApprovedEvidence(env, query) {
   const terms = [...new Set((String(query || '').toLowerCase().match(/[\\p{L}\\p{N}]{3,}/gu) || []).slice(0, 6))];
   if (!terms.length) return [];
@@ -573,16 +588,17 @@ async function searchApprovedEvidence(env, query) {
   return rows.data.filter(row => {
     const haystack = JSON.stringify([row.subject_key, row.submitted_payload, row.model_result]).toLowerCase();
     return terms.some(term => haystack.includes(term));
-  }).slice(0, 8).map(row => ({
-    id: row.id, source_type: 'admin_approved_evidence', source_title: row.subject_key || row.evidence_type,
-    content: clean(JSON.stringify({ submitted: row.submitted_payload, review: row.model_result }), 1800),
-    citation: row.source_system + (row.source_record_id ? ':' + row.source_record_id : ''),
-    verification_status: row.verification_status,
-    approval_status: 'admin_approved',
-    approved_by: row.approved_by_email,
-    approved_at: row.approved_at,
-    approval_note: row.approval_note
-  }));
+  }).slice(0, 8).map(row => {
+    const botanical = { submitted: publicBotanicalEvidence(row.submitted_payload), review: publicBotanicalEvidence(row.model_result) };
+    return {
+      source_type: 'admin_approved_evidence',
+      source_title: clean(row.subject_key || row.evidence_type, 240),
+      content: clean(JSON.stringify(botanical), 1800),
+      citation: 'RootWise administrator-reviewed botanical evidence',
+      verification_status: row.verification_status,
+      approval_status: 'admin_approved'
+    };
+  }).filter(row => row.content !== '{}');
 }
 
 async function runEvidenceCycle(env) {
