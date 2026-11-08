@@ -9,7 +9,7 @@ import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
-import { buildCalibrationProfile, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
+import { estimateCameraBrightness } from '../services/cameraBrightness';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = TrackPoint;
@@ -132,85 +132,71 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
-  const [cameraCalibrationOpen, setCameraCalibrationOpen] = useState(false);
-  const [cameraStageIndex, setCameraStageIndex] = useState(0);
-  const [cameraSamples, setCameraSamples] = useState<CameraCalibrationSample[]>([]);
-  const [cameraReferenceLux, setCameraReferenceLux] = useState('');
-  const [cameraStatus, setCameraStatus] = useState('');
-  const [cameraProfile, setCameraProfile] = useState(() => typeof navigator !== 'undefined' ? loadCalibration(getCameraDeviceKey(navigator.userAgent)) : null);
-  const cameraStages: Array<{ stage: CalibrationStage; title: string; instruction: string; esTitle: string; esInstruction: string }> = [
-    { stage: 'dark', title: 'Complete darkness', instruction: 'Cover the rear camera lens completely for 8 seconds. Keep the phone still.', esTitle: 'Oscuridad completa', esInstruction: 'Cubre completamente la cámara trasera durante 8 segundos. Mantén el teléfono quieto.' },
-    { stage: 'shade', title: 'Open shade', instruction: 'Uncover the camera and point it at a consistently shaded, evenly lit surface.', esTitle: 'Sombra abierta', esInstruction: 'Destapa la cámara y apunta a una superficie uniformemente iluminada por sombra.' },
-    { stage: 'indirect', title: 'Bright indirect daylight', instruction: 'Point at a bright surface near daylight, but keep direct sunlight out of the lens.', esTitle: 'Luz diurna indirecta', esInstruction: 'Apunta a una superficie luminosa cerca de la luz natural, sin sol directo en la lente.' },
-    { stage: 'bright', title: 'Bright daylight', instruction: 'Point at a bright ground or wall surface. Never point the camera directly at the sun.', esTitle: 'Luz diurna intensa', esInstruction: 'Apunta a una pared o superficie brillante. Nunca apuntes directamente al sol.' }
-  ];
-  const stopCameraCalibration = () => {
+  const cameraIntervalRef = useRef<number | null>(null);
+  const cameraStartingRef = useRef(false);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [cameraBrightness, setCameraBrightness] = useState<{ score: number; label: string } | null>(null);
+  const stopCameraFallback = () => {
+    if (cameraIntervalRef.current !== null) window.clearInterval(cameraIntervalRef.current);
+    cameraIntervalRef.current = null;
     cameraStreamRef.current?.getTracks().forEach(track => track.stop());
     cameraStreamRef.current = null;
     if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
+    setCameraActive(false);
+    setCameraBrightness(null);
   };
-  const startCameraCalibration = async () => {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraStatus(es ? 'La cámara requiere un navegador seguro compatible.' : 'Camera access requires a supported secure browser context.');
-      return;
-    }
+  const startCameraFallback = async () => {
+    if (cameraStartingRef.current || cameraStreamRef.current) return;
+    cameraStartingRef.current = true;
+    setSensorStatus(es ? 'Sin sensor de luz ambiental. Activando la cámara trasera…' : 'No ambient-light sensor detected. Starting the rear camera…');
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } } });
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error('CAMERA_UNAVAILABLE');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 2, max: 5 } }
+      });
       cameraStreamRef.current = stream;
-      setCameraCalibrationOpen(true);
-      setCameraStageIndex(0);
-      setCameraSamples([]);
-      setCameraReferenceLux('');
-      setCameraStatus(es ? 'Cámara lista. Sigue cada paso.' : 'Camera ready. Follow each step.');
-      window.setTimeout(() => { if (cameraVideoRef.current) { cameraVideoRef.current.srcObject = stream; void cameraVideoRef.current.play().catch(() => undefined); } }, 0);
+      setCameraActive(true);
+      setSensorStatus(es ? 'Medición visual activa. Apunta la cámara hacia la zona que quieres evaluar.' : 'Camera estimate active. Point the camera at the area you want to assess.');
     } catch (error) {
       const name = error instanceof Error ? error.name : '';
-      setCameraStatus(name === 'NotAllowedError' || name === 'SecurityError'
-        ? (es ? 'El permiso de cámara está denegado. Actívalo en Ajustes de Android → Aplicaciones → Rootwise → Permisos → Cámara e inténtalo de nuevo.' : 'Camera permission is denied. Enable it in Android Settings → Apps → Rootwise → Permissions → Camera, then try again.')
+      setSensorStatus(name === 'NotAllowedError' || name === 'SecurityError'
+        ? (es ? 'Permiso de cámara denegado. Actívalo en Ajustes → Aplicaciones → RootWise → Permisos → Cámara.' : 'Camera permission denied. Enable it in Settings → Apps → RootWise → Permissions → Camera.')
         : name === 'NotFoundError' || name === 'OverconstrainedError'
-          ? (es ? 'No se encontró una cámara trasera utilizable en este dispositivo.' : 'No usable rear camera was found on this device.')
-          : name === 'NotReadableError'
-            ? (es ? 'La cámara está en uso por otra aplicación. Ciérrala e inténtalo de nuevo.' : 'The camera is in use by another app. Close it and try again.')
-            : (es ? 'No se pudo acceder a la cámara. Revisa el permiso e inténtalo de nuevo.' : 'Camera access failed. Check permission and try again.'));
+          ? (es ? 'No se encontró una cámara utilizable en este teléfono.' : 'No usable camera was found on this phone.')
+          : (es ? 'No se pudo iniciar la cámara. Comprueba los permisos y vuelve a intentarlo.' : 'Could not start the camera. Check permissions and try again.'));
+    } finally {
+      cameraStartingRef.current = false;
     }
   };
-  const captureCameraCalibrationStage = () => {
+  useEffect(() => {
+    if (!cameraActive || !cameraStreamRef.current) return;
     const video = cameraVideoRef.current;
     const canvas = cameraCanvasRef.current;
-    if (!video || !canvas || video.readyState < 2) {
-      setCameraStatus(es ? 'Espera a que la vista de cámara esté lista.' : 'Wait for the camera preview to become ready.');
-      return;
-    }
-    canvas.width = 160; canvas.height = 120;
-    const context = canvas.getContext('2d', { willReadFrequently: true });
-    if (!context) return;
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const response = summarizeFrame(context.getImageData(0, 0, canvas.width, canvas.height).data);
-    const stage = cameraStages[cameraStageIndex].stage;
-    const referenceLux = cameraReferenceLux.trim() ? Number(cameraReferenceLux) : undefined;
-    if (referenceLux !== undefined && (!Number.isFinite(referenceLux) || referenceLux < 0)) {
-      setCameraStatus(es ? 'Introduce un valor de lux válido o deja el campo vacío.' : 'Enter a valid lux value or leave the field blank.');
-      return;
-    }
-    const next = [...cameraSamples.filter(sample => sample.stage !== stage), { stage, response, referenceLux, capturedAt: new Date().toISOString() }];
-    setCameraSamples(next);
-    setCameraReferenceLux('');
-    if (cameraStageIndex < cameraStages.length - 1) setCameraStageIndex(index => index + 1);
-    else {
+    if (!video || !canvas) return;
+    video.srcObject = cameraStreamRef.current;
+    void video.play().catch(() => setSensorStatus(es ? 'No se pudo iniciar la vista de cámara.' : 'Camera preview could not start.'));
+    const sampleFrame = () => {
+      if (video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+      canvas.width = 96;
+      canvas.height = 72;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) return;
       try {
-        const profile = buildCalibrationProfile(getCameraDeviceKey(navigator.userAgent), next);
-        saveCalibration(profile);
-        setCameraProfile(profile);
-        setCameraStatus(profile.quality === 'reference_calibrated'
-          ? (es ? 'Perfil calibrado guardado en este dispositivo.' : 'Reference-calibrated profile saved on this device.')
-          : (es ? 'Perfil relativo guardado. Añade al menos tres lecturas de un luxómetro para convertir la respuesta en lux.' : 'Relative profile saved. Add at least three readings from a lux meter to estimate lux.'));
-        stopCameraCalibration();
-        setCameraCalibrationOpen(false);
-      } catch (error) {
-        setCameraStatus(error instanceof Error ? error.message : (es ? 'No se pudo validar la calibración.' : 'Calibration could not be validated.'));
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const estimate = estimateCameraBrightness(context.getImageData(0, 0, canvas.width, canvas.height).data);
+        setCameraBrightness({ score: estimate.score, label: estimate.label });
+      } catch {
+        setSensorStatus(es ? 'No se pudo analizar la imagen de la cámara.' : 'Could not analyze the camera image.');
       }
-    }
-  };
+    };
+    cameraIntervalRef.current = window.setInterval(sampleFrame, 1500);
+    sampleFrame();
+    return () => {
+      if (cameraIntervalRef.current !== null) window.clearInterval(cameraIntervalRef.current);
+      cameraIntervalRef.current = null;
+    };
+  }, [cameraActive, es]);
   const lux = liveLux ?? 0;
   const hasLiveLux = liveLux !== null;
   const lightAssessment = useMemo(() => assessLight(lux), [lux]);
@@ -233,10 +219,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }
     sensorRef.current?.stop();
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
-    stopCameraCalibration();
+    cameraStreamRef.current?.getTracks().forEach(track => track.stop());
   }, []);
   useEffect(() => { if (tool !== 'area' && trackingActiveRef.current) void stopGpsTracking(); }, [tool]);
-  useEffect(() => { if (tool !== 'light') { sensorRef.current?.stop(); sensorRef.current = null; if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current); sensorTimeoutRef.current = null; setLiveLux(null); } }, [tool]);
+  useEffect(() => { if (tool !== 'light') { sensorRef.current?.stop(); sensorRef.current = null; if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current); sensorTimeoutRef.current = null; stopCameraFallback(); setLiveLux(null); } }, [tool]);
   const startLightSensor = async () => {
     sensorRef.current?.stop();
     sensorRef.current = null;
@@ -258,7 +244,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           // live value so the manual lux entry is what the guidance is based on.
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(null);
-          setSensorStatus(es ? 'El sensor de luz no pudo reanudarse al volver a la app. Toca «Leer sensor» de nuevo o introduce los lux manualmente.' : 'The light sensor could not resume when you returned to the app. Tap Read sensor again or enter lux manually.');
+          sensorRef.current?.stop();
+          sensorRef.current = null;
+          void startCameraFallback();
         });
         try {
           await RootWiseDeviceSensors.startAmbientLight();
@@ -273,7 +261,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           void errorListener.remove();
         } };
         sensorTimeoutRef.current = window.setTimeout(() => {
-          if (!receivedReading) setSensorStatus(es ? 'El sensor inició, pero Android no ha enviado lecturas. Comprueba que el teléfono tenga sensor de luz ambiental y vuelve a intentarlo.' : 'The sensor started, but Android has not delivered a reading. Confirm the phone has an ambient light sensor and try again.');
+          if (!receivedReading) { sensorRef.current?.stop(); sensorRef.current = null; void startCameraFallback(); }
         }, 6000);
         return;
       }
@@ -291,17 +279,15 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
       });
-      sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Introduce los lux manualmente.' : 'Sensor read failed. Enter lux manually.');
+      sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Se intentará usar la cámara.' : 'Sensor read failed. The camera fallback will be tried.');
       sensor.start();
       sensorRef.current = sensor;
       sensorTimeoutRef.current = window.setTimeout(() => {
-        if (!receivedReading) setSensorStatus(es ? 'El sensor no ha enviado lecturas. Comprueba que el dispositivo tenga sensor de luz ambiental.' : 'The sensor has not delivered readings. Check that this device has an ambient light sensor.');
+        if (!receivedReading) { sensorRef.current?.stop(); sensorRef.current = null; void startCameraFallback(); }
       }, 6000);
     } catch (error) {
       const detail = error instanceof Error ? error.message : '';
-      setSensorStatus(es
-        ? (/UNAVAILABLE|does not expose/i.test(detail) ? 'Este dispositivo o navegador no expone el sensor de luz. Introduce los lux manualmente.' : 'No se pudo iniciar el sensor de luz. Introduce los lux manualmente.')
-        : (/UNAVAILABLE|does not expose/i.test(detail) ? 'This device does not expose an ambient light sensor to the app. Enter lux manually.' : 'Could not start the light sensor. Enter lux manually.'));
+      await startCameraFallback();
     }
   };
   const stopLightSensor = () => {
@@ -309,8 +295,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
     sensorTimeoutRef.current = null;
+    stopCameraFallback();
     setLiveLux(null);
-    setSensorStatus(es ? 'Sensor detenido.' : 'Sensor stopped.');
+    setSensorStatus(es ? 'Medición detenida.' : 'Measurement stopped.');
   };
   const openPhoneLocationSettings = async () => {
     try {
@@ -649,6 +636,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           </>}
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Iniciar medición en vivo' : 'Start live measurement'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
+        {cameraActive && <div className="mt-3 rounded-2xl border border-[var(--line)] p-3">
+          <div className="flex items-center justify-between gap-2"><b className="text-sm">{es ? 'Estimación visual de la cámara' : 'Camera brightness estimate'}</b><span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold text-amber-900">{es ? 'Estimación' : 'Estimate'}</span></div>
+          <video ref={cameraVideoRef} autoPlay muted playsInline className="mt-2 max-h-56 w-full rounded-xl bg-black object-cover" />
+          <canvas ref={cameraCanvasRef} className="hidden" />
+          {cameraBrightness ? <p className="mt-2 text-sm font-semibold">{cameraBrightness.label} · {cameraBrightness.score}/100</p> : <p className="mt-2 text-xs text-[var(--ink-soft)]">{es ? 'Analizando la imagen…' : 'Analyzing the camera image…'}</p>}
+          <p className="mt-1 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Esto es un indicador relativo de brillo, no una medición en lux. La exposición automática y el color de la escena pueden cambiar el resultado.' : 'This is a relative brightness indicator, not a lux measurement. Auto-exposure and scene colors can affect the result.'}</p>
+        </div>}
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
         <div className="mt-5"><h3 className="flex items-center gap-2 text-base font-extrabold"><Leaf className="h-4 w-4 text-[var(--palm)]" />{es ? 'Plantas recomendadas' : 'Recommended plants'}</h3><p className="mb-3 mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Coincidencias basadas en los requisitos de luz registrados en el Centro de Conocimiento.' : 'Matches based on sunlight requirements recorded in the Botanical Knowledge Center.'}</p>
           {!hasLiveLux ? <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'Las recomendaciones se activarán automáticamente al recibir una lectura real del sensor.' : 'Recommendations will appear automatically when a real sensor reading is received.'}</p> : lightMatches.length ? <div className="space-y-2">{lightMatches.map(match => <div key={match.profile.id} className="rounded-2xl border border-[var(--line)] p-3"><div className="flex items-start justify-between gap-2"><div><b className="text-sm">{match.profile.identification.common_names[es ? 'es' : 'en'][0] || match.profile.taxonomy.scientific_name}</b><p className="text-xs italic text-[var(--ink-soft)]">{match.profile.taxonomy.scientific_name}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${match.fit === 'strong' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{match.fit === 'strong' ? (es ? 'Buena coincidencia' : 'Strong fit') : (es ? 'Posible' : 'Possible fit')}</span></div><p className="mt-1 text-xs text-[var(--ink-soft)]">{match.reason}</p></div>)}</div> : <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay perfiles públicos coincidentes todavía.' : 'No matching public profiles are available yet.'}</p>}
