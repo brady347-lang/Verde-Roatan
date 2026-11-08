@@ -4,7 +4,7 @@ export interface RootWiseDeviceSensorsPlugin {
   startAmbientLight(): Promise<void>;
   stopAmbientLight(): Promise<void>;
   openLocationSettings(): Promise<void>;
-  addListener(eventName: 'lightReading', listenerFunc: (event: { lux: number }) => void): Promise<PluginListenerHandle>;
+  addListener(eventName: 'lightReading', listenerFunc: (event: { lux: number; accuracy: number; sensorName: string; sensorVendor: string; maximumRange: number; resolution: number }) => void): Promise<PluginListenerHandle>;
   /** Emitted when the native layer could not re-register the light sensor after the app resumed. */
   addListener(eventName: 'lightSensorError', listenerFunc: (event: { message: string }) => void): Promise<PluginListenerHandle>;
 }
