@@ -5,10 +5,17 @@ This note preserves the active project context so work can continue in a fresh C
 
 ## Repository and working location
 - GitHub repository: https://github.com/brady347-lang/Verde-Roatan
-- Active integration branch: `main`
+- Base branch: `main`
+- Active development branch: `feature/rootwise-unified-development`
 - Continue RootWise work in this repository. Inspect the current `main` source before changing anything.
 - The user has said the latest app build is already available in GitHub and does not want an unnecessary rebuild. Do not trigger or recommend another APK build unless a code change genuinely requires one and the user requests it.
 - Do not assume that a slow or temporarily unresponsive app screen means the code needs rebuilding.
+
+## Current development progress
+- Round 1 is underway on `feature/rootwise-unified-development`.
+- Commit `af24faf5b18fe5bcaa825a86f1f47cd1451509fa` fixes the irrigation estimator: the displayed emitter count now uses the entered area-per-plant value instead of the unrelated planting-spacing value.
+- Example check: 80 m² area / 50 m² per plant = 1 estimated emitter; changing the area-per-plant input changes the result. This is a rough layout estimate, not a hydraulic design.
+- No merge or deployment has been performed. Full project typecheck/build has not yet been run.
 
 ## Current task to resume
 Investigate the Botanical Knowledge Center → Reference Photos screen and the catalog-photo import experience.
