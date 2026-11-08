@@ -73,6 +73,8 @@ import { CurrencyWidget } from './components/CurrencyWidget';
 import { Navigation, TabType } from './components/Navigation';
 import { BottomSheet } from './components/BottomSheet';
 import { HomeScreen } from './screens/HomeScreen';
+import { RootWiseHomeScreen } from './screens/RootWiseHomeScreen';
+import { ToolsScreen } from './screens/ToolsScreen';
 import { ShopScreen } from './screens/ShopScreen';
 import { IdentifyScreen } from './screens/IdentifyScreen';
 import { ServicesScreen } from './screens/ServicesScreen';
@@ -107,7 +109,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-const TAB_ORDER: TabType[] = ['home', 'plants', 'id', 'svc', 'request', 'account'];
+const TAB_ORDER: TabType[] = ['home', 'tools', 'id', 'explore', 'plants', 'svc', 'request', 'account'];
 
 export default function App() {
   // --- Persistent State ---
@@ -1876,6 +1878,25 @@ export default function App() {
               className="flex flex-col min-h-full will-change-transform"
             >
               {tab === 'home' && (
+            <RootWiseHomeScreen
+              lang={lang}
+              displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
+              gardenCount={garden.length}
+              plantCount={currentCatalog.filter((item) => item.t === 'plant').length}
+              catalog={currentCatalog}
+              onNavigate={(nextTab) => setTab(nextTab)}
+              onStartIdentify={() => {
+                setIdentifyMode('plant');
+                setIdentifyResult(null);
+                setIdentifyPhoto(null);
+                setTab('id');
+              }}
+            />
+          )}
+
+          {tab === 'tools' && <ToolsScreen lang={lang} />}
+
+          {tab === 'explore' && (
             <HomeScreen
               lang={lang}
               isSignedIn={Boolean(session?.user)}
