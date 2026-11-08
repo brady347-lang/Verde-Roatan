@@ -116,13 +116,39 @@ export async function saveCatalogItem(item: CatalogItem, token: string): Promise
   return saved;
 }
 
+// Legacy seed/catalog IDs (for example "p-areca") belong to catalog_items, whose
+// primary key is TEXT. Production products use UUID IDs. Never send a text slug
+// to a UUID-backed column: Postgres rejects it before the request can run.
+function catalogTableForId(id: string): 'products' | 'catalog_items' {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id));
+  return isUuid ? 'products' : 'catalog_items';
+}
+
 export async function deleteCatalogItem(id: string, token: string): Promise<void> {
-  const response = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: catalogHeaders(token), cache: 'no-store' });
-  if (!response.ok) { const d = await response.json().catch(() => ({})); throw new Error(d.message || d.details || 'Supabase rejected catalog deletion (' + response.status + ').'); }
+  if (!id || !String(id).trim()) throw new Error('A valid catalog item ID is required.');
+  const table = catalogTableForId(id);
+  const response = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(id), {
+    method: 'DELETE',
+    headers: catalogHeaders(token),
+    cache: 'no-store'
+  });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows) || rows.length !== 1) {
+    if (response.ok && Array.isArray(rows) && rows.length === 0) {
+      throw new Error('No matching catalog record was deleted. Refresh the catalog and try again. If this is a legacy item, confirm that the catalog_items table exists in the connected Supabase project.');
+    }
+    throw new Error(rows?.message || rows?.details || 'Supabase rejected catalog deletion (' + response.status + ').');
+  }
 }
 
 export async function updateCatalogStock(id: string, quantity: number, token: string): Promise<number> {
-  const response = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(id), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ stock_quantity: Math.max(0, Math.floor(quantity)) }), cache: 'no-store' });
+  const table = catalogTableForId(id);
+  const response = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(id), {
+    method: 'PATCH',
+    headers: catalogHeaders(token),
+    body: JSON.stringify({ stock_quantity: Math.max(0, Math.floor(quantity)) }),
+    cache: 'no-store'
+  });
   const rows = await response.json().catch(() => []);
   if (!response.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error(rows?.message || rows?.details || 'Supabase rejected stock update (' + response.status + ').');
   return Number(rows[0].stock_quantity);
@@ -144,7 +170,8 @@ export async function uploadCatalogPhotoDataUrl(productId: string, dataUrl: stri
   const d = await upload.json().catch(() => ({}));
   if (!upload.ok) throw new Error(d.message || d.error || 'Photo upload failed (' + upload.status + ').');
   const publicUrl = SUPABASE_URL + '/storage/v1/object/public/product-images/' + path.split('/').map(encodeURIComponent).join('/');
-  const patch = await fetch(SUPABASE_URL + '/rest/v1/products?id=eq.' + encodeURIComponent(productId), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: publicUrl }), cache: 'no-store' });
+  const table = catalogTableForId(productId);
+  const patch = await fetch(SUPABASE_URL + '/rest/v1/' + table + '?id=eq.' + encodeURIComponent(productId), { method: 'PATCH', headers: catalogHeaders(token), body: JSON.stringify({ image_url: publicUrl }), cache: 'no-store' });
   const rows = await patch.json().catch(() => []);
   if (!patch.ok || !Array.isArray(rows) || rows.length !== 1) throw new Error('Photo uploaded but its link was not saved: ' + catalogWriteError(patch, rows, 'update').message);
   return publicUrl;
