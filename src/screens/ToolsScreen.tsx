@@ -9,6 +9,14 @@ import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } 
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = { lat: number; lon: number; accuracy: number; };
+type MaterialType = '' | 'mulch' | 'gravel' | 'topsoil' | 'compost' | 'pavers';
+const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: string; terms: RegExp }> = {
+  mulch: { en: 'Natural mulch', es: 'Mulch natural', terms: /mulch|bark|wood chip|corteza/i },
+  gravel: { en: 'Gravel & stone', es: 'Grava y piedra', terms: /gravel|stone|aggregate|crushed rock|grava|piedra/i },
+  topsoil: { en: 'Topsoil', es: 'Tierra vegetal', terms: /topsoil|top soil|planting soil|tierra vegetal/i },
+  compost: { en: 'Compost & soil blend', es: 'Compost y mezcla de suelo', terms: /compost|soil blend|soil mix|coir|worm cast/i },
+  pavers: { en: 'Pavers & stepping stones', es: 'Adoquines y losas', terms: /paver|stepping stone|patio block|adoqu[ií]n|losa/i }
+};
 function MapViewport({ points }: { points: Point[] }) {
   const map = useMap();
   useEffect(() => {
@@ -66,6 +74,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       surfaceMaterialId: selectedSod?.id,
       surfaceMaterialName: selectedSod?.name,
       surfaceMaterialUnits: sodUnitsNeeded,
+      projectMaterialType: materialType || undefined,
+      projectMaterialId: selectedMaterial?.id,
+      projectMaterialName: selectedMaterial?.name,
+      projectMaterialUnits: materialUnitsNeeded || undefined,
       createdAt: savedPlots.find((item) => item.id === editingPlotId)?.createdAt || now,
       updatedAt: now
     };
@@ -84,6 +96,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setPlotNotes(plot.notes || '');
     setPlantSpacing(String(plot.plantSpacingM || 0.5));
     setSelectedSodId(plot.surfaceMaterialId || '');
+    setMaterialType((plot.projectMaterialType as MaterialType) || '');
+    setSelectedMaterialId(plot.projectMaterialId || '');
     setEditingPlotId(plot.id);
     setGpsError('');
     setTool('area');
@@ -102,6 +116,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [depth, setDepth] = useState('0.08');
   const [coverage, setCoverage] = useState('50');
   const [selectedSodId, setSelectedSodId] = useState('');
+  const [materialType, setMaterialType] = useState<MaterialType>('');
+  const [selectedMaterialId, setSelectedMaterialId] = useState('');
   const [plantSpacing, setPlantSpacing] = useState('0.5');
   const [manualLength, setManualLength] = useState('10');
   const [manualWidth, setManualWidth] = useState('8');
@@ -109,8 +125,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [bagLiters, setBagLiters] = useState('40');
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation'>('area');
   const measurement = useMemo(() => measurePolygon(points), [points]);
-  const sodOptions = useMemo(() => catalog.filter((item) => /sod|turf|lawn/i.test([item.name, item.sci, item.category, ...item.tags].join(' '))), [catalog]);
+  const sodOptions = useMemo(() => catalog.filter((item) => item.kind === 'grass' && /sod|zoysia|natural grass/i.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))), [catalog]);
   const selectedSod = sodOptions.find((item) => item.id === selectedSodId) || sodOptions[0];
+  const materialOptions = useMemo(() => materialType ? catalog.filter((item) => MATERIAL_LABELS[materialType].terms.test([item.name, item.sci, item.category, ...item.tags].join(' ')) && !/artificial|synthetic/i.test([item.name, item.category, ...item.tags].join(' '))) : [], [catalog, materialType]);
+  const selectedMaterial = materialOptions.find((item) => item.id === selectedMaterialId) || materialOptions[0];
   const capturePoint = async () => {
     setGpsBusy(true);
     setGpsError('');
@@ -156,6 +174,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const safeWaste = Math.max(0, Number(waste) || 0);
   const volume = measuredArea * safeDepth * (1 + safeWaste / 100);
   const bags = Number(bagLiters) > 0 ? Math.ceil(volume * 1000 / Number(bagLiters)) : 0;
+  const selectedMaterialLiters = selectedMaterial ? Number(([selectedMaterial.size, selectedMaterial.sci, selectedMaterial.name].join(' ').match(/(\\d+(?:\\.\\d+)?)\\s*(?:l|liter|litre)s?\\b/i) || [])[1]) : 0;
+  const materialUnitsNeeded = selectedMaterialLiters > 0 ? Math.ceil(volume * 1000 / selectedMaterialLiters) : 0;
+  const materialTotal = selectedMaterial && materialUnitsNeeded > 0 ? materialUnitsNeeded * selectedMaterial.price : 0;
   const spacing = Math.max(0, Number(plantSpacing) || 0);
   const plants = spacing > 0 ? Math.floor(measuredArea / (spacing * spacing)) : 0;
   const safeCoverage = Math.max(0, Number(coverage) || 0);
@@ -207,9 +228,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
 
         <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
           <p className="text-xs font-bold">{es ? 'Planificador de césped y materiales de superficie' : 'Lawn & surface-material planner'}</p>
-          <p className="mt-1 text-[11px] text-[var(--ink-soft)]">{es ? 'Calcula cuánto césped en rollo o losas necesitas para el área medida y comprueba si está en el catálogo.' : 'Calculate how much sod or turf you need for the measured area and check whether it is in the catalog.'}</p>
+          <p className="mt-1 text-[11px] text-[var(--ink-soft)]">{es ? 'Calcula césped natural para jardines y áreas verdes. No incluye césped artificial.' : 'Estimate natural grass sod for lawns and green spaces. Artificial turf is not offered.'}</p>
           {sodOptions.length > 0 ? <>
-            <label className="mt-3 block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Elegir césped del catálogo' : 'Choose sod from catalog'}
+            <label className="mt-3 block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Elegir césped natural del catálogo' : 'Choose natural sod from catalog'}
               <select value={selectedSod ? selectedSod.id : ''} onChange={(event) => setSelectedSodId(event.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]">
                 {sodOptions.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.size}</option>)}
               </select>
@@ -224,7 +245,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
               </div>
               <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{sodUnitsNeeded > sodAvailable ? (es ? 'La cantidad calculada supera las existencias registradas. Contacta al vivero para confirmar disponibilidad o solicitar abastecimiento.' : 'Calculated quantity exceeds recorded stock. Contact the nursery to confirm availability or request sourcing.') : (es ? 'Existencias suficientes según el registro actual; confirma antes de comprar.' : 'Recorded stock appears sufficient; confirm availability before purchase.')}</p>
             </div>}
-          </> : <p className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay césped tipo sod/turf registrado actualmente en el catálogo. Puedes seguir usando el área para calcular otros materiales.' : 'No sod/turf products are currently listed in the catalog. You can still use this area to calculate other materials.'}</p>}
+          </> : <p className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay césped natural en rollo o losa registrado actualmente en el catálogo. Puedes seguir usando el área para otros cálculos.' : 'No natural sod products are currently listed in the catalog. You can still use the area for other calculations.'}</p>}
           <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{es ? 'Estimación basada en losas de 1 yd²; incluye redondeo hacia arriba, no contempla cortes, desperdicio ni pendientes.' : 'Estimate assumes 1 sq yd slabs and rounds up; excludes cuts, waste and slopes.'}</p>
         </div>
         <div className="mb-3 rounded-2xl bg-[var(--surface-2)] p-3">
@@ -268,8 +289,30 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       </section>}
       {tool === 'materials' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><Calculator className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Calculadora de suelo y materiales' : 'Soil & materials calculator'}</h2></div>
-        <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Usa el área GPS capturada o las dimensiones manuales para calcular el volumen de relleno.' : 'Use your GPS-measured area or manual dimensions to calculate fill volume.'}</p>
+        <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Calcula volumen para mulch, grava, tierra vegetal o compost. Los adoquines requieren medidas específicas del producto antes de calcular cantidades.' : 'Calculate volume for mulch, gravel, topsoil or compost. Pavers need product-specific dimensions before quantities can be estimated.'}</p>
         <div className="mt-3 rounded-2xl bg-[var(--surface-2)] p-3"><p className="text-xs text-[var(--ink-soft)]">{es ? 'Área que se usará' : 'Area being used'}</p><b className="text-2xl">{measuredArea.toFixed(2)} m²</b><p className="text-xs text-[var(--ink-soft)]">{areaSqFt.toFixed(1)} ft² · {areaAcres.toFixed(4)} acres</p></div>
+        <div className="mt-4 rounded-2xl border border-[var(--line)] p-3">
+          <p className="text-xs font-bold">{es ? 'Material opcional del proyecto' : 'Optional project material'}</p>
+          <p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Elige solo si este trabajo incluye materiales de superficie o acondicionamiento.' : 'Choose only when this job includes surface or soil-improvement materials.'}</p>
+          <label className="mt-3 block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Tipo de material' : 'Material type'}
+            <select value={materialType} onChange={e=>{setMaterialType(e.target.value as MaterialType);setSelectedMaterialId('');}} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]">
+              <option value="">{es ? 'Ninguno / No aplica' : 'None / Not applicable'}</option>
+              {(['mulch','gravel','topsoil','compost','pavers'] as const).map(type=><option key={type} value={type}>{es ? MATERIAL_LABELS[type].es : MATERIAL_LABELS[type].en}</option>)}
+            </select>
+          </label>
+          {materialType && (materialOptions.length > 0 ? <>
+            <label className="mt-3 block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Producto disponible en catálogo' : 'Catalog product'}
+              <select value={selectedMaterial?.id || ''} onChange={e=>setSelectedMaterialId(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]">
+                {materialOptions.map(item=><option key={item.id} value={item.id}>{item.name} · {item.size}</option>)}
+              </select>
+            </label>
+            {selectedMaterial && <div className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs">
+              <b>{selectedMaterial.name}</b><p className="text-[10px] text-[var(--ink-soft)]">{selectedMaterial.size} · {selectedMaterial.nursery}</p>
+              {selectedMaterialLiters > 0 ? <div className="mt-2 grid grid-cols-2 gap-2"><div><p className="text-[var(--ink-soft)]">{es ? 'Unidades calculadas' : 'Calculated units'}</p><b className="text-lg">{materialUnitsNeeded}</b></div><div><p className="text-[var(--ink-soft)]">{es ? 'Subtotal estimado' : 'Estimated subtotal'}</p><b>{selectedMaterial.currency} {materialTotal.toFixed(2)}</b></div><div><p className="text-[var(--ink-soft)]">{es ? 'Existencias registradas' : 'Recorded stock'}</p><b>{selectedMaterial.stock_quantity}</b></div></div> : <p className="mt-2 text-[var(--ink-soft)]">{es ? 'El tamaño del paquete no especifica litros o cobertura. No se calculará cantidad ni precio automáticamente.' : 'Package size does not specify liters or coverage. Quantity and price will not be calculated automatically.'}</p>}
+              {selectedMaterialLiters > 0 && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{materialUnitsNeeded > selectedMaterial.stock_quantity ? (es ? 'Supera las existencias registradas; confirma disponibilidad.' : 'Exceeds recorded stock; confirm availability.') : (es ? 'Existencias registradas; confirma antes de comprar.' : 'Recorded stock; confirm before purchase.')}</p>}
+            </div>}
+          </> : <p className="mt-2 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'Este material no aparece actualmente en el catálogo. Puedes calcular el volumen manualmente abajo, pero no se mostrará un precio ni existencias inventadas.' : 'This material is not currently listed in the catalog. You can calculate volume manually below, but no price or stock will be invented.'}</p>)}
+        </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
           <label className="text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Profundidad (cm)' : 'Depth (cm)'}<input type="number" min="0" step="1" value={Number(depth)*100} onChange={e=>setDepth(String(Math.max(0,Number(e.target.value)||0)/100))} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
           <label className="text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Extra por asentamiento (%)' : 'Extra for settling (%)'}<input type="number" min="0" max="50" step="1" value={waste} onChange={e=>setWaste(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
