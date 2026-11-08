@@ -445,10 +445,25 @@ export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
     const path = new URL(request.url).pathname.replace(/\/+$/, '') || '/';
-    if (request.method === 'GET' && (path === '/' || path === '/health')) return json(200, { status: 'ok', worker: 'verde-botanical-knowledge-core', ai_used: false });
+    if (request.method === 'GET' && (path === '/' || path === '/health')) return json(200, { status: 'ok', worker: 'rootwise-botanical-knowledge-core', scheduler: '15-minute-queue-review', ai_used: false });
+    if (request.method === 'GET' && path === '/engine/status') {
+      const q = await db(env, 'botanical_evidence_queue?select=status&limit=1000');
+      if (!q.ok || !Array.isArray(q.data)) return json(503, { status: 'unavailable', error: 'Evidence queue schema is not installed.' });
+      const counts = q.data.reduce((a, r) => { a[r.status] = (a[r.status] || 0) + 1; return a; }, {});
+      return json(200, { status: 'success', queue: counts, checked_at: new Date().toISOString(), scheduler: '15-minute-queue-review', gemini_invocations: 0 });
+    }
     if (request.method !== 'POST') return json(405, { status: 'error', error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     try {
+      if (path === '/engine/enqueue') {
+        const auth = await authenticate(request, env); if (auth.error) return auth.error;
+        const kind = ['catalog_photo','catalog_record','plant_identification','pest_disease_identification','community_correction','document','field_observation'].includes(body.evidence_type) ? body.evidence_type : '';
+        if (!kind || !body.evidence_fingerprint || typeof body.submitted_payload !== 'object' || !body.submitted_payload) return json(400, { status:'error', error:'Evidence type, fingerprint and payload are required.' });
+        const row = { evidence_type: kind, source_system: clean(body.source_system || 'rootwise-app',80), source_record_id: clean(body.source_record_id,180)||null, subject_key: clean(body.subject_key,240)||null, submitted_payload: body.submitted_payload, evidence_fingerprint: clean(body.evidence_fingerprint,180), status:'pending', verification_status:'community_submitted' };
+        const saved = await db(env,'botanical_evidence_queue',{method:'POST',headers:{Prefer:'return=representation,resolution=ignore-duplicates'},body:JSON.stringify(row)});
+        if (!saved.ok) return json(502,{status:'error',error:'Evidence could not be queued.'});
+        return json(200,{status:'success',queued:Array.isArray(saved.data)&&saved.data.length>0,deduplicated:!Array.isArray(saved.data)||saved.data.length===0});
+      }
       if (path === '/health/submit') return await submitHealthEvidence(request, body, env);
       if (path === '/health/admin/create') return await createHealthRecord(request, body, env);
       if (path === '/health/admin/list') return await listHealthRecords(request, body, env);
