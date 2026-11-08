@@ -177,11 +177,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const bags = Number(bagLiters) > 0 ? Math.ceil(volume * 1000 / Number(bagLiters)) : 0;
   const selectedMaterialLiters = Number(selectedMaterial?.material_spec?.package_volume_liters) || 0;
   const selectedMaterialCoverage = Number(selectedMaterial?.material_spec?.coverage_area_m2) || 0;
-  const materialUnitsNeeded = selectedMaterialLiters > 0
-    ? Math.ceil(volume * 1000 / selectedMaterialLiters)
-    : materialType === 'pavers' && selectedMaterialCoverage > 0
-      ? Math.ceil(measuredArea / selectedMaterialCoverage)
-      : 0;
+  const materialUnitsNeeded = materialType === 'pavers'
+    ? selectedMaterialCoverage > 0 ? Math.ceil(measuredArea / selectedMaterialCoverage) : 0
+    : selectedMaterialLiters > 0 ? Math.ceil(volume * 1000 / selectedMaterialLiters) : 0;
   const materialUnitLabel = selectedMaterial?.material_spec?.unit_label || (es ? 'unidades' : 'units');
   const materialTotal = selectedMaterial && materialUnitsNeeded > 0 ? materialUnitsNeeded * selectedMaterial.price : 0;
   const spacing = Math.max(0, Number(plantSpacing) || 0);
