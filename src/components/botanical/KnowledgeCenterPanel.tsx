@@ -332,7 +332,7 @@ const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, 
     try {
       const result = await importBotanicalCatalogPhoto(accessToken, candidate);
       setCatalogCandidates(current => current.filter(item => item.product_id !== candidate.product_id));
-      setNotice(result.queued ? (es ? 'Foto importada a revisión privada. Aún no se usa en identificaciones.' : 'Photo added to private review. It is not used in identifications yet.') : (es ? 'Esta foto ya estaba en la cola de revisión.' : 'This photo was already in the review queue.'));
+      setNotice(result.queued ? (es ? 'Foto agregada a revisión. Aún no se usa en identificaciones.' : 'Photo added to review. It is not used in identifications yet.') : (es ? 'Esta foto ya estaba en la cola de revisión.' : 'This photo was already in the review queue.'));
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : 'Catalog photo import failed.'); }
     finally { setBusy(false); }
@@ -396,7 +396,7 @@ const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, 
     <div className="rounded-xl border border-[var(--line)] p-3 flex flex-col gap-2">
       <div>
         <b className="text-[13px]">{es ? 'Importar fotos del catálogo' : 'Import catalog photos'}</b>
-        <p className="text-[11.5px] text-[var(--ink-soft)]">{es ? 'Solo coincidencias exactas por nombre científico. Las fotos importadas quedan privadas y pendientes de aprobación.' : 'Exact scientific-name matches only. Imported photos remain private and pending curator approval.'}</p>
+        <p className="text-[11.5px] text-[var(--ink-soft)]">{es ? 'Solo coincidencias exactas por nombre científico. Las referencias importadas quedan pendientes de aprobación y no se usan en identificaciones.' : 'Exact scientific-name matches only. Imported references remain pending curator approval and are not used in identifications.'}</p>
       </div>
       <button type="button" className={ghostCls} disabled={busy} onClick={loadCatalogCandidates}><Search className="w-3.5 h-3.5 inline mr-1" />{es ? 'Buscar fotos coincidentes' : 'Find matching catalog photos'}</button>
       {catalogLoaded && catalogCandidates.length === 0 && <p className="text-[11px] text-[var(--ink-soft)]">{es ? 'No hay fotos coincidentes para importar.' : 'No matching catalog photos available to import.'}</p>}
