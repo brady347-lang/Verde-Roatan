@@ -1473,27 +1473,32 @@ export default function App() {
 
 
   // --- Auth Handlers (STRICT SUPABASE AUTHENTICATION) ---
-  const handleSignUp = async (email: string, pass: string, name: string) => {
+  const handleSignUp = async (email: string, pass: string, name: string): Promise<{ requiresEmailConfirmation: boolean }> => {
     const data = await supabaseAuthRequest('signup', {
-      email,
+      email: email.trim().toLowerCase(),
       password: pass,
-      data: { full_name: name, customer_type: 'member' }
+      data: { full_name: name.trim(), customer_type: 'member' }
     });
+    if (!data.user?.id) throw new Error('Supabase did not return a new account. Please try again.');
     if (data.access_token) {
       const newSession: AuthSession = {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
         expires_at: Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600),
         user: {
-          id: data.user?.id || 'uid',
+          id: data.user.id,
           email: data.user?.email || email,
           full_name: data.user?.user_metadata?.full_name || name
         }
       };
       setSession(newSession);
       safeSetItem('verde_auth_session', JSON.stringify(newSession));
-      showToast(lang === 'es' ? '¡Bienvenido a Verde Roatán!' : 'Welcome to Verde Roatán!');
+      showToast(lang === 'es' ? '¡Bienvenido a RootWise!' : 'Welcome to RootWise!');
+      return { requiresEmailConfirmation: false };
     }
+    // Supabase returns a user without a session when email confirmation is enabled.
+    // Do not pretend the customer is signed in: ask them to verify their inbox first.
+    return { requiresEmailConfirmation: true };
   };
 
   const handleSignIn = async (email: string, pass: string) => {
