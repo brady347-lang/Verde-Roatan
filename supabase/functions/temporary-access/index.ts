@@ -88,7 +88,7 @@ Deno.serve(async (req: Request) => {
         }
 
         const code = randomCode(role);
-        const { error: codeError } = await admin.schema("private").from("temporary_login_codes").insert({
+        const { error: codeError } = await admin.from("temporary_login_codes").insert({
           code_hash: await sha256(code),
           access_role: role,
           auth_user_id: userId,
@@ -134,8 +134,8 @@ Deno.serve(async (req: Request) => {
     });
     if (sessionError || !sessionData.session) return reply({ error: "Could not establish the temporary session." }, 500);
 
-    await admin.schema("private").from("temporary_login_codes")
-      .update({ redemption_count: (await admin.schema("private").from("temporary_login_codes").select("redemption_count").eq("id", record.id).single()).data?.redemption_count + 1 || 1 })
+    await admin.from("temporary_login_codes")
+      .update({ redemption_count: (await admin.from("temporary_login_codes").select("redemption_count").eq("id", record.id).single()).data?.redemption_count + 1 || 1 })
       .eq("id", record.id);
 
     return reply({
