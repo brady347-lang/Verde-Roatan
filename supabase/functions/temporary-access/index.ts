@@ -108,7 +108,7 @@ Deno.serve(async (req: Request) => {
   if (body.action === "redeem") {
     const code = String(body.code || "").trim().toUpperCase();
     if (code.length < 20 || code.length > 64) return reply({ error: "Code is invalid or expired." }, 400);
-    const { data: record, error: lookupError } = await admin.schema("private")
+    const { data: record, error: lookupError } = await admin
       .from("temporary_login_codes")
       .select("id,access_role,auth_user_id,expires_at,revoked_at")
       .eq("code_hash", await sha256(code))
