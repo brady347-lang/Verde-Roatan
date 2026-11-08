@@ -1554,6 +1554,11 @@ export default function App() {
         delete next[productId];
         return next;
       });
+      const updatedItem = catalog.find(item => String(item.id) === String(productId));
+      if (updatedItem && session?.access_token) {
+        void enqueueCatalogBotanicalEvidence(session.access_token, { ...updatedItem, image_url: publicUrl })
+          .catch(error => console.warn('Botanical evidence queue submission failed:', error));
+      }
       showToast('Photo uploaded and catalog record updated in Supabase.');
     } catch (error) {
       console.error('Supabase catalog photo upload failed:', error);
