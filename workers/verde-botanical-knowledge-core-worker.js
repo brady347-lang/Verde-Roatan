@@ -441,6 +441,54 @@ async function searchKnowledge(request, body, env) {
   });
 }
 
+
+async function runEvidenceCycle(env) {
+  const started = new Date().toISOString();
+  const report = { status: 'idle', started_at: started, finished_at: null, reviewed: 0, escalated: 0, failed: 0 };
+  const stale = await db(env, 'botanical_evidence_queue?status=eq.processing&locked_at=lt.' + encodeURIComponent(new Date(Date.now()-20*60000).toISOString()), {
+    method:'PATCH', headers:{Prefer:'return=minimal'}, body:JSON.stringify({status:'pending',locked_at:null,last_error:'Recovered expired lease.'})
+  });
+  if (!stale.ok) throw new Error('Unable to recover expired evidence leases.');
+  const ready = await db(env,'botanical_evidence_queue?select=*&status=in.(pending,failed)&attempts=lt.5&available_at=lte.'+encodeURIComponent(started)+'&order=created_at.asc&limit=10');
+  if (!ready.ok || !Array.isArray(ready.data)) throw new Error('Unable to read evidence queue.');
+  for (const item of ready.data) {
+    const lock = await db(env,'botanical_evidence_queue?id=eq.'+item.id+'&status=in.(pending,failed)',{
+      method:'PATCH',headers:{Prefer:'return=representation'},body:JSON.stringify({status:'processing',locked_at:new Date().toISOString(),attempts:Number(item.attempts||0)+1})
+    });
+    if (!lock.ok || !Array.isArray(lock.data) || !lock.data.length) continue;
+    try {
+      const payload = item.submitted_payload || {};
+      let aiReview = null;
+      if (payload.image_storage_path && env.GEMINI_WORKER_URL && env.ROOTWISE_INTERNAL_SECRET) {
+        const response = await fetch(env.GEMINI_WORKER_URL.replace(/\/$/,'')+'/internal/evidence-review',{
+          method:'POST',headers:{'Content-Type':'application/json','x-rootwise-internal-secret':env.ROOTWISE_INTERNAL_SECRET},
+          body:JSON.stringify({image_storage_path:payload.image_storage_path,mode:item.evidence_type==='pest_disease_identification'?'pest':'plant',initial_result:payload.identification_result||null,source_record_id:item.source_record_id})
+        });
+        if (!response.ok) throw new Error('Gemini evidence review returned '+response.status);
+        aiReview = await response.json();
+      } else if (payload.image_storage_path) {
+        throw new Error('Gemini internal review bindings are not configured.');
+      }
+      const needsHuman = Boolean(aiReview) || Boolean(payload.image_storage_path) || item.evidence_type==='community_correction' || item.evidence_type==='pest_disease_identification';
+      const update = await db(env,'botanical_evidence_queue?id=eq.'+item.id,{
+        method:'PATCH',headers:{Prefer:'return=minimal'},
+        body:JSON.stringify({status:needsHuman?'needs_review':'needs_review',locked_at:null,processed_at:new Date().toISOString(),last_error:null,
+          verification_status:'ai_suggested',model_result:aiReview?{gemini:aiReview,human_review_required:true}:{scheduler_reviewed:true,human_review_required:true}})
+      });
+      if (!update.ok) throw new Error('Unable to save evidence review result.');
+      report.reviewed++; report.escalated++;
+    } catch (error) {
+      const attempts=Number(item.attempts||0)+1, terminal=attempts>=5, delay=[5,15,60,360,1440][Math.min(attempts-1,4)];
+      await db(env,'botanical_evidence_queue?id=eq.'+item.id,{method:'PATCH',headers:{Prefer:'return=minimal'},body:JSON.stringify({status:terminal?'failed':'pending',locked_at:null,available_at:new Date(Date.now()+delay*60000).toISOString(),last_error:clean(error?.message||'Processing failed.',500)})});
+      report.failed++;
+    }
+  }
+  report.status=ready.data.length?'completed':'idle'; report.finished_at=new Date().toISOString();
+  const metric=await db(env,'botanical_engine_runs',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({started_at:report.started_at,finished_at:report.finished_at,status:report.status,evidence_reviewed:report.reviewed,escalated:report.escalated,failed:report.failed})});
+  if(!metric.ok && metric.status!==404) throw new Error('Unable to save engine run metrics.');
+  return report;
+}
+
 export default {
   async fetch(request, env) {
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
@@ -450,7 +498,7 @@ export default {
       const q = await db(env, 'botanical_evidence_queue?select=status&limit=1000');
       if (!q.ok || !Array.isArray(q.data)) return json(503, { status: 'unavailable', error: 'Evidence queue schema is not installed.' });
       const counts = q.data.reduce((a, r) => { a[r.status] = (a[r.status] || 0) + 1; return a; }, {});
-      return json(200, { status: 'success', queue: counts, checked_at: new Date().toISOString(), scheduler: '15-minute-queue-review', gemini_invocations: 0 });
+      return json(200, { status: 'success', queue: counts, checked_at: new Date().toISOString(), scheduler: '15-minute-queue-review', gemini_configured: Boolean(env.GEMINI_WORKER_URL && env.ROOTWISE_INTERNAL_SECRET) });
     }
     if (request.method !== 'POST') return json(405, { status: 'error', error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
