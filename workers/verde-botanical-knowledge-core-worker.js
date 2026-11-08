@@ -667,7 +667,9 @@ export default {
     if (request.method !== 'POST') return json(405, { status: 'error', error: 'Method not allowed.' });
     const body = await request.json().catch(() => ({}));
     try {
-      if (path === '/engine/admin/review') return await reviewQueuedEvidence(request, body, env);\n      if (path === '/engine/vote') return await voteOnEvidence(request, body, env);\n      if (path === '/engine/enqueue') {
+      if (path === '/engine/admin/review') return await reviewQueuedEvidence(request, body, env);
+      if (path === '/engine/vote') return await voteOnEvidence(request, body, env);
+      if (path === '/engine/enqueue') {
         const auth = await authenticate(request, env); if (auth.error) return auth.error;
         // Authenticated customers and staff may submit evidence. Submission never grants verification or approval.
         // A private photo must be stored under the submitter's own user-ID folder.
