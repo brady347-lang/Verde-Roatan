@@ -14,7 +14,8 @@
     "db:update": "tsx scripts/update-supabase.ts",
     "db:migrate": "tsx scripts/update-supabase.ts",
     "android:sync": "npm run build && cap sync android",
-    "test:light": "node --import tsx src/services/lightIntelligence.test.mjs"
+    "test:light": "node --import tsx src/services/lightIntelligence.test.mjs",
+    "test:camera-light": "node --import tsx src/services/cameraLightCalibration.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
