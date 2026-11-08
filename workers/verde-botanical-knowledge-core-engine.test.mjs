@@ -114,3 +114,67 @@ test('deploy config keeps one worker name and registers the 15-minute cron; sche
   assert.match(sql, /error_summary text/);
   assert.equal((sql.match(/\bcommit;/g) || []).length, 1);
 });
+
+
+test('one administrator approval makes evidence immediately retrievable without scientific verification', async () => {
+  const calls=[];
+  globalThis.fetch = async (url, init={}) => {
+    const target=String(url); calls.push({target,init});
+    if (target.includes('/auth/v1/user')) return ok({id:'admin-1',email:'admin@test'});
+    if (target.includes('botanical_evidence_queue?id=eq.evidence-1')) {
+      if (init.method === 'PATCH') {
+        const patch=JSON.parse(init.body);
+        assert.equal(patch.status,'admin_approved');
+        assert.equal(patch.approval_status,'admin_approved');
+        assert.equal(patch.verification_status,'community_submitted');
+        assert.equal(patch.approved_by,'admin-1');
+        return ok([{id:'evidence-1',...patch}]);
+      }
+      return ok([{id:'evidence-1',status:'needs_review',approval_status:'pending',verification_status:'community_submitted',subject_key:'Hibiscus rosa-sinensis',submitted_payload:{common_name:'Chinese hibiscus'}}]);
+    }
+    throw new Error('Unexpected upstream call: '+target);
+  };
+  const response=await worker.fetch(request('/engine/admin/review',{evidence_id:'00000000-0000-4000-8000-000000000001',decision:'approve',note:'Reviewed by administrator'}),env);
+  const body=await response.json();
+  assert.equal(response.status,200);
+  assert.equal(body.immediately_retrievable,true);
+  assert.equal(body.verification_status,'community_submitted');
+  assert.ok(calls.some(c=>c.init.method==='PATCH'));
+});
+
+test('community support counts unique authenticated users and never publishes by itself', async () => {
+  const supporters=new Set();
+  globalThis.fetch=async (url,init={})=>{
+    const target=String(url);
+    if(target.includes('/auth/v1/user')) {
+      const token=String(init.headers.Authorization||'').replace('Bearer ','');
+      return ok({id:token,email:token+'@test'});
+    }
+    if(target.includes('botanical_evidence_queue?id=eq.')) return ok([{id:'evidence-2',approval_status:'pending'}]);
+    if(target.includes('botanical_evidence_votes?on_conflict=')) {
+      const vote=JSON.parse(init.body); supporters.add(vote.user_id); return ok([{id:'vote'}]);
+    }
+    if(target.includes('botanical_evidence_votes?evidence_id=')) return ok([...supporters].map(user_id=>({user_id})));
+    throw new Error('Unexpected upstream call: '+target);
+  };
+  for (const token of ['user-a','user-a','user-b','user-c']) {
+    const response=await worker.fetch(request('/engine/vote',{evidence_id:'00000000-0000-4000-8000-000000000002',vote:'support'},token),env);
+    const body=await response.json();
+    assert.equal(response.status,200);
+    if(token==='user-c') {
+      assert.equal(body.distinct_supporters,3);
+      assert.equal(body.community_threshold_reached,true);
+      assert.equal(body.requires_admin_approval_for_retrieval,true);
+    }
+  }
+  assert.equal(supporters.size,3);
+});
+
+test('schema separates admin approval from verification and enforces one community vote per user', async () => {
+  const {readFileSync}=await import('node:fs');
+  const sql=readFileSync(new URL('../supabase/separate-review-db/rootwise_continuous_intelligence_schema.sql',import.meta.url),'utf8');
+  assert.match(sql,/approval_status text not null default 'pending'/);
+  assert.match(sql,/approved_by uuid/);
+  assert.match(sql,/unique \(evidence_id, user_id\)/);
+  assert.match(sql,/'admin_approved'/);
+});
