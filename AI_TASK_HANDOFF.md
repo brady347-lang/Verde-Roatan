@@ -56,3 +56,9 @@ After Claude's independent review, reconcile any differences, finalize the schem
 
 ## Completion record
 No application source code, production database, Worker deployment, secrets, or Android release was changed as part of this documentation bootstrap.
+
+## Claude review entry — 2026-11-07
+- Task: independent review of catalog-photo / Gemini ingestion pipeline (Issue #37).
+- Status: review complete; report in `CLAUDE_INDEPENDENT_REVIEW.md`. Appended only; ChatGPT's entries untouched.
+- Result: confirms ChatGPT's findings. Adds: live DB has no `catalog_items` (only `products`); no taxon link; hardcoded admin email in `is_app_admin()`.
+- Next owner: ChatGPT reconciles and finalizes schema/API contract. Nothing in production was changed; owner approval still required before any migration or deploy.
