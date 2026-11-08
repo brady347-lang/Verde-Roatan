@@ -60,6 +60,35 @@ create index if not exists botanical_evidence_queue_ready_idx
 create index if not exists botanical_evidence_queue_subject_idx
   on public.botanical_evidence_queue(subject_key, created_at desc);
 
+-- Atomically lease a batch. SKIP LOCKED lets overlapping scheduled runs
+-- work on different rows without ever processing the same evidence twice.
+create or replace function public.claim_botanical_evidence_batch(p_batch_size integer default 10)
+returns setof public.botanical_evidence_queue
+language sql
+security definer
+set search_path = public, pg_temp
+as $
+  with candidates as (
+    select id
+    from public.botanical_evidence_queue
+    where status in ('pending', 'failed')
+      and attempts < 5
+      and available_at <= now()
+    order by created_at asc
+    limit greatest(1, least(coalesce(p_batch_size, 10), 25))
+    for update skip locked
+  )
+  update public.botanical_evidence_queue as queue
+  set status = 'processing',
+      locked_at = now(),
+      attempts = queue.attempts + 1
+  from candidates
+  where queue.id = candidates.id
+  returning queue.*;
+$;
+revoke all on function public.claim_botanical_evidence_batch(integer) from public, anon, authenticated;
+grant execute on function public.claim_botanical_evidence_batch(integer) to service_role;
+
 -- Independent community votes are unique per evidence item and authenticated user.
 create table if not exists public.botanical_evidence_votes (
   id uuid primary key default gen_random_uuid(),
