@@ -1479,7 +1479,23 @@ export default function App() {
       password: pass,
       data: { full_name: name.trim(), customer_type: 'member' }
     });
-    if (!data.user?.id) throw new Error('Supabase did not return a new account. Please try again.');
+    if (!data.user?.id) {
+      // Supabase intentionally returns a minimal/obfuscated response for some duplicate-email
+      // sign-up attempts. An empty identities array is the reliable client-side clue that this
+      // address is already registered; never create a local session from that response.
+      if (Array.isArray(data.user?.identities) && data.user.identities.length === 0) {
+        throw new Error(
+          lang === 'es'
+            ? 'Este correo ya puede estar registrado. Selecciona “Iniciar sesión” o usa la recuperación de contraseña.'
+            : 'This email may already be registered. Choose “Log in” or use password recovery.'
+        );
+      }
+      throw new Error(
+        lang === 'es'
+          ? 'Supabase no confirmó la creación de la cuenta. Verifica tu conexión e inténtalo de nuevo; si ya tienes una cuenta, inicia sesión.'
+          : 'Supabase did not confirm account creation. Check your connection and try again; if you already have an account, log in.'
+      );
+    }
     if (data.access_token) {
       const newSession: AuthSession = {
         access_token: data.access_token,
