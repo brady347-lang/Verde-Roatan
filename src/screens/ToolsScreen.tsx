@@ -432,6 +432,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 }));
         latitude = position.coords.latitude; longitude = position.coords.longitude; accuracy = position.coords.accuracy;
       }
+      const previousPoint = points[points.length - 1];
+      const decision = evaluateFix(previousPoint, { lat: latitude, lon: longitude, accuracy, timestamp: Date.now() });
+      if (decision.accept === false) {
+        setGpsError(decision.reason === 'inaccurate'
+          ? (es ? 'La precisión GPS es demasiado baja para añadir este punto (se requiere ±30 m o mejor). Inténtalo al aire libre.' : 'GPS accuracy is too low to add this point (±30 m or better is required). Try again outdoors.')
+          : decision.reason === 'duplicate'
+            ? (es ? 'Este punto está demasiado cerca del último punto capturado.' : 'This point is too close to the last captured point.')
+            : (es ? 'La ubicación recibida no es válida. Inténtalo de nuevo.' : 'The location fix is invalid. Please try again.'));
+        return;
+      }
       setPoints((current) => [...current, { lat: latitude, lon: longitude, accuracy }]);
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
