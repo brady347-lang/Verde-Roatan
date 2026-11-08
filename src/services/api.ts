@@ -321,6 +321,7 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
           note: String(p.description || 'Tropical island specimen acclimatized to Roatan.'),
           category,
           image_url: p.image_url || '',
+          native_to_bay_islands: typeof p.native_to_bay_islands === 'boolean' ? p.native_to_bay_islands : undefined,
           material_spec: p.material_spec && typeof p.material_spec === 'object' ? p.material_spec : undefined
         };
       });
