@@ -109,6 +109,8 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
   const [sunlight, setSunlight] = useState('');
   const [watering, setWatering] = useState('');
   const [petSafety, setPetSafety] = useState<'safe' | 'check'>('check');
+  const [nativeStatus, setNativeStatus] = useState<'yes' | 'no' | 'unknown'>('unknown');
+  const [tags, setTags] = useState('plant');
   const [price, setPrice] = useState('');
   const [currency, setCurrency] = useState<'HNL' | 'USD'>('HNL');
   const [stock, setStock] = useState('1');
@@ -165,7 +167,7 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
     event.preventDefault();
     if (!nursery) { setError(es ? 'No encontramos un vivero aprobado para esta cuenta.' : 'No approved nursery was found for this account.'); return; }
     if (!photo || !photoPreview || !analysis || !photoQuality) { setError(es ? 'Sube una foto y completa primero el análisis de inteligencia.' : 'Upload a photo and complete the intelligence analysis first.'); return; }
-    if (!name.trim() || !scientificName.trim() || !category.trim() || !description.trim() || !care.trim() || !size.trim() || !sunlight.trim() || !watering.trim() || !price || !stock) {
+    if (!name.trim() || !scientificName.trim() || !category.trim() || !description.trim() || !care.trim() || !size.trim() || !sunlight.trim() || !watering.trim() || !tags.split(',').some(tag => tag.trim()) || !price || !stock) {
       setError(es ? 'Completa todos los parámetros obligatorios.' : 'Complete every required listing parameter.'); return;
     }
     if (!Number.isFinite(Number(price)) || Number(price) <= 0 || !Number.isInteger(Number(stock)) || Number(stock) < 0) {
@@ -194,6 +196,8 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
           sunlight_requirement: sunlight.trim(),
           watering_instructions: watering.trim(),
           pet_safety: petSafety,
+          native_to_bay_islands: nativeStatus === 'unknown' ? null : nativeStatus === 'yes',
+          tags: tags.split(',').map(tag => tag.trim()).filter(Boolean),
           price: Number(price),
           currency,
           stock_quantity: Number(stock),
@@ -285,6 +289,8 @@ export const SupplierProductWorkspace: React.FC<{ session: AuthSession; lang: La
         <label className="text-[11px] text-[var(--ink-soft)]">{es ? "Requisito de luz solar *" : "Sunlight requirement *"}<input required value={sunlight} onChange={e => setSunlight(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]" /></label>
         <label className="text-[11px] text-[var(--ink-soft)]">{es ? "Instrucciones de riego *" : "Watering instructions *"}<input required value={watering} onChange={e => setWatering(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]" /></label>
         <label className="text-[11px] text-[var(--ink-soft)]">{es ? "Seguridad para mascotas *" : "Pet safety *"}<select required value={petSafety} onChange={e => setPetSafety(e.target.value as "safe" | "check")} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]"><option value="safe">{es ? "Seguro conocido" : "Known safe"}</option><option value="check">{es ? "Verificar" : "Check first"}</option></select></label>
+        <label className="text-[11px] text-[var(--ink-soft)]">{es ? 'Nativa de las Islas de la Bahía *' : 'Native to the Bay Islands *'}<select required value={nativeStatus} onChange={e => setNativeStatus(e.target.value as 'yes' | 'no' | 'unknown')} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]"><option value="unknown">{es ? 'No confirmado' : 'Not confirmed'}</option><option value="yes">{es ? 'Sí' : 'Yes'}</option><option value="no">{es ? 'No' : 'No'}</option></select></label>
+        <label className="text-[11px] text-[var(--ink-soft)]">{es ? 'Etiquetas (separadas por coma) *' : 'Tags (comma-separated) *'}<input required value={tags} onChange={e => setTags(e.target.value)} placeholder="tropical, ornamental, shade" className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]" /></label>
         <div className="grid grid-cols-2 gap-2">
           <label className="text-[11px] text-[var(--ink-soft)]">{es ? 'Precio *' : 'Price *'}<input required type="number" min="0.01" step="0.01" value={price} onChange={e => setPrice(e.target.value)} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]" /></label>
           <label className="text-[11px] text-[var(--ink-soft)]">{es ? 'Moneda *' : 'Currency *'}<select value={currency} onChange={e => setCurrency(e.target.value as 'HNL' | 'USD')} className="mt-1 w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-2 text-[13px] text-[var(--ink)]"><option value="HNL">HNL</option><option value="USD">USD</option></select></label>
