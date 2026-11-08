@@ -48,6 +48,8 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
   const [price, setPrice] = useState<number>(initialPlant?.price || 350);
   const [currency, setCurrency] = useState<'HNL' | 'USD'>(initialPlant?.currency || 'HNL');
   const [size, setSize] = useState(initialPlant?.size || '5 Gallon · 4-5 ft');
+  const [coverageAreaM2, setCoverageAreaM2] = useState(String(initialPlant?.material_spec?.coverage_area_m2 || ''));
+  const [materialUnitLabel, setMaterialUnitLabel] = useState(initialPlant?.material_spec?.unit_label || '');
   const [stock, setStock] = useState<'In stock' | 'Low stock' | 'Out of stock'>(
     initialPlant?.stock || 'In stock'
   );
@@ -297,6 +299,9 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
       price: Number(price) || 0,
       currency,
       size: size.trim(),
+      material_spec: kind === 'grass' && Number(coverageAreaM2) > 0
+        ? { coverage_area_m2: Number(coverageAreaM2), ...(materialUnitLabel.trim() ? { unit_label: materialUnitLabel.trim() } : {}) }
+        : undefined,
       stock,
       stock_quantity: Number(stockQuantity) || 0,
       salt: Number(salt) || 1,
@@ -583,6 +588,19 @@ export const PlantEditModal: React.FC<PlantEditModalProps> = ({
               />
             </div>
           </div>
+
+          {kind === 'grass' && <div className="rounded-2xl border border-[var(--line)] p-3 flex flex-col gap-2">
+            <p className="text-[12px] font-bold">{lang === 'es' ? 'Cobertura para cálculos de césped' : 'Sod-estimator coverage'}</p>
+            <p className="text-[10px] text-[var(--ink-soft)]">{lang === 'es' ? 'Registra la superficie que cubre cada losa o unidad, según el proveedor.' : 'Record the surface covered by each slab or unit, as confirmed by the supplier.'}</p>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="text-[11px] font-semibold">{lang === 'es' ? 'Cobertura por unidad (m²)' : 'Coverage per unit (m²)'}
+                <input type="number" min="0" step="0.001" value={coverageAreaM2} onChange={e=>setCoverageAreaM2(e.target.value)} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2 text-sm" />
+              </label>
+              <label className="text-[11px] font-semibold">{lang === 'es' ? 'Nombre de unidad' : 'Unit label'}
+                <input type="text" maxLength={60} value={materialUnitLabel} onChange={e=>setMaterialUnitLabel(e.target.value)} placeholder={lang === 'es' ? 'Ej. losa de 1 yd²' : 'e.g. 1 sq yd slab'} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--surface)] p-2 text-sm" />
+              </label>
+            </div>
+          </div>}
 
           {/* Inventory & Stock Quantity */}
           <div className="grid grid-cols-2 gap-2">
