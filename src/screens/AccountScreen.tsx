@@ -29,6 +29,7 @@ import {
   Sparkles,
   Sprout,
   Star,
+  Sun,
   Trash2,
   Truck,
   User,
