@@ -30,7 +30,9 @@ import {
   INITIAL_REGISTERED_SUPPLIERS,
   ROATAN_DELIVERY_ZONES,
   STRINGS,
-  checkAdminIdentity
+  checkAdminIdentity,
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL
 } from './data/initialData';
 import {
   BchRateResponse,
@@ -285,7 +287,9 @@ export default function App() {
             user: {
               id: refreshed.user?.id || session.user.id,
               email: refreshed.user?.email || session.user.email,
-              full_name: refreshed.user?.user_metadata?.full_name || session.user.full_name
+              full_name: refreshed.user?.user_metadata?.full_name || session.user.full_name,
+              temporary_role: refreshed.user?.app_metadata?.temporary_access_role || session.user.temporary_role,
+              temporary_expires_at: refreshed.user?.app_metadata?.temporary_access_expires_at || session.user.temporary_expires_at
             }
           };
         }
@@ -296,7 +300,9 @@ export default function App() {
           user: {
             id: verifiedUser.id || activeSession.user.id,
             email: verifiedUser.email || activeSession.user.email,
-            full_name: verifiedUser.user_metadata?.full_name || activeSession.user.full_name
+            full_name: verifiedUser.user_metadata?.full_name || activeSession.user.full_name,
+            temporary_role: verifiedUser.app_metadata?.temporary_access_role || activeSession.user.temporary_role,
+            temporary_expires_at: verifiedUser.app_metadata?.temporary_access_expires_at || activeSession.user.temporary_expires_at
           }
         };
         setSession(verifiedSession);
@@ -1546,7 +1552,9 @@ export default function App() {
         user: {
           id: data.user?.id || 'uid',
           email: data.user?.email || email,
-          full_name: data.user?.user_metadata?.full_name || email.split('@')[0]
+          full_name: data.user?.user_metadata?.full_name || email.split('@')[0],
+          temporary_role: data.user?.app_metadata?.temporary_access_role,
+          temporary_expires_at: data.user?.app_metadata?.temporary_access_expires_at
         }
       };
       setSession(newSession);
@@ -1559,6 +1567,33 @@ export default function App() {
           : 'Signed in successfully'
       );
     }
+  };
+
+  const handleTemporarySignIn = async (code: string) => {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/temporary-access`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'redeem', code })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token) {
+      throw new Error(data.error || 'Temporary access code is invalid or expired.');
+    }
+    const newSession: AuthSession = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: data.expires_at || Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600),
+      user: data.user
+    };
+    setSession(newSession);
+    safeSetItem('verde_auth_session', JSON.stringify(newSession));
+    showToast(data.user?.temporary_role === 'supplier'
+      ? 'Temporary supplier workspace opened.'
+      : 'Temporary customer access opened.');
   };
 
   const handleSignOut = () => {
@@ -2103,6 +2138,7 @@ export default function App() {
               session={session}
               isAdmin={isAdmin}
               onSignIn={handleSignIn}
+              onTemporarySignIn={handleTemporarySignIn}
               onSignUp={handleSignUp}
               onSignOut={handleSignOut}
               garden={garden}
