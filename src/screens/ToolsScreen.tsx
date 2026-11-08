@@ -26,8 +26,6 @@ export const ToolsScreen: React.FC<Props> = ({ lang }) => {
   const [points, setPoints] = useState<Point[]>([]);
   const [gpsBusy, setGpsBusy] = useState(false);
   const [gpsError, setGpsError] = useState('');
-  const [length, setLength] = useState('10');
-  const [width, setWidth] = useState('8');
   const [depth, setDepth] = useState('0.08');
   const [coverage, setCoverage] = useState('50');
   const [plantSpacing, setPlantSpacing] = useState('0.5');
