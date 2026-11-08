@@ -514,7 +514,10 @@ async function reviewQueuedEvidence(request, body, env) {
     approval_status: approved ? 'admin_approved' : 'rejected',
     approved_by: approved ? auth.user.id : null,
     approved_by_email: approved ? clean(auth.user.email || auth.user.id, 254) : null,
-    approved_at: new Date().toISOString(),
+    approved_at: approved ? new Date().toISOString() : null,
+    reviewed_by: auth.user.id,
+    reviewed_by_email: clean(auth.user.email || auth.user.id, 254),
+    reviewed_at: new Date().toISOString(),
     approval_note: clean(body.note, 1200) || null,
     locked_at: null,
     // Administrator approval makes the evidence retrievable; it does NOT claim scientific verification.
@@ -558,7 +561,7 @@ async function searchApprovedEvidence(env, query) {
   const terms = [...new Set((String(query || '').toLowerCase().match(/[\\p{L}\\p{N}]{3,}/gu) || []).slice(0, 6))];
   if (!terms.length) return [];
   const rows = await db(env, 'botanical_evidence_queue?select=id,evidence_type,source_system,source_record_id,subject_key,submitted_payload,model_result,verification_status,approved_by_email,approved_at,approval_note&approval_status=eq.admin_approved&status=eq.admin_approved&order=approved_at.desc&limit=250');
-  if (!rows.ok || !Array.isArray(rows.data)) throw new Error('Administrator-approved evidence could not be retrieved.');
+  if (rows.status === 404) return []; // Existing Knowledge Core remains usable before the separate evidence migration is applied.\n  if (!rows.ok || !Array.isArray(rows.data)) throw new Error('Administrator-approved evidence could not be retrieved.');
   return rows.data.filter(row => {
     const haystack = JSON.stringify([row.subject_key, row.submitted_payload, row.model_result]).toLowerCase();
     return terms.some(term => haystack.includes(term));
