@@ -75,6 +75,7 @@ interface AccountScreenProps {
   session: AuthSession | null;
   isAdmin: boolean;
   onSignIn: (email: string, pass: string) => Promise<void>;
+  onTemporarySignIn: (code: string) => Promise<void>;
   onSignUp: (email: string, pass: string, name: string) => Promise<{ requiresEmailConfirmation: boolean }>;
   onSignOut: () => void;
   garden: GardenItem[];
@@ -127,6 +128,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   session,
   isAdmin,
   onSignIn,
+  onTemporarySignIn,
   onSignUp,
   onSignOut,
   garden,
@@ -163,10 +165,11 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   exchangeRateHnl = 26,
   onSendOrderMessage = () => {}
 }) => {
-  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'admin'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'admin' | 'temporary'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [temporaryCode, setTemporaryCode] = useState('');
   const [adminTab, setAdminTab] = useState<
     'command_center' | 'identification_reviews' | 'landscaping_requests' | 'botanical_import' | 'knowledge_docs' | 'knowledge_core' | 'evidence_review' | 'constitution' | 'insights' | 'supplier_portal' | 'supplier_access' | 'catalog' | 'landscapers' | 'suppliers' | 'transport' | 'database'
   >('command_center');
@@ -198,7 +201,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
     setAuthLoading(true);
 
     try {
-      if (authMode === 'signup') {
+      if (authMode === 'temporary') {
+        await onTemporarySignIn(temporaryCode.trim());
+      } else if (authMode === 'signup') {
         const result = await onSignUp(email, password, fullName);
         setAuthSuccessMsg(result.requiresEmailConfirmation
           ? (lang === 'es'
@@ -1127,7 +1132,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
           </header>
 
           {/* Segmented Auth Mode */}
-          <div className="grid grid-cols-3 bg-[var(--surface-2)] p-1 rounded-2xl gap-1">
+          <div className="grid grid-cols-4 bg-[var(--surface-2)] p-1 rounded-2xl gap-1">
             <button
               type="button"
               onClick={() => {
@@ -1155,6 +1160,21 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
               }`}
             >
               {t('createAcc')}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAuthMode('temporary');
+                setAuthError('');
+                setPassword('');
+              }}
+              className={`py-2 rounded-xl text-[11px] font-bold transition-all ${
+                authMode === 'temporary'
+                  ? 'bg-[var(--surface)] text-[var(--palm)] shadow-xs'
+                  : 'text-[var(--ink-soft)]'
+              }`}
+            >
+              Code
             </button>
             <button
               type="button"
@@ -1195,7 +1215,21 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
             )}
 
             {/* In Admin Mode: EMAIL IS MASKED */}
-            {authMode === 'admin' ? (
+            {authMode === 'temporary' ? (
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] font-bold text-[var(--ink)]">Temporary access code</label>
+                <input
+                  type="text"
+                  required
+                  autoComplete="one-time-code"
+                  value={temporaryCode}
+                  onChange={(e) => setTemporaryCode(e.target.value.toUpperCase())}
+                  placeholder="RW-C-XXXXXX-XXXXXX-XXXXXX"
+                  className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl px-3 py-2.5 text-[14px] font-mono tracking-wide focus:outline-none focus:border-[var(--lagoon)]"
+                />
+                <p className="text-[11px] text-[var(--ink-soft)]">Use one of the temporary customer or supplier codes provided by the administrator.</p>
+              </div>
+            ) : authMode === 'admin' ? (
               <div className="flex flex-col gap-1">
                 <label className="text-[12px] font-bold text-[var(--ink)] flex items-center justify-between">
                   <span>Administrator Account</span>
@@ -1234,28 +1268,31 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
               </div>
             )}
 
-            {/* Password Field - STRICTLY REQUIRED FOR EVERYONE INCLUDING ADMIN */}
-            <div className="flex flex-col gap-1">
-              <label className="text-[12px] font-bold text-[var(--ink)] flex items-center justify-between">
-                <span>{authMode === 'admin' ? 'Supabase Saved Password *' : 'Password'}</span>
-                {authMode === 'admin' && (
-                  <span className="text-[10.5px] text-[var(--bloom)] font-semibold">Strict Verification</span>
-                )}
-              </label>
-              <div className="relative flex items-center">
-                <Key className="absolute left-3 w-4 h-4 text-[var(--ink-soft)] pointer-events-none" />
-                <input
-                  type="password"
-                  required
-                  minLength={authMode === 'signup' ? 8 : 6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl pl-9 pr-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--lagoon)]"
-                />
+            {authMode !== 'temporary' && (
+              {/* Password Field - STRICTLY REQUIRED FOR EVERYONE INCLUDING ADMIN */}
+              <div className="flex flex-col gap-1">
+                <label className="text-[12px] font-bold text-[var(--ink)] flex items-center justify-between">
+                  <span>{authMode === 'admin' ? 'Supabase Saved Password *' : 'Password'}</span>
+                  {authMode === 'admin' && (
+                    <span className="text-[10.5px] text-[var(--bloom)] font-semibold">Strict Verification</span>
+                  )}
+                </label>
+                <div className="relative flex items-center">
+                  <Key className="absolute left-3 w-4 h-4 text-[var(--ink-soft)] pointer-events-none" />
+                  <input
+                    type="password"
+                    required
+                    minLength={authMode === 'signup' ? 8 : 6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-[var(--surface)] border border-[var(--line)] rounded-xl pl-9 pr-3 py-2.5 text-[14px] focus:outline-none focus:border-[var(--lagoon)]"
+                  />
+                </div>
               </div>
-            </div>
-
+  
+  
+            )}
             {authError && (
               <div className="flex items-start gap-2 text-[12.5px] text-red-600 bg-red-50 p-2.5 rounded-xl font-medium">
                 <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
@@ -1280,6 +1317,8 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 ? t('createAcc')
                 : authMode === 'admin'
                 ? 'Verify Password & Access Admin Studio'
+                : authMode === 'temporary'
+                ? 'Enter temporary workspace'
                 : t('logIn')}
             </button>
           </form>
