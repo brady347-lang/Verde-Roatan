@@ -14,6 +14,8 @@ This pass preserves the original React/TypeScript application and its existing S
 - Admin order-status advancement now calls the existing `advance_order_status` Supabase RPC before updating the front-end state. This lets the existing database function record the status history and its transaction event.
 - Offline currency display fallback is clearly treated as a manual reference rate of 26 HNL/USD. When the currency worker responds, its live rate remains authoritative.
 
+- Catalog ID routing now distinguishes UUID-backed `products` rows from legacy text-keyed `catalog_items` rows. Delete, stock updates, and catalog photo URL updates use the matching table; deletion requires a returned row so the UI cannot report success when Supabase changed nothing.
+
 ## Important integration boundaries
 
 - The existing API worker remains responsible for `/plants` and `/checkout`.
