@@ -10,6 +10,10 @@ export type SavedPlot = {
   surfaceMaterialId?: string;
   surfaceMaterialName?: string;
   surfaceMaterialUnits?: number;
+  projectMaterialType?: string;
+  projectMaterialId?: string;
+  projectMaterialName?: string;
+  projectMaterialUnits?: number;
   createdAt: string;
   updatedAt: string;
 };
