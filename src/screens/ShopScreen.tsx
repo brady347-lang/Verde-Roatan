@@ -362,7 +362,7 @@ export const ShopScreen: React.FC<ShopScreenProps> = ({
                   {item.image_url ? (
                     <img
                       src={item.image_url}
-                      alt={item.name}
+                      alt={lang === 'es' ? (item.name_es || item.name) : item.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                       loading="lazy"
                     />
