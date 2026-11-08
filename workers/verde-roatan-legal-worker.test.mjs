@@ -11,6 +11,17 @@ await t('delete-account page explains in-app path, what is kept, and email fallb
   const h = await (await get('/delete-account')).text();
   assert.match(h, /Delete my account/); assert.match(h, /Order records are kept/); assert.match(h, /within 30 days/);
 });
+await t('password reset page exposes recovery flow without a service-role key', async () => {
+  const r = await get('/reset-password'); const h = await r.text();
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('cache-control'), /no-store/);
+  assert.match(r.headers.get('content-security-policy'), /connect-src https:\/\/tjzqxsyxvfdabfguezmu\.supabase\.co/);
+  assert.match(h, /Send reset link/);
+  assert.match(h, /Save new password/);
+  assert.match(h, /auth\/v1\/recover/);
+  assert.match(h, /auth\/v1\/user/);
+  assert.doesNotMatch(h, /service_role|SERVICE_ROLE/i);
+});
 await t('root serves the privacy policy; unknown paths 404; writes refused; strict CSP', async () => {
   assert.equal((await get('/')).status, 200); assert.equal((await get('/nope')).status, 404);
   assert.equal((await get('/privacy', 'POST')).status, 405);
