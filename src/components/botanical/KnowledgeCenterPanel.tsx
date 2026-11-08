@@ -33,8 +33,6 @@ export const KnowledgeCenterPanel: React.FC<Props> = ({ lang, accessToken }) => 
   const [docs, setDocs] = useState<KnowledgeDocument[] | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [catalogCandidates, setCatalogCandidates] = useState<BotanicalCatalogPhotoCandidate[]>([]);
-  const [catalogLoaded, setCatalogLoaded] = useState(false);
   const [busy, setBusy] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -307,6 +305,8 @@ const ReferencePhotos: React.FC<{ es: boolean; accessToken?: string }> = ({ es, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [catalogCandidates, setCatalogCandidates] = useState<BotanicalCatalogPhotoCandidate[]>([]);
+  const [catalogLoaded, setCatalogLoaded] = useState(false);
 
   const load = useCallback(async () => {
     if (!accessToken) return;
