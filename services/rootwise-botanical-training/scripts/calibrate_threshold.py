@@ -73,6 +73,15 @@ def main() -> None:
         raise ValueError("Every negative image needs a traceable source_id.")
     if negative["source_id"].duplicated().any():
         raise ValueError("Negative source_id values must be unique.")
+    for column in ("license", "license_url"):
+        if negative[column].astype(str).str.strip().eq("").any():
+            raise ValueError(f"Every negative image must include {column}.")
+    if "source_id" in validation.columns:
+        positive_sources = set(validation["source_id"].astype(str).str.strip())
+        negative_sources = set(negative["source_id"].astype(str).str.strip())
+        overlap = positive_sources.intersection(negative_sources)
+        if overlap:
+            raise ValueError(f"Positive and negative calibration sets share {len(overlap)} source IDs.")
 
     catalog = json.loads(args.reference_catalog.read_text(encoding="utf-8"))
     if catalog.get("model_version") != "rootwise_mobilenetv3_512d_v1":
