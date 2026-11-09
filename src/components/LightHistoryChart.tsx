@@ -16,7 +16,10 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
   const visible = useMemo(() => {
     const selected = WINDOWS.find(item => item.id === windowId) || WINDOWS[1];
     const cutoff = selected.ms === Number.POSITIVE_INFINITY ? 0 : Date.now() - selected.ms;
-    return readings.filter(item => item.timestamp >= cutoff).slice(-360);
+    const filtered = readings.filter(item => item.timestamp >= cutoff);
+    if (filtered.length <= 360) return filtered;
+    const stride = (filtered.length - 1) / 359;
+    return Array.from({ length: 360 }, (_, index) => filtered[Math.round(index * stride)]);
   }, [readings, windowId]);
   const values = visible.map(item => item.lux).filter(Number.isFinite);
   const min = values.length ? Math.min(...values) : 0;
