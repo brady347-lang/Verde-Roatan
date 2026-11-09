@@ -38,7 +38,6 @@ export interface RootWiseBotanicalMLPlugin {
   identify(options: {
     image: string;
     topK?: number;
-    confidenceThreshold?: number;
   }): Promise<RootWiseBotanicalMLResult>;
 }
 
