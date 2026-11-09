@@ -5,8 +5,8 @@ const api = read('./api.ts');
 const supplier = read('../components/SupplierOnboardingPanel.tsx');
 const migration = read('../../supabase/migrations/20261109000400_publish_only_approved_supplier_products.sql');
 
-assert.match(api, /listing_status=eq\.approved/);
-assert.match(api, /image_review_status=eq\.approved/);
+assert.match(api, /listing_status === 'approved'/);
+assert.match(api, /image_review_status === 'approved'/);
 assert.match(api, /current\.is_active === true/);
 assert.match(api, /approvedSupplierItems/);
 assert.match(api, /productReadSucceeded && current/);
