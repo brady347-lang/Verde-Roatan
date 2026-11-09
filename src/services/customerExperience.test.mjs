@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+const account = read('../screens/AccountScreen.tsx');
+const companion = read('../components/CustomerAccountExperience.tsx');
+assert.match(account, /accountRole === 'nursery_owner'/);
+assert.match(account, /accountRole !== 'nursery_owner'/);
+assert.match(account, /CustomerAccountExperience/);
+assert.match(account, /showSupplierApplication/);
+assert.match(companion, /Start the guided tour/);
+assert.match(companion, /Measure your garden/);
+assert.match(companion, /Follow your delivery/);
+console.log('customerExperience tests passed');

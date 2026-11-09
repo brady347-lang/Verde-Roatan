@@ -40,7 +40,16 @@ assert.match(tools, /MapViewport points=\{points\} follow=\{tracking\}/, 'map fo
 assert.match(tools, /evaluateFix\(previousPoint, \{ lat: latitude, lon: longitude, accuracy, timestamp: Date\.now\(\) \}\)/, 'manual GPS points must pass accuracy and duplicate filtering');
 assert.match(tools, /gpsFirstFixTimeoutRef/, 'GPS must report when no first fix arrives');
 assert.match(tools, /GPS connected · waiting for the first location/, 'tracking must not claim live GPS before a fix');
-assert.match(tools, /25000/, 'the first-fix wait must have a bounded feedback timeout');
+assert.match(tools, /50000/, 'the first-fix wait must have a bounded feedback timeout');
+for (const fragment of [
+  'minimumUpdateInterval: 1000',
+  'Geolocation.getCurrentPosition(',
+  "setAreaView('plot')",
+  'FieldPlotDiagram points={points}',
+  "recordLightReading(Math.max(0, event.lux), 'sensor_measured')",
+  'saveLightReading(sample)',
+  'lightSamples.filter'
+]) assert.ok(tools.includes(fragment), `missing field capture behavior: ${fragment}`);
 assert.match(tools, /cameraRequestGenerationRef/, 'late camera permission results must be invalidated when the tool is stopped');
 assert.match(tools, /requestGeneration !== cameraRequestGenerationRef\.current/, 'stopped camera requests must not reactivate a stream');
 assert.doesNotMatch(tools, /luxInput/, 'ordinary light readings must not require manual lux entry');

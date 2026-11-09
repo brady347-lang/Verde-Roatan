@@ -279,80 +279,112 @@ export async function fetchDeliveryZones(): Promise<DeliveryZone[]> {
 
 export async function fetchCatalog(): Promise<CatalogItem[]> {
   try {
-    const response = await fetch(`${API_URL}/plants`, { cache: 'no-store' });
-    const payload = await response.json();
-    if (response.ok && payload.status === 'success' && Array.isArray(payload.plants)) {
-      // The legacy catalog worker may not yet include material_spec in its response.
-      // Read only the public, active product IDs and verified specs from Supabase so
-      // material estimates remain current without changing the worker contract.
-      let materialSpecs = new Map<string, unknown>();
-      try {
-        const specResponse = await fetch(
-          SUPABASE_URL + '/rest/v1/products?select=id,material_spec&is_active=eq.true',
-          { headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Accept: 'application/json' }, cache: 'no-store' }
-        );
-        if (specResponse.ok) {
-          const specRows = await specResponse.json();
-          if (Array.isArray(specRows)) {
-            materialSpecs = new Map(
-              specRows
-                .filter((row: any) => row && row.id && row.material_spec && typeof row.material_spec === 'object')
-                .map((row: any) => [String(row.id), row.material_spec])
-            );
-          }
-        }
-      } catch (error) {
-        console.warn('Catalog material specifications could not be refreshed; using worker/local data.', error);
+    let workerPlants: any[] = [];
+    let workerReadSucceeded = false;
+    try {
+      const response = await fetch(`${API_URL}/plants`, { cache: 'no-store' });
+      const payload = await response.json();
+      if (response.ok && payload.status === 'success' && Array.isArray(payload.plants)) {
+        workerPlants = payload.plants;
+        workerReadSucceeded = true;
+      } else {
+        console.warn('Legacy catalog worker returned an invalid response; trying approved Supabase listings.');
       }
-      return payload.plants.map((p: any) => {
-        const category = String(p.category || 'Outdoor');
-        const name = String(p.name || 'Unnamed plant');
-        const kind = /palm/i.test(name)
-          ? 'palm'
-          : /grass|sod|peanut/i.test(name)
-          ? 'grass'
-          : /flower|hibiscus|mussaenda|plumbago|ginger|boug/i.test(name)
-          ? 'flower'
-          : 'shrub';
-        const qty = Number(p.stock_quantity) || 0;
-        return {
-          id: String(p.id),
-          t: 'plant',
-          name,
-          name_es: String(p.name_es || p.common_name_es || p.spanish_name || '').trim() || undefined,
-          scientific_name: String(p.scientific_name || '').trim() || undefined,
-          description_en: String(p.description_en || '').trim() || undefined,
-          description_es: String(p.description_es || '').trim() || undefined,
-          care_instructions_en: String(p.care_instructions_en || '').trim() || undefined,
-          care_instructions_es: String(p.care_instructions_es || '').trim() || undefined,
-          alternative_names_en: toNameList(p.alternative_names_en),
-          alternative_names_es: toNameList(p.alternative_names_es),
-          sci: String(p.scientific_name || p.sci || p.description || ''),
-          kind,
-          salt: Number(p.salt_tolerance_rating) || 2,
-          sun: String(p.sunlight_requirement || 'Full to partial sun'),
-          water: String(p.watering_instructions || 'Standard tropical schedule'),
-          price: Number(p.price) || 250,
-          currency: String(p.currency || 'HNL') as 'HNL' | 'USD',
-          size: String(p.size || 'Nursery pot'),
-          stock: qty > 0 ? (qty <= 5 ? 'Low stock' : 'In stock') : 'Out of stock',
-          stock_quantity: qty,
-          nursery: 'Verde Roatán Nursery',
-          pet: p.pet_safety === 'safe' ? 'safe' : 'check',
-          tags: Array.isArray(p.tags) && p.tags.length ? p.tags.map(String) : [category.toLowerCase(), kind],
-          note: String(p.description || 'Tropical island specimen acclimatized to Roatan.'),
-          category,
-          image_url: p.image_url || '',
-          native_to_bay_islands: typeof p.native_to_bay_islands === 'boolean' ? p.native_to_bay_islands : undefined,
-          material_spec: p.material_spec && typeof p.material_spec === 'object' ? p.material_spec : materialSpecs.get(String(p.id)) as CatalogItem['material_spec']
-        };
-      });
+    } catch (error) {
+      console.warn('Legacy catalog worker is unavailable; trying approved Supabase listings.', error);
     }
+
+    // Supplier listings live in public.products, not necessarily in the legacy /plants worker.
+    // Read the active rows once, enforce both administrator approval flags in the client, and
+    // merge approved supplier listings into the customer catalog. UUID rows absent from this
+    // response are excluded rather than trusting a stale worker copy.
+    let productRows: any[] = [];
+    let productReadSucceeded = false;
+    try {
+      const productResponse = await fetch(
+        SUPABASE_URL + '/rest/v1/products?select=id,name,name_es,scientific_name,description,description_en,description_es,care_instructions_en,care_instructions_es,size,category,price,currency,stock_quantity,image_url,is_active,listing_status,image_review_status,material_spec,tags,salt_tolerance_rating,sunlight_requirement,watering_instructions,pet_safety,native_to_bay_islands&is_active=eq.true',
+        { headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Accept: 'application/json' }, cache: 'no-store' }
+      );
+      if (productResponse.ok) {
+        const rows = await productResponse.json();
+        if (Array.isArray(rows)) { productRows = rows; productReadSucceeded = true; }
+      } else {
+        console.warn('Approved supplier catalog could not be refreshed from Supabase:', productResponse.status);
+      }
+    } catch (error) {
+      console.warn('Supplier catalog could not be refreshed from Supabase.', error);
+    }
+
+    if (!workerReadSucceeded && !productReadSucceeded) throw new Error('Neither the legacy catalog nor the approved supplier catalog is available.');
+
+    const productStatusById = new Map<string, any>(productRows.map(row => [String(row.id), row]));
+    const isUuid = (value: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || ''));
+    const toCatalogItem = (p: any, supplierListing = false): CatalogItem => {
+      const category = String(p.category || 'Outdoor');
+      const name = String(p.name || 'Unnamed plant');
+      const kind = /palm/i.test(name) ? 'palm'
+        : /grass|sod|peanut/i.test(name) ? 'grass'
+        : /flower|hibiscus|mussaenda|plumbago|ginger|boug/i.test(name) ? 'flower' : 'shrub';
+      const qty = Math.max(0, Number(p.stock_quantity) || 0);
+      return {
+        id: String(p.id),
+        t: 'plant',
+        name,
+        name_es: String(p.name_es || p.common_name_es || p.spanish_name || '').trim() || undefined,
+        scientific_name: String(p.scientific_name || '').trim() || undefined,
+        description_en: String(p.description_en || '').trim() || undefined,
+        description_es: String(p.description_es || '').trim() || undefined,
+        care_instructions_en: String(p.care_instructions_en || '').trim() || undefined,
+        care_instructions_es: String(p.care_instructions_es || '').trim() || undefined,
+        alternative_names_en: toNameList(p.alternative_names_en),
+        alternative_names_es: toNameList(p.alternative_names_es),
+        sci: String(p.scientific_name || p.sci || p.description || ''),
+        kind,
+        salt: Number(p.salt_tolerance_rating) || 2,
+        sun: String(p.sunlight_requirement || 'Full to partial sun'),
+        water: String(p.watering_instructions || 'Standard tropical schedule'),
+        price: Number(p.price) || 250,
+        currency: String(p.currency || 'HNL') as 'HNL' | 'USD',
+        size: String(p.size || 'Nursery pot'),
+        stock: qty > 0 ? (qty <= 5 ? 'Low stock' : 'In stock') : 'Out of stock',
+        stock_quantity: qty,
+        nursery: supplierListing ? String(p.nursery_name || 'Approved nursery') : 'Verde Roatán Nursery',
+        pet: p.pet_safety === 'safe' ? 'safe' : 'check',
+        tags: Array.isArray(p.tags) && p.tags.length ? p.tags.map(String) : [category.toLowerCase(), kind],
+        note: String(p.description || 'Tropical island specimen acclimatized to Roatan.'),
+        category,
+        image_url: String(p.image_url || ''),
+        native_to_bay_islands: typeof p.native_to_bay_islands === 'boolean' ? p.native_to_bay_islands : undefined,
+        material_spec: p.material_spec && typeof p.material_spec === 'object' ? p.material_spec : undefined
+      };
+    };
+
+    const workerItems = workerPlants
+      .filter((row: any) => {
+        const id = String(row?.id || '');
+        if (!isUuid(id)) return true;
+        const current = productStatusById.get(id);
+        return Boolean(productReadSucceeded && current && current.is_active === true
+          && current.listing_status === 'approved' && current.image_review_status === 'approved');
+      })
+      .map((row: any) => {
+        const current = productStatusById.get(String(row.id));
+        return toCatalogItem({ ...row, material_spec: row.material_spec || current?.material_spec });
+      });
+
+    const approvedSupplierItems = productRows
+      .filter(row => row && row.is_active === true && row.listing_status === 'approved' && row.image_review_status === 'approved')
+      .map(row => toCatalogItem(row, true));
+
+    const merged = new Map<string, CatalogItem>();
+    workerItems.forEach(item => merged.set(String(item.id), item));
+    // Database rows are authoritative for supplier-owned catalog records and approved photos.
+    approvedSupplierItems.forEach(item => merged.set(String(item.id), item));
+    return [...merged.values()];
   } catch (err) {
     console.warn('Could not load catalog from API worker; retaining the last locally cached catalog:', err);
     throw err instanceof Error ? err : new Error('Catalog service is unavailable.');
   }
-  throw new Error('Catalog service returned an invalid response.');
 }
 
 export async function submitOrderCheckout(

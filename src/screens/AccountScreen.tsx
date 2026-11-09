@@ -1,5 +1,5 @@
 import { localizedName } from '../lib/catalogLocale';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   BookmarkCheck,
   Building2,
@@ -51,7 +51,7 @@ import {
   SupplierPurchaseRequest,
   TransactionRecord
 } from '../types';
-import { LEGAL_WORKER_URL, STRINGS, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/initialData';
+import { LEGAL_WORKER_URL, STRINGS, SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL, getDecodedAdminEmail, getMaskedAdminEmail } from '../data/initialData';
 import { usePhotoUrl } from '../lib/photoStore';
 import { AdminOrderCommandCenter } from '../components/AdminOrderCommandCenter';
 import { SupplierPortal } from '../components/SupplierPortal';
@@ -67,6 +67,7 @@ import { BotanicalEvidenceReviewPanel } from '../components/botanical/BotanicalE
 import { ConstitutionPanel } from '../components/botanical/ConstitutionPanel';
 import { AdminInsightsPanel } from '../components/AdminInsightsPanel';
 import { AccountPrivacySection } from '../components/AccountPrivacySection';
+import { CustomerAccountExperience } from '../components/CustomerAccountExperience';
 
 interface AccountScreenProps {
   theme: 'system' | 'light' | 'dark';
@@ -74,6 +75,8 @@ interface AccountScreenProps {
   lang: Language;
   session: AuthSession | null;
   isAdmin: boolean;
+  onNavigate?: (tab: string) => void;
+  onRefreshCatalog?: () => Promise<void> | void;
   onSignIn: (email: string, pass: string) => Promise<void>;
   onTemporarySignIn: (code: string) => Promise<void>;
   onSignUp: (email: string, pass: string, name: string) => Promise<{ requiresEmailConfirmation: boolean }>;
@@ -127,6 +130,8 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   lang,
   session,
   isAdmin,
+  onNavigate = () => {},
+  onRefreshCatalog,
   onSignIn,
   onTemporarySignIn,
   onSignUp,
@@ -166,6 +171,20 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   onSendOrderMessage = () => {}
 }) => {
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'admin' | 'temporary'>('login');
+  const [accountRole, setAccountRole] = useState<'customer' | 'nursery_owner' | 'supplier' | 'unknown'>('customer');
+  const [showSupplierApplication, setShowSupplierApplication] = useState(false);
+  useEffect(() => {
+    if (!session || isAdmin) { setAccountRole(isAdmin ? 'unknown' : 'customer'); return; }
+    if (session.user.temporary_role) { setAccountRole(session.user.temporary_role); return; }
+    let active = true;
+    fetch(SUPABASE_URL + '/rest/v1/profiles?select=role&id=eq.' + encodeURIComponent(session.user.id), {
+      headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + session.access_token, Accept: 'application/json' },
+      cache: 'no-store'
+    }).then(response => response.ok ? response.json() : Promise.reject(new Error('Profile role lookup failed')))
+      .then(rows => { if (active && Array.isArray(rows) && rows[0]?.role) setAccountRole(String(rows[0].role) === 'nursery_owner' ? 'nursery_owner' : 'customer'); })
+      .catch(error => { if (active) { console.warn('Could not load account type; using the safe customer experience.', error); setAccountRole('customer'); } });
+    return () => { active = false; };
+  }, [session?.access_token, session?.user?.id, session?.user?.temporary_role, isAdmin]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
@@ -325,8 +344,17 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
             </button>
           </div>
 
-          {!isAdmin && session && (
-            <SupplierOnboardingPanel lang={lang} session={session} isAdmin={false} />
+          {!isAdmin && session && accountRole === 'nursery_owner' && (
+            <SupplierOnboardingPanel lang={lang} session={session} isAdmin={false} onCatalogChanged={onRefreshCatalog} />
+          )}
+          {!isAdmin && session && accountRole !== 'nursery_owner' && (
+            <>
+              <CustomerAccountExperience lang={lang} displayName={session.user.full_name || ''} gardenCount={garden.length} orderCount={orders.length} onNavigate={onNavigate} />
+              {session.user.temporary_role !== 'customer' && <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3">
+                <button type="button" onClick={() => setShowSupplierApplication(value => !value)} className="w-full text-left text-xs font-bold text-[var(--ink)]">{showSupplierApplication ? (lang === 'es' ? 'Ocultar solicitud de proveedor' : 'Hide supplier application') : (lang === 'es' ? '¿Tienes un vivero? Solicita acceso de proveedor' : 'Own a nursery? Apply for supplier access')}</button>
+                {showSupplierApplication && <div className="mt-3"><SupplierOnboardingPanel lang={lang} session={session} isAdmin={false} /></div>}
+              </div>}
+            </>
           )}
 
           {/* Plant Intelligence Studio (Admin Exclusive Live Management) */}
@@ -581,7 +609,7 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                 )}
 
                 {adminTab === 'supplier_access' && session && (
-                  <SupplierOnboardingPanel lang={lang} session={session} isAdmin />
+                  <SupplierOnboardingPanel lang={lang} session={session} isAdmin onCatalogChanged={onRefreshCatalog} />
                 )}
 
                 {/* 1. Catalog / Plants & Products */}
