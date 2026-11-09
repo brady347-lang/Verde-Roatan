@@ -7,6 +7,13 @@ const migration = read('../../supabase/migrations/20261109000400_publish_only_ap
 
 assert.match(api, /listing_status === 'approved'/);
 assert.match(api, /image_review_status === 'approved'/);
+assert.match(api, /listing_status: 'approved'/);
+assert.match(api, /image_review_status: 'approved'/);
+assert.match(api, /reviewed_by: userId/);
+assert.match(api, /created_by: userId/);
+assert.match(api, /function tokenUserId\(token: string\)/);
+assert.match(api, /productImageStoragePath\(userId, id,/);
+assert.match(api, /productImageStoragePath\(tokenUserId\(token\), productId,/);
 assert.match(api, /current\.is_active === true/);
 assert.match(api, /approvedSupplierItems/);
 assert.match(api, /productReadSucceeded && current/);
