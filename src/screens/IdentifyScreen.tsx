@@ -965,7 +965,7 @@ export const IdentifyScreen: React.FC<IdentifyScreenProps> = ({
                           </small>
                         </div>
                         <span className="text-[11px] font-bold text-[var(--ink-soft)]">
-                          {Math.round(cand.confidence_score * 100)}% match
+                          {Math.round(cand.confidence_score * 100)}% {result.model_used?.includes('RootWise LiteRT') ? (lang === 'es' ? 'similitud' : 'similarity') : (lang === 'es' ? 'coincidencia' : 'match')}
                         </span>
                       </div>
                     ))}
