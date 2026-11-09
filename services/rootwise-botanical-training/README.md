@@ -39,7 +39,7 @@ python scripts/train.py --manifest data/manifest.csv --output artifacts/rootwise
 
 The training script checks class/group coverage, writes the exact training manifest and label map, trains a species classifier with a 512D embedding head, saves the Keras encoder, and exports a float32 LiteRT model.
 
-## Build reference catalog
+## Build and calibrate the reference catalog
 
 Prepare a separate curated reference manifest with columns:
 
@@ -47,12 +47,35 @@ Prepare a separate curated reference manifest with columns:
 image_path,species_id,common_name,scientific_name,family,source_id,license,license_url,review_status,expert_verified,verification_source
 ```
 
-Only `review_status=approved` records are included. A row marked `expert_verified=true` must have a non-empty `verification_source`. Multiple curated reference photographs are embedded with the exact exported encoder and averaged into one normalized centroid per species; source IDs and licenses are retained.
+Only `review_status=approved` records are included. A row marked `expert_verified=true` must have a non-empty `verification_source`.
+
+First, build species centroids using the exact trained encoder:
 
 ```bash
 python scripts/build_reference_catalog.py \
   --manifest data/reference_manifest.csv \
   --encoder artifacts/rootwise_mobilenetv3_512d_v1/encoder.keras \
+  --output artifacts/rootwise_mobilenetv3_512d_v1/reference_centroids.json
+```
+
+Next, calibrate open-set acceptance using positive validation photos and a separate, rights-cleared negative manifest (`image_path,source_id,license,license_url`). Include out-of-scope plants, visually similar non-target species, and non-plant images; do not reuse the same source/observation across the positive and negative sets.
+
+```bash
+python scripts/calibrate_threshold.py \
+  --validation-manifest artifacts/rootwise_mobilenetv3_512d_v1/training_manifest.csv \
+  --negative-manifest data/negative_manifest.csv \
+  --encoder artifacts/rootwise_mobilenetv3_512d_v1/encoder.keras \
+  --reference-catalog artifacts/rootwise_mobilenetv3_512d_v1/reference_centroids.json \
+  --output artifacts/rootwise_mobilenetv3_512d_v1/calibration.json
+```
+
+Finally, build the Android-ready catalog with the calibrated threshold:
+
+```bash
+python scripts/build_reference_catalog.py \
+  --manifest data/reference_manifest.csv \
+  --encoder artifacts/rootwise_mobilenetv3_512d_v1/encoder.keras \
+  --calibration artifacts/rootwise_mobilenetv3_512d_v1/calibration.json \
   --output artifacts/rootwise_mobilenetv3_512d_v1/botanical_reference_embeddings.json
 ```
 
