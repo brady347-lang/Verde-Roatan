@@ -25,7 +25,7 @@ const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: strin
   compost: { en: 'Compost & soil blend', es: 'Compost y mezcla de suelo', terms: /compost|soil blend|soil mix|coir|worm cast/i },
   pavers: { en: 'Pavers & stepping stones', es: 'Adoquines y losas', terms: /paver|stepping stone|patio block|adoqu[ií]n|losa/i }
 };
-function gpsDistanceMeters(a:{lat:number;lon:number},b:{lat:number;lon:number}) { const rad=(v:number)=>v*Math.PI/180; const x=rad(b.lon-a.lon)*6371000*Math.cos(rad((a.lat+b.lat)/2)); const y=rad(b.lat-a.lat)*6371000; return Math.hypot(x,y); }
+function cardinalDirection(degrees:number) { return ['N','NE','E','SE','S','SW','W','NW'][Math.round(degrees/45)%8]; }\nfunction gpsDistanceMeters(a:{lat:number;lon:number},b:{lat:number;lon:number}) { const rad=(v:number)=>v*Math.PI/180; const x=rad(b.lon-a.lon)*6371000*Math.cos(rad((a.lat+b.lat)/2)); const y=rad(b.lat-a.lat)*6371000; return Math.hypot(x,y); }
 function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
   const map = useMap();
   useEffect(() => {
@@ -565,7 +565,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     gpsHasFirstFixRef.current = false;
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
-    setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
+    distanceOriginRef.current = null;\n    setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
@@ -728,9 +728,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-xl bg-[var(--surface)] p-2"><span className="text-[var(--ink-soft)]">Lat</span><b className="block tabular-nums">{liveFix?.lat.toFixed(7) ?? '—'}</b><span className="text-[var(--ink-soft)]">Lon</span><b className="block tabular-nums">{liveFix?.lon.toFixed(7) ?? '—'}</b></div>
-            <div className="rounded-xl bg-[var(--surface)] p-2"><span className="text-[var(--ink-soft)]">{es?'Rumbo':'Heading'}</span><b className="block text-xl tabular-nums">{compassHeading !== null ? compassHeading.toFixed(0)+'°' : '—'}</b><span className="text-[var(--ink-soft)]">{es?'Pitch / Roll':'Pitch / Roll'}: {compassPitch?.toFixed(0) ?? '—'}° / {compassRoll?.toFixed(0) ?? '—'}°</span></div>
+            <div className="rounded-xl bg-[var(--surface)] p-2"><span className="text-[var(--ink-soft)]">{es?'Rumbo':'Heading'}</span><b className="block text-xl tabular-nums">{compassHeading !== null ? compassHeading.toFixed(0)+'° · '+cardinalDirection(compassHeading) : '—'}</b><span className="text-[var(--ink-soft)]">{es?'Pitch / Roll':'Pitch / Roll'}: {compassPitch?.toFixed(0) ?? '—'}° / {compassRoll?.toFixed(0) ?? '—'}°</span></div>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs">{es?'Cobertura de giro':'Rotation coverage'}: {compassCalibrationScore}%</span><span className="text-[10px] text-[var(--ink-soft)]">{compassAccuracy !== null ? (es?'Estado sensor':'Sensor status')+': '+compassAccuracy : '—'}</span></div>
+          <div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs">{es?'Cobertura de giro':'Rotation coverage'}: {compassCalibrationScore}%</span><span className="text-[10px] text-[var(--ink-soft)]">{compassAccuracy !== null ? (compassAccuracy >= 3 ? (es?'Sensor preciso':'Sensor high') : compassAccuracy === 2 ? (es?'Sensor medio':'Sensor medium') : (es?'Sensor bajo':'Sensor low')) : '—'}</span></div>
           <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--surface)]"><div className="h-full rounded-full bg-[var(--palm)]" style={{width:compassCalibrationScore+'%'}}/></div>
           <p className="mt-2 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es?'Mueve lentamente el teléfono en forma de ocho durante 15–20 segundos. Aléjalo de imanes, fundas magnéticas, vehículos y metal. El indicador muestra cobertura de orientación, no certifica una calibración del sistema.':'Slowly move the phone in a figure-eight for 15–20 seconds. Keep it away from magnets, magnetic cases, vehicles and metal. The indicator measures heading coverage; it does not certify OS calibration.'}</p>
           <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startCompassSensor} disabled={compassActive} className="rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{es?'Iniciar brújula':'Start compass'}</button><button onClick={stopCompassSensor} disabled={!compassActive} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es?'Detener':'Stop'}</button></div>
