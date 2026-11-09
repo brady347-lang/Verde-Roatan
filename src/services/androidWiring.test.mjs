@@ -33,6 +33,7 @@ assert.match(tools, /produced no readings within 6 seconds/);
 // Light and compass share one listener, so stopping one must not unregister the other.
 assert.match(plugin, /unregisterListener\(this, lightSensor\)/);
 assert.match(plugin, /unregisterListener\(this, rotationSensor\)/);
+assert.match(plugin, /handleOnPause\(\)[\s\S]*unregisterListener\(this, lightSensor\)[\s\S]*unregisterListener\(this, rotationSensor\)/, 'pause must release each sensor independently');
 assert.match(plugin, /notifyListeners\("lightSensorError"/);
 assert.match(bridge, /addListener\(eventName: 'lightSensorError'/);
 assert.match(tools, /addListener\('lightSensorError'/);
