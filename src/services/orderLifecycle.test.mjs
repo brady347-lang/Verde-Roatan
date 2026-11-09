@@ -31,7 +31,11 @@ assert.match(migration, /v_transaction_amount := 0/, 'cancellation must be recor
 assert.match(app, /checkoutAttemptRef\.current\.fingerprint !== fingerprint/, 'identical checkout retries must reuse their idempotency token');
 assert.match(app, /checkoutAttemptRef\.current\.token/, 'checkout must send the retained idempotency token');
 assert.match(app, /const serverTotal = Number\(res\?\.total\)/, 'the app must read the server-confirmed checkout total');
-assert.match(app, /Number\.isFinite\(serverTotal\)/, 'the app must prefer the server-confirmed checkout total');
+assert.match(app, /\[serverSubtotal, serverDeliveryFee, serverTotal, activeExchangeRate\]\.every\(Number\.isFinite\)/, 'all financial values must come from the server and be finite');
+assert.match(app, /serverItems\.length === 0/, 'checkout must fail closed when the server omits authoritative item prices');
+assert.match(app, /Math\.abs\(serverSubtotal \+ serverDeliveryFee - serverTotal\) > 0\.02/, 'server subtotal, fee, and total must reconcile');
+assert.match(app, /Math\.abs\(itemSubtotal - serverSubtotal\) > 0\.02/, 'server item prices must reconcile to the server subtotal');
+assert.doesNotMatch(app, /const localSubtotal|zone\?\.fee \|\| 0/, 'checkout must never invent financial totals from local catalog or zone cache');
 assert.match(app, /payment_method: 'cash_on_delivery'/, 'the local order must reflect the backend cash-on-delivery default');
 assert.doesNotMatch(app, /Math\.round\(sub \* 0\.6\)/, 'supplier costs must not be fabricated as a retail percentage');
 assert.doesNotMatch(app, /Math\.round\(it\.price \* 0\.6\)/, 'supplier line costs must not be fabricated');
