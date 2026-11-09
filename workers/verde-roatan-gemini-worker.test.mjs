@@ -434,4 +434,66 @@ await t('internal evidence review: secret required, constant-time compare, stric
   assert.equal(fetched, 0, 'no storage or Gemini call before the secret and path are valid');
 });
 
+
+// ---- RootWise ML visual evidence (contract: services/rootwise-ml/INTEGRATION_CONTRACT.md) ----
+function mlMock({ mlResponse, mlThrow } = {}) {
+  const log = { ml: [], gemini: [] };
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).includes('/v1/identify')) {
+      log.ml.push({ url: String(url), init });
+      if (mlThrow) throw mlThrow;
+      return mlResponse || new Response(JSON.stringify({
+        decision: 'review', confidence: 0.61, margin: 0.02, entropy: 1.4, model_version: 'bioclip-test',
+        top_predictions: [{ label: 'Monstera deliciosa', score: 0.61, internal_path: 's3://private/x' }, { label: 'OUT_OF_CATALOG', score: 0.2 }],
+        similar_catalog_entries: [{ image_url: 'https://storage.private/secret.jpg' }]
+      }), { status: 200 });
+    }
+    const body = JSON.parse(init.body);
+    log.gemini.push(body);
+    return ok(plant);
+  };
+  return log;
+}
+const mlEnv = { GEMINI_API_KEY: 'k', ROOTWISE_ML_SERVICE_URL: 'https://ml.test/', ROOTWISE_ML_API_KEY: 'ml-secret-key' };
+
+await t('ML evidence: authenticates with X-API-Key, never Bearer, posts to /v1/identify, bounded top_k', async () => {
+  const log = mlMock();
+  const r = await post('/', { mode: 'plant', image: IMG }, mlEnv); assert.equal(r.status, 200);
+  assert.equal(log.ml.length, 1);
+  assert.equal(log.ml[0].url, 'https://ml.test/v1/identify');
+  assert.equal(log.ml[0].init.headers['X-API-Key'], 'ml-secret-key');
+  assert.equal(log.ml[0].init.headers.Authorization, undefined);
+  assert.equal(log.ml[0].init.body.get('top_k'), '5');
+});
+await t('ML evidence: response is sanitized to decision, model version and labels only; the key never reaches the client', async () => {
+  mlMock();
+  const raw = await (await post('/', { mode: 'plant', image: IMG }, mlEnv)).text();
+  const j = JSON.parse(raw);
+  assert.deepEqual(j.ml_visual_evidence, { status: 'success', decision: 'review', model_version: 'bioclip-test', top_predictions: [{ label: 'Monstera deliciosa' }, { label: 'OUT_OF_CATALOG' }] });
+  for (const leaked of ['ml-secret-key', 'private', 'secret.jpg', 'entropy', 'margin']) assert.ok(!raw.includes(leaked), 'must not leak ' + leaked);
+});
+await t('ML evidence: Gemini still answers when the ML service fails, times out, or returns garbage', async () => {
+  for (const setup of [{ mlResponse: new Response('boom', { status: 500 }) }, { mlThrow: Object.assign(new Error('x'), { name: 'AbortError' }) }, { mlResponse: new Response('{"nope":1}', { status: 200 }) }]) {
+    mlMock(setup);
+    const j = await (await post('/', { mode: 'plant', image: IMG }, mlEnv)).json();
+    assert.equal(j.status, 'success'); assert.equal(j.ml_visual_evidence.status, 'unavailable');
+  }
+});
+await t('ML evidence: not configured and pest mode never call the ML service; legacy ROOTWISE_ML_URL still works', async () => {
+  let log = mlMock();
+  assert.equal((await (await post('/', { mode: 'plant', image: IMG })).json()).ml_visual_evidence.status, 'not_configured');
+  await post('/', { mode: 'pest', image: IMG }, mlEnv);
+  assert.equal(log.ml.length, 0);
+  log = mlMock();
+  await post('/', { mode: 'plant', image: IMG }, { GEMINI_API_KEY: 'k', ROOTWISE_ML_URL: 'https://legacy.test', ROOTWISE_ML_API_KEY: 'ml-secret-key' });
+  assert.equal(log.ml[0].url, 'https://legacy.test/v1/identify');
+});
+await t('ML evidence reaches Gemini only as a cautious cross-check, never as verification', async () => {
+  const log = mlMock();
+  await post('/', { mode: 'plant', image: IMG }, mlEnv);
+  const prompt = log.gemini[0].contents[0].parts.map((p) => p.text || '').join('');
+  assert.match(prompt, /retrieval signal only; not scientific verification/);
+  assert.match(prompt, /OUT_OF_CATALOG/);
+});
+
 console.log('ALL', n, 'PASSED');

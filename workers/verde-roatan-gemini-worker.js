@@ -400,6 +400,62 @@ async function crossCheckBotanicalIdentification(parsed, env) {
 }
 
 /**
+ * Optional RootWise ML visual evidence. The ML service is private and called only
+ * server-to-server; its result is a retrieval signal, never scientific verification.
+ */
+async function fetchRootWiseMLEvidence(image, env) {
+  // Contract: services/rootwise-ml/INTEGRATION_CONTRACT.md. ROOTWISE_ML_URL is the legacy name.
+  const baseUrl = String(env.ROOTWISE_ML_SERVICE_URL || env.ROOTWISE_ML_URL || '').replace(/\/+$/, '');
+  const serviceKey = String(env.ROOTWISE_ML_API_KEY || '');
+  if (!baseUrl || !serviceKey) return { status: 'not_configured' };
+
+  const match = String(image || '').match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/i);
+  if (!match) return { status: 'unavailable', reason: 'unsupported_image_format' };
+
+  let bytes;
+  try {
+    const binary = atob(match[2].replace(/\s/g, ''));
+    if (binary.length === 0 || binary.length > 12 * 1024 * 1024) {
+      return { status: 'unavailable', reason: 'image_size_limit' };
+    }
+    bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  } catch {
+    return { status: 'unavailable', reason: 'invalid_image_payload' };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 18000);
+  try {
+    const form = new FormData();
+    form.append('file', new Blob([bytes], { type: match[1] }), 'rootwise-specimen');
+    form.append('top_k', '5');
+    const response = await fetch(baseUrl + '/v1/identify', {
+      method: 'POST',
+      headers: { 'X-API-Key': serviceKey, Accept: 'application/json' },
+      body: form,
+      signal: controller.signal
+    });
+    if (!response.ok) return { status: 'unavailable', reason: 'ml_http_' + response.status };
+    const data = await response.json().catch(() => null);
+    if (!data || !Array.isArray(data.top_predictions)) {
+      return { status: 'unavailable', reason: 'invalid_ml_response' };
+    }
+    return {
+      status: 'success',
+      decision: ['accept', 'review', 'reject'].includes(data.decision) ? data.decision : 'review',
+      model_version: String(data.model_version || 'unknown').slice(0, 120),
+      top_predictions: data.top_predictions.slice(0, 5).map((item) => ({
+        label: String(item?.label || '').slice(0, 120)
+      })).filter((item) => item.label)
+    };
+  } catch (error) {
+    return { status: 'unavailable', reason: error?.name === 'AbortError' ? 'ml_timeout' : 'ml_service_unreachable' };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * Handle initial Plant / Pest Identification with Gemini 3.8 Flash
  */
 async function handleAnalyze(body, apiKey, env) {
@@ -480,14 +536,24 @@ Respond ONLY with a valid JSON object matching:
 }
 Language: ${lang === 'es' ? 'Spanish (Español)' : 'English'}`;
 
+  const mlEvidence = mode === 'plant'
+    ? await fetchRootWiseMLEvidence(image, env)
+    : { status: 'not_applicable' };
+  const evidencePrompt = mode === 'plant'
+    ? prompt + '\n\nINDEPENDENT ROOTWISE ML VISUAL EVIDENCE (retrieval signal only; not scientific verification): ' +
+      JSON.stringify(mlEvidence) +
+      '\nUse this only as a cautious cross-check. Do not force a species match when the ML decision is reject or its top label is OUT_OF_CATALOG. Explain uncertainty and defer to expert review when signals disagree.'
+    : prompt;
+
   const { parsed, model } = await callGemini(env, apiKey, [
     { inline_data: { mime_type: mimeType, data: base64Data } },
-    { text: prompt }
+    { text: evidencePrompt }
   ]);
   parsed.status = 'success';
   parsed.model_used = model;
 
   if (mode !== 'pest') {
+    parsed.ml_visual_evidence = mlEvidence;
     parsed.database_crosscheck = await crossCheckBotanicalIdentification(parsed, env);
   }
 
