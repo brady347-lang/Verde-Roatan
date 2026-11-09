@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
-const migration = readFileSync(new URL('../../supabase/migrations/20261109090000_order_lifecycle_integrity.sql', import.meta.url), 'utf8');
-const checkoutMigration = readFileSync(new URL('../../supabase/migrations/20261109090001_checkout_authoritative_ledger.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../../supabase/pending_migrations/20261109090000_order_lifecycle_integrity.sql', import.meta.url), 'utf8');
+const checkoutMigration = readFileSync(new URL('../../supabase/pending_migrations/20261109090001_checkout_authoritative_ledger.sql', import.meta.url), 'utf8');
 const adminOrders = readFileSync(new URL('../components/AdminOrderCommandCenter.tsx', import.meta.url), 'utf8');
 
 assert.match(app, /p_order_id:\s*orderForSync\.id\s*,/, 'order status RPC must receive the UUID primary key');
