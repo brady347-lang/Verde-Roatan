@@ -30,12 +30,14 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
   const bottom = 28;
   const innerW = chartW - left - right;
   const innerH = chartH - top - bottom;
-  const yMax = Math.max(100, Math.ceil(max * 1.12 / 100) * 100);
+  const dataRange = Math.max(100, max - min);
+  const yMin = Math.max(0, min - dataRange * 0.12);
+  const yMax = Math.max(yMin + 100, max + dataRange * 0.12);
   const firstTimestamp = visible[0]?.timestamp ?? 0;
   const timeSpan = Math.max(1, (visible[visible.length - 1]?.timestamp ?? firstTimestamp) - firstTimestamp);
   const coords = visible.map(sample => ({
     x: left + (visible.length <= 1 ? innerW / 2 : ((sample.timestamp - firstTimestamp) / timeSpan) * innerW),
-    y: top + innerH - (sample.lux / yMax) * innerH
+    y: top + innerH - ((sample.lux - yMin) / (yMax - yMin)) * innerH
   }));
   const line = coords.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
   const area = coords.length ? `${line} L ${coords[coords.length - 1].x.toFixed(1)} ${(top + innerH).toFixed(1)} L ${coords[0].x.toFixed(1)} ${(top + innerH).toFixed(1)} Z` : '';
@@ -65,7 +67,7 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
           <defs><linearGradient id="rootwise-lux-fill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#39d69b" stopOpacity=".35"/><stop offset="100%" stopColor="#39d69b" stopOpacity="0"/></linearGradient></defs>
           {[0, .25, .5, .75, 1].map((ratio, index) => {
             const y = top + ratio * innerH;
-            const value = Math.round(yMax * (1 - ratio));
+            const value = Math.round(yMax - ratio * (yMax - yMin));
             return <g key={index}><line x1={left} x2={chartW - right} y1={y} y2={y} stroke="#b9d8cc" strokeOpacity=".18" strokeDasharray="4 5"/><text x={left - 8} y={y + 4} textAnchor="end" fontSize="10" fill="#b9d8cc">{value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value}</text></g>;
           })}
           {area && <path d={area} fill="url(#rootwise-lux-fill)"/>}
