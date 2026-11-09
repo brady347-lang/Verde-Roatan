@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
+const api = read('./api.ts');
+const supplier = read('../components/SupplierOnboardingPanel.tsx');
+const migration = read('../../supabase/migrations/20261109000400_publish_only_approved_supplier_products.sql');
+
+assert.match(api, /listing_status === 'approved'/);
+assert.match(api, /image_review_status === 'approved'/);
+assert.match(api, /current\.is_active === true/);
+assert.match(api, /approvedSupplierItems/);
+assert.match(api, /productReadSucceeded && current/);
+assert.match(api, /!workerReadSucceeded && !productReadSucceeded/);
+assert.match(supplier, /listing_status=eq\.pending_review&order=created_at\.asc/);
+assert.doesNotMatch(supplier, /listing_status=eq\.pending_review&is_active=eq\.false/);
+assert.match(supplier, /Prefer: 'return=representation'/);
+assert.match(supplier, /updatedRows\.length !== 1/);
+assert.match(supplier, /onCatalogChanged\?\./);
+assert.match(migration, /listing_status is distinct from 'approved'/);
+assert.match(migration, /image_review_status is distinct from 'approved'/);
+assert.match(migration, /drop policy if exists "Public can view active products"/);
+assert.match(migration, /add constraint products_active_requires_approval/);
+assert.match(migration, /validate constraint products_active_requires_approval/);
+assert.match(migration, /listing_status = 'approved'/);
+assert.match(migration, /image_review_status = 'approved'/);
+console.log('catalogPublication tests passed');

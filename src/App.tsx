@@ -2047,6 +2047,8 @@ export default function App() {
               }
               onNavigateToIdentify={() => setTab('id')}
               onOpenGardenAdvisor={() => setIsGardenAdvisorOpen(true)}
+              cartCount={cartCount}
+              onOpenCart={() => setTab('request')}
             />
           )}
 
@@ -2145,6 +2147,8 @@ export default function App() {
               lang={lang}
               session={session}
               isAdmin={isAdmin}
+              onNavigate={(nextTab) => setTab(nextTab as TabType)}
+              onRefreshCatalog={refreshCatalog}
               onSignIn={handleSignIn}
               onTemporarySignIn={handleTemporarySignIn}
               onSignUp={handleSignUp}

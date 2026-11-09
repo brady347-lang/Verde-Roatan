@@ -252,79 +252,52 @@ export const INITIAL_NOTIFICATIONS: NotificationEvent[] = [
   }
 ];
 
-// Local state retrieval and persistence helpers
+// Account-scoped local cache. Never read the old global keys: they can contain
+// another signed-in person's orders, financial data, supplier requests, or notifications.
 const STORAGE_ORDERS_KEY = 'verde_orders_v2';
 const STORAGE_TXNS_KEY = 'verde_transactions_v2';
 const STORAGE_SUP_REQ_KEY = 'verde_supplier_requests_v2';
 const STORAGE_NOTIFS_KEY = 'verde_notifications_v2';
 
-export function loadSavedOrders(): ActiveOrder[] {
+function scopedStorageKey(base: string): string {
   try {
-    const raw = localStorage.getItem(STORAGE_ORDERS_KEY);
-    return raw ? JSON.parse(raw) : INITIAL_ORDERS;
+    const session = JSON.parse(localStorage.getItem('verde_auth_session') || 'null');
+    const userId = typeof session?.user?.id === 'string' ? session.user.id : '';
+    return userId ? base + '_user_' + userId : base + '_guest';
   } catch {
-    return INITIAL_ORDERS;
+    return base + '_guest';
   }
 }
 
-export function saveOrders(orders: ActiveOrder[]): void {
+function loadScoped<T>(base: string): T[] {
   try {
-    localStorage.setItem(STORAGE_ORDERS_KEY, JSON.stringify(orders));
-  } catch (err) {
-    console.error('Failed to save orders to localStorage', err);
-  }
-}
-
-export function loadSavedTransactions(): TransactionRecord[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_TXNS_KEY);
-    return raw ? JSON.parse(raw) : INITIAL_TRANSACTIONS;
+    const raw = localStorage.getItem(scopedStorageKey(base));
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    return INITIAL_TRANSACTIONS;
+    return [];
   }
 }
 
-export function saveTransactions(txns: TransactionRecord[]): void {
+function saveScoped<T>(base: string, value: T[]): void {
   try {
-    localStorage.setItem(STORAGE_TXNS_KEY, JSON.stringify(txns));
+    localStorage.setItem(scopedStorageKey(base), JSON.stringify(value));
   } catch (err) {
-    console.error('Failed to save transactions to localStorage', err);
+    console.error('Failed to save account-scoped local data', err);
   }
 }
 
-export function loadSavedSupplierRequests(): SupplierPurchaseRequest[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_SUP_REQ_KEY);
-    return raw ? JSON.parse(raw) : INITIAL_SUPPLIER_PURCHASE_REQUESTS;
-  } catch {
-    return INITIAL_SUPPLIER_PURCHASE_REQUESTS;
-  }
-}
+export function loadSavedOrders(): ActiveOrder[] { return loadScoped<ActiveOrder>(STORAGE_ORDERS_KEY); }
+export function saveOrders(orders: ActiveOrder[]): void { saveScoped(STORAGE_ORDERS_KEY, orders); }
 
-export function saveSupplierRequests(requests: SupplierPurchaseRequest[]): void {
-  try {
-    localStorage.setItem(STORAGE_SUP_REQ_KEY, JSON.stringify(requests));
-  } catch (err) {
-    console.error('Failed to save supplier requests', err);
-  }
-}
+export function loadSavedTransactions(): TransactionRecord[] { return loadScoped<TransactionRecord>(STORAGE_TXNS_KEY); }
+export function saveTransactions(txns: TransactionRecord[]): void { saveScoped(STORAGE_TXNS_KEY, txns); }
 
-export function loadSavedNotifications(): NotificationEvent[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_NOTIFS_KEY);
-    return raw ? JSON.parse(raw) : INITIAL_NOTIFICATIONS;
-  } catch {
-    return INITIAL_NOTIFICATIONS;
-  }
-}
+export function loadSavedSupplierRequests(): SupplierPurchaseRequest[] { return loadScoped<SupplierPurchaseRequest>(STORAGE_SUP_REQ_KEY); }
+export function saveSupplierRequests(requests: SupplierPurchaseRequest[]): void { saveScoped(STORAGE_SUP_REQ_KEY, requests); }
 
-export function saveNotifications(notifs: NotificationEvent[]): void {
-  try {
-    localStorage.setItem(STORAGE_NOTIFS_KEY, JSON.stringify(notifs));
-  } catch (err) {
-    console.error('Failed to save notifications', err);
-  }
-}
+export function loadSavedNotifications(): NotificationEvent[] { return loadScoped<NotificationEvent>(STORAGE_NOTIFS_KEY); }
+export function saveNotifications(notifs: NotificationEvent[]): void { saveScoped(STORAGE_NOTIFS_KEY, notifs);}
 
 export function createTransactionRecord(params: Omit<TransactionRecord, 'id' | 'timestamp'>): TransactionRecord {
   return {
