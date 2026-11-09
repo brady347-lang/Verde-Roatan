@@ -1056,7 +1056,7 @@ export default function App() {
             sender_role: 'admin',
             sender_name: 'Verde Order Desk',
             recipient_role: 'customer',
-            message: `Order #${orderCode} received! We are coordinating nursery pickup & delivery to ${zone?.name || 'Roatan'}.`,
+            message: `Order #${orderCode} received. Our team will confirm nursery assignment and delivery arrangements for ${zone?.name || 'Roatan'}.`,
             timestamp: new Date().toISOString()
           }
         ]
