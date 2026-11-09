@@ -1,0 +1,23 @@
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace 'com.rootwise.botanicalml'
+    compileSdk 35
+
+    defaultConfig {
+        minSdk 23
+        targetSdk 35
+    }
+
+    // TensorFlow Lite reads the model through AssetManager.openFd().
+    androidResources {
+        noCompress 'tflite'
+    }
+}
+
+dependencies {
+    implementation project(':capacitor-android')
+    implementation 'org.tensorflow:tensorflow-lite:2.16.1'
+}

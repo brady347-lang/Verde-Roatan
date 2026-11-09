@@ -1,5 +1,6 @@
 import { scientificNameOf, toNameList } from '../lib/catalogLocale';
 import { buildRuleBasedAdvice } from '../lib/botanicalRules';
+import { tryLocalBotanicalIdentification } from './localBotanicalMl';
 import {
   AI_WORKER_URL,
   API_URL,
@@ -488,6 +489,19 @@ export async function analyzeBotanicalImage(
   lang: 'en' | 'es',
   token?: string
 ): Promise<AIAnalysisResult> {
+  // Plant scans attempt the installed Android model first. Pest analysis remains on
+  // the existing service. An absent model/catalog is a normal state, not an error.
+  let localResult: AIAnalysisResult | null = null;
+  if (mode === 'plant') {
+    try {
+      localResult = await tryLocalBotanicalIdentification(base64Image);
+      // A confident on-device candidate is returned without requiring network access.
+      if (localResult?.matched) return localResult;
+    } catch (error) {
+      console.warn('RootWise local botanical ML is unavailable; trying the existing analysis service.', error);
+    }
+  }
+
   const payloadBody = JSON.stringify({ mode, image: base64Image, lang });
   const endpoints = hasLocalApi() ? ['/api/analyze', AI_WORKER_URL] : [AI_WORKER_URL];
   let lastError: Error | null = null;
@@ -507,7 +521,10 @@ export async function analyzeBotanicalImage(
       });
       const result = await response.json().catch(() => ({}));
       if (response.ok && result.status === 'success' && (result.verified_botanical_record || result.result || result.candidates)) {
-        return result as AIAnalysisResult;
+        const remoteResult = result as AIAnalysisResult;
+        // Keep the local model's visual evidence attached to remote enrichment.
+        if (localResult?.ml_visual_evidence) remoteResult.ml_visual_evidence = localResult.ml_visual_evidence;
+        return remoteResult;
       }
       lastError = new Error(result.error || result.message || `Plant analysis failed (${response.status}).`);
     } catch (error) {
@@ -515,6 +532,15 @@ export async function analyzeBotanicalImage(
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  // If cloud enrichment is unavailable, retain the local uncertain candidate instead
+  // of discarding useful offline evidence or claiming a verified identification.
+  if (localResult) {
+    return {
+      ...localResult,
+      notice: `${localResult.notice || 'The local model result is uncertain.'} ${lastError?.message || 'Cloud enrichment is unavailable.'}`
+    };
   }
 
   throw new Error(lastError?.message || 'Plant intelligence is temporarily unavailable. Please try again.');

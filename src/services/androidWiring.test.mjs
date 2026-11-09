@@ -127,3 +127,33 @@ assert.match(tools, /accepted: decision\.accept/);
 assert.match(tools, /rejectionReason: decision\.reason/);
 assert.match(tools, /Export JSON|Exportar JSON/);
 assert.match(tools, /Nothing is uploaded automatically|No se sube nada automáticamente/);
+
+
+// RootWise native botanical ML bridge: the Android model must run locally only when
+// both the trained model and a model-aligned, provenance-bearing catalog are present.
+const mlBridge = read('../../capacitor-plugins/rootwise-botanical-ml/index.ts');
+const mlPlugin = read('../../capacitor-plugins/rootwise-botanical-ml/android/src/main/java/com/rootwise/botanicalml/RootWiseBotanicalMLPlugin.java');
+const mlService = read('./localBotanicalMl.ts');
+const apiService = read('./api.ts');
+const rootPackage = JSON.parse(read('../../package.json'));
+assert.equal(rootPackage.dependencies['@rootwise/botanical-ml'], 'file:./capacitor-plugins/rootwise-botanical-ml');
+assert.match(mlBridge, /registerPlugin<RootWiseBotanicalMLPlugin>\('RootWiseBotanicalML'\)/);
+assert.match(mlPlugin, /@CapacitorPlugin\(name = "RootWiseBotanicalML"\)/);
+assert.match(mlPlugin, /interpreter\.run\(input, output\)/, 'native path must execute the real LiteRT interpreter');
+assert.match(mlPlugin, /getInputTensor\(0\)\.dataType\(\) != DataType\.FLOAT32/);
+assert.match(mlPlugin, /new int\[\]\{1, INPUT_HEIGHT, INPUT_WIDTH, 3\}/);
+assert.match(mlPlugin, /new int\[\]\{1, EMBEDDING_DIMENSION\}/);
+assert.match(mlPlugin, /MODEL_VERSION = "rootwise_mobilenetv3_512d_v1"/);
+assert.match(mlPlugin, /source_id/);
+assert.match(mlPlugin, /global_max_cosine_threshold_on_separate_negative_set/);
+assert.match(mlPlugin, /negative_sample_count/);
+assert.doesNotMatch(mlPlugin, /DEFAULT_THRESHOLD = 0\.65/);
+assert.match(mlPlugin, /referenceCatalogReady/);
+assert.match(mlPlugin, /result\.put\("ready", modelReady && catalogReady && runtimeReady\)/);
+assert.match(mlService, /Capacitor\.isNativePlatform\(\)/);
+assert.match(mlService, /if \(!readiness\.ready\) return null/);
+assert.doesNotMatch(mlService, /confidenceThreshold/);
+assert.match(apiService, /tryLocalBotanicalIdentification\(base64Image\)/);
+assert.match(apiService, /if \(localResult\?\.matched\) return localResult/);
+assert.match(apiService, /retain the local uncertain candidate/);
+assert.match(apiService, /mode === 'plant'/);
