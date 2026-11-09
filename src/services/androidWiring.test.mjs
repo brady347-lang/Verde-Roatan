@@ -21,6 +21,18 @@ assert.match(manifest, /android.hardware.camera"\s+android:required="false"/);
 assert.match(manifest, /android.hardware.sensor.light"\s+android:required="false"/);
 
 // The native plugin emits lightSensorError on a failed resume; the bridge must declare it and the UI must listen.
+// Android light-sensor diagnostics must distinguish missing hardware from a sensor that starts but never emits.
+assert.match(plugin, /getAmbientLightSensorInfo/);
+assert.match(plugin, /payload\.put\("available", lightSensor != null\)/);
+assert.match(bridge, /getAmbientLightSensorInfo\(\): Promise/);
+assert.match(tools, /getAmbientLightSensorInfo\(\)/);
+assert.match(tools, /sensorInfo\.available/);
+assert.match(tools, /Ambient-light sensor unavailable/);
+assert.match(tools, /produced no readings within 6 seconds/);
+
+// Light and compass share one listener, so stopping one must not unregister the other.
+assert.match(plugin, /unregisterListener\(this, lightSensor\)/);
+assert.match(plugin, /unregisterListener\(this, rotationSensor\)/);
 assert.match(plugin, /notifyListeners\("lightSensorError"/);
 assert.match(bridge, /addListener\(eventName: 'lightSensorError'/);
 assert.match(tools, /addListener\('lightSensorError'/);
