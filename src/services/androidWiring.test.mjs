@@ -9,6 +9,10 @@ const manifest = read('../../capacitor-plugins/rootwise-device-sensors/android/s
 const bridge = read('../../capacitor-plugins/rootwise-device-sensors/index.ts');
 const plugin = read('../../capacitor-plugins/rootwise-device-sensors/android/src/main/java/com/rootwise/devicesensors/RootWiseDeviceSensorsPlugin.java');
 const tools = read('../screens/ToolsScreen.tsx');
+const navigation = read('../components/Navigation.tsx');
+const communityHome = read('../screens/CommunityHomeScreen.tsx');
+const myRootWise = read('../screens/RootWiseHomeScreen.tsx');
+const app = read('../App.tsx');
 
 // Permissions: without CAMERA in the merged manifest Android never shows a camera prompt.
 for (const permission of ['CAMERA', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']) {
@@ -28,6 +32,19 @@ assert.match(tools, /errorListener\.remove\(\)/, 'the error listener must be rem
 assert.match(plugin, /handleOnPause\(\)[\s\S]*unregisterListener\(this\)[\s\S]*listening = false/);
 assert.match(plugin, /handleOnResume\(\)[\s\S]*shouldListen && !registerAmbientLightListener\(\)/);
 assert.match(plugin, /handleOnDestroy\(\)[\s\S]*unregisterListener\(this\)/);
+
+// Product navigation: Tools belongs inside Home; My RootWise owns the fourth dock position.
+assert.match(navigation, /id: 'home'/);
+assert.match(navigation, /id: 'explore'/);
+assert.match(navigation, /id: 'id'/);
+assert.match(navigation, /id: 'my-rootwise'/);
+assert.doesNotMatch(navigation, /id: 'tools'/, 'Tools must not occupy a bottom-navigation slot');
+assert.match(communityHome, /onNavigate\('tools'\)/, 'Home must expose the Tools entry point');
+assert.match(app, /tab === 'my-rootwise'/, 'My RootWise must have its own navigation destination');
+assert.match(app, /tab === 'tools'/, 'Tools must remain reachable from Home');
+assert.doesNotMatch(myRootWise, /onNavigate\('tools'\)/, 'My RootWise must stay focused on personal gardening intelligence');
+assert.match(tools, /id: 'light'/, 'the light meter must be available inside Tools');
+assert.doesNotMatch(tools, /luxInput/, 'normal light readings must come from sensors or camera, not manual lux entry');
 
 // GPS tracking safeguards in the screen.
 assert.match(tools, /tool !== 'area' && trackingActiveRef\.current/, 'tracking must stop when leaving the area tool');
