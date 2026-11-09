@@ -13,6 +13,7 @@ import { FieldPlotDiagram } from '../components/FieldPlotDiagram';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
 import { buildCalibrationProfile, estimateLuxFromCamera, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
+import { deleteGpsDiagnosticsSamples, listGpsDiagnosticsSamples, saveGpsDiagnosticsSample, type GpsDiagnosticsSample } from '../lib/gpsDiagnosticsStore';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = TrackPoint;
@@ -25,6 +26,8 @@ const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: strin
   compost: { en: 'Compost & soil blend', es: 'Compost y mezcla de suelo', terms: /compost|soil blend|soil mix|coir|worm cast/i },
   pavers: { en: 'Pavers & stepping stones', es: 'Adoquines y losas', terms: /paver|stepping stone|patio block|adoqu[ií]n|losa/i }
 };
+function cardinalDirection(degrees:number) { return ['N','NE','E','SE','S','SW','W','NW'][Math.round(degrees/45)%8]; }
+function gpsDistanceMeters(a:{lat:number;lon:number},b:{lat:number;lon:number}) { const rad=(v:number)=>v*Math.PI/180; const x=rad(b.lon-a.lon)*6371000*Math.cos(rad((a.lat+b.lat)/2)); const y=rad(b.lat-a.lat)*6371000; return Math.hypot(x,y); }
 function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
   const map = useMap();
   useEffect(() => {
@@ -34,7 +37,7 @@ function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
       // Keep the walker centered at a useful field zoom instead of repeatedly fitting
       // the ever-growing route (which would zoom farther out as the user walks).
       if (map.getZoom() < 18) map.setZoom(18, { animate: false });
-      map.panTo([latest.lat, latest.lon], { animate: true, duration: 0.35 });
+      map.panTo([latest.lat, latest.lon], { animate: true, duration: 0.15 });
       return;
     }
     const bounds = points.map((point) => [point.lat, point.lon] as [number, number]);
@@ -125,6 +128,70 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [gpsError, setGpsError] = useState('');
   const [tracking, setTracking] = useState(false);
   const [trackingStatus, setTrackingStatus] = useState('');
+  const [liveFix, setLiveFix] = useState<{lat:number;lon:number;accuracy:number;altitude:number|null;speed:number|null;heading:number|null;timestamp:number}|null>(null);
+  const [compassHeading, setCompassHeading] = useState<number|null>(null);
+  const [compassPitch, setCompassPitch] = useState<number|null>(null);
+  const [compassRoll, setCompassRoll] = useState<number|null>(null);
+  const [compassAccuracy, setCompassAccuracy] = useState<number|null>(null);
+  const [compassStatus, setCompassStatus] = useState('');
+  const [compassActive, setCompassActive] = useState(false);
+  const [gpsDiagnosticsEnabled, setGpsDiagnosticsEnabled] = useState(false);
+  const gpsDiagnosticsEnabledRef = useRef(false);
+  const [gpsDiagnosticsCount, setGpsDiagnosticsCount] = useState(0);
+  const [gpsDiagnosticsStatus, setGpsDiagnosticsStatus] = useState('');
+  const gpsDiagnosticsSessionRef = useRef<string | null>(null);
+  const gpsDiagnosticsLastGpsWriteRef = useRef(0);
+  const gpsDiagnosticsLastCompassWriteRef = useRef(0);
+  const gpsDiagnosticsWrite = (sample: GpsDiagnosticsSample) => {
+    if (!gpsDiagnosticsEnabledRef.current) return;
+    void saveGpsDiagnosticsSample(sample).then(() => {
+      setGpsDiagnosticsCount(count => count + 1);
+      setGpsDiagnosticsStatus(es ? 'Datos de diagnóstico guardados solo en este dispositivo.' : 'Diagnostic data saved on this device only.');
+    }).catch(error => {
+      setGpsDiagnosticsStatus(es ? 'No se pudieron guardar los datos GPS en este dispositivo.' : 'Could not save GPS diagnostics on this device.');
+      console.warn('GPS diagnostics save failed.', error);
+    });
+  };
+  const clearGpsDiagnostics = async () => {
+    if (typeof window !== 'undefined' && !window.confirm(es ? '¿Eliminar todos los datos de diagnóstico GPS guardados en este dispositivo?' : 'Delete all GPS diagnostic data saved on this device?')) return;
+    try {
+      await deleteGpsDiagnosticsSamples();
+      setGpsDiagnosticsCount(0);
+      setGpsDiagnosticsStatus(es ? 'Datos de diagnóstico eliminados de este dispositivo.' : 'Diagnostic data deleted from this device.');
+    } catch (error) {
+      setGpsDiagnosticsStatus(es ? 'No se pudieron eliminar los datos GPS.' : 'Could not delete GPS diagnostics.');
+      console.warn('GPS diagnostics deletion failed.', error);
+    }
+  };
+  const exportGpsDiagnostics = async () => {
+    try {
+      const samples = await listGpsDiagnosticsSamples();
+      if (!samples.length) {
+        setGpsDiagnosticsStatus(es ? 'Todavía no hay datos para exportar.' : 'There is no diagnostic data to export yet.');
+        return;
+      }
+      const payload = { format: 'rootwise-gps-diagnostics-v1', exportedAt: new Date().toISOString(), sampleCount: samples.length, samples };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = 'rootwise-gps-diagnostics-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+      setGpsDiagnosticsStatus(es ? 'Exportación preparada. Revisa tus descargas.' : 'Export prepared. Check your downloads.');
+    } catch (error) {
+      setGpsDiagnosticsStatus(es ? 'No se pudieron leer los datos para exportar.' : 'Could not read diagnostic data for export.');
+      console.warn('GPS diagnostics export failed.', error);
+    }
+  };
+  useEffect(() => {
+    let active = true;
+    listGpsDiagnosticsSamples().then(samples => { if (active) setGpsDiagnosticsCount(samples.length); }).catch(error => console.warn('GPS diagnostics count unavailable.', error));
+    return () => { active = false; };
+  }, []);
+  const [compassCalibrationScore, setCompassCalibrationScore] = useState(0);
+  const compassBinsRef = useRef<Set<number>>(new Set());
+  const distanceOriginRef = useRef<{lat:number;lon:number}|null>(null);
   const gpsWatchRef = useRef<string | number | null>(null);
   const trackingActiveRef = useRef(false);
   const lastAcceptedFixRef = useRef<(TrackPoint & { timestamp?: number }) | null>(null);
@@ -365,6 +432,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   useEffect(() => () => {
     trackingActiveRef.current = false;
+    stopCompassSensor();
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
     cameraRequestGenerationRef.current += 1;
@@ -501,12 +569,25 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     const kind = classifyGpsError(raw);
     setGpsError(gpsErrorText(kind, raw));
   };
-  const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number) => {
+  const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number, altitude?: number|null, speed?: number|null, heading?: number|null) => {
+    setLiveFix({lat:latitude,lon:longitude,accuracy,altitude:altitude ?? null,speed:speed ?? null,heading:heading ?? null,timestamp:timestamp ?? Date.now()});
+    if (!distanceOriginRef.current) distanceOriginRef.current = {lat:latitude,lon:longitude};
     gpsHasFirstFixRef.current = true;
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
     setGpsError('');
-    const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp });
+    const fixTimestamp = timestamp ?? Date.now();
+    const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp: fixTimestamp });
+    if (gpsDiagnosticsEnabledRef.current && fixTimestamp - gpsDiagnosticsLastGpsWriteRef.current >= 900) {
+      gpsDiagnosticsLastGpsWriteRef.current = fixTimestamp;
+      const sessionId = gpsDiagnosticsSessionRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + Date.now());
+      gpsDiagnosticsSessionRef.current = sessionId;
+      gpsDiagnosticsWrite({
+        id: sessionId + ':gps:' + fixTimestamp, sessionId, kind: 'gps', timestamp: fixTimestamp,
+        latitude, longitude, accuracy, altitude: altitude ?? null, speed: speed ?? null,
+        deviceHeading: heading ?? null, accepted: decision.accept, ...(decision.accept === false ? { rejectionReason: decision.reason } : {})
+      });
+    }
     if (decision.accept === false) {
       if (decision.reason === 'inaccurate') setTrackingStatus(es ? 'Esperando una señal GPS más precisa…' : 'Waiting for a more accurate GPS fix…');
       else if (decision.reason === 'jump') setTrackingStatus(es ? 'Se ignoró un salto brusco del GPS.' : 'Ignored a sudden GPS jump.');
@@ -516,6 +597,44 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setPoints((current) => [...current, { lat: latitude, lon: longitude, accuracy }]);
     setTrackingStatus(es ? `Seguimiento en vivo · precisión ±${Math.round(accuracy)} m` : `Live tracking · ±${Math.round(accuracy)} m accuracy`);
   };
+  const startCompassSensor = async () => {
+    if (compassActive) return;
+    compassBinsRef.current = new Set();
+    setCompassCalibrationScore(0);
+    setCompassStatus(es ? 'Iniciando brújula…' : 'Starting compass…');
+    try {
+      if (!Capacitor.isNativePlatform()) throw new Error('NATIVE_COMPASS_REQUIRED');
+      const listener = await RootWiseDeviceSensors.addListener('compassReading', event => {
+        if (!Number.isFinite(event.heading)) return;
+        const heading = (event.heading + 360) % 360;
+        setCompassHeading(heading); setCompassPitch(event.pitch); setCompassRoll(event.roll); setCompassAccuracy(event.accuracy);
+        if (gpsDiagnosticsEnabledRef.current) {
+          const timestamp = Date.now();
+          const sessionId = gpsDiagnosticsSessionRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + timestamp);
+          gpsDiagnosticsSessionRef.current = sessionId;
+          if (timestamp - gpsDiagnosticsLastCompassWriteRef.current >= 900) {
+            gpsDiagnosticsLastCompassWriteRef.current = timestamp;
+            gpsDiagnosticsWrite({ id: sessionId + ':compass:' + timestamp, sessionId, kind: 'compass', timestamp, heading, pitch: event.pitch, roll: event.roll, sensorAccuracy: event.accuracy });
+          }
+        }
+        compassBinsRef.current.add(Math.floor(heading / 30));
+        setCompassCalibrationScore(Math.round(compassBinsRef.current.size / 12 * 100));
+      });
+      await RootWiseDeviceSensors.startCompass();
+      compassListenerRef.current = listener;
+      setCompassActive(true);
+      setCompassStatus(es ? 'Brújula activa. Gira lentamente el teléfono en forma de ocho.' : 'Compass active. Slowly move the phone in a figure-eight.');
+    } catch (error) {
+      setCompassStatus(es ? 'No se pudo iniciar la brújula nativa. Comprueba que el dispositivo tenga sensor magnético.' : 'Native compass could not start. Check that the device has a magnetic/rotation sensor.');
+    }
+  };
+  const stopCompassSensor = () => {
+    void RootWiseDeviceSensors.stopCompass().catch(() => undefined);
+    void compassListenerRef.current?.remove();
+    compassListenerRef.current = null;
+    setCompassActive(false);
+  };
+  const compassListenerRef = useRef<{remove:()=>Promise<void>}|null>(null);
   const startGpsTracking = async () => {
     if (trackingActiveRef.current) return;
     setGpsBusy(true);
@@ -523,12 +642,18 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     gpsHasFirstFixRef.current = false;
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
+    distanceOriginRef.current = null;
+    if (gpsDiagnosticsEnabledRef.current) {
+      gpsDiagnosticsSessionRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + Date.now();
+      gpsDiagnosticsLastGpsWriteRef.current = 0;
+      gpsDiagnosticsLastCompassWriteRef.current = 0;
+    }
     setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
       // Capacitor 7.1 uses `timeout` as the default Android watch interval; keep it short for walking.
-      const nativeWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 5000, minimumUpdateInterval: 1000 };
+      const nativeWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 5000, minimumUpdateInterval: 500 };
       const webWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
       if (Capacitor.isNativePlatform()) {
         let permission = await Geolocation.checkPermissions();
@@ -541,7 +666,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
             reportGpsError(error.message);
             return;
           }
-          if (position) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp);
+          if (position) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp, position.coords.altitude, position.coords.speed, position.coords.heading);
         });
         if (!trackingActiveRef.current) {
           // Stopped (or the screen closed) while the native watcher was still starting: release it and
@@ -678,6 +803,29 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       {tool === 'area' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medición de terreno por GPS' : 'GPS land measurement'}</h2></div>
         <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Inicia el seguimiento y camina por todo el perímetro. RootWise seguirá tu recorrido GPS y actualizará el mapa y el área en vivo.' : 'Start tracking and walk the full boundary. RootWise follows your GPS path and updates the map and area live.'}</p>
+        <div className="my-3 rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
+          <div className="flex items-center justify-between"><b className="text-sm"><Compass className="mr-1 inline h-4 w-4 text-[var(--palm)]"/> {es ? 'Calibración GPS y brújula' : 'GPS & compass calibration'}</b><span className="text-[10px] font-bold">{compassActive ? (es?'ACTIVA':'ACTIVE') : (es?'LISTA':'READY')}</span></div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-[var(--surface)] p-3"><span className="text-[10px] text-[var(--ink-soft)]">GPS ± accuracy</span><b className="block text-2xl tabular-nums">{liveFix ? liveFix.accuracy.toFixed(1)+' m' : '—'}</b><span className="text-[10px]">{liveFix && liveFix.accuracy <= 5 ? (es?'Alta confianza':'High confidence') : liveFix && liveFix.accuracy <= 10 ? (es?'Aceptable con cautela':'Usable with caution') : (es?'Esperando señal precisa':'Waiting for precise fix')}</span></div>
+            <div className="rounded-xl bg-[var(--surface)] p-3"><span className="text-[10px] text-[var(--ink-soft)]">{es?'Distancia desde inicio':'Distance from start'}</span><b className="block text-2xl tabular-nums">{liveFix && distanceOriginRef.current ? gpsDistanceMeters(distanceOriginRef.current, liveFix).toFixed(1)+' m' : '0.0 m'}</b><span className="text-[10px]">{es?'Objetivo de referencia: 10 m':'10 m reference target'}</span></div>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-xl bg-[var(--surface)] p-2"><span className="text-[var(--ink-soft)]">Lat</span><b className="block tabular-nums">{liveFix?.lat.toFixed(7) ?? '—'}</b><span className="text-[var(--ink-soft)]">Lon</span><b className="block tabular-nums">{liveFix?.lon.toFixed(7) ?? '—'}</b></div>
+            <div className="rounded-xl bg-[var(--surface)] p-2"><span className="text-[var(--ink-soft)]">{es?'Rumbo':'Heading'}</span><b className="block text-xl tabular-nums">{compassHeading !== null ? compassHeading.toFixed(0)+'° · '+cardinalDirection(compassHeading) : '—'}</b><span className="text-[var(--ink-soft)]">{es?'Pitch / Roll':'Pitch / Roll'}: {compassPitch?.toFixed(0) ?? '—'}° / {compassRoll?.toFixed(0) ?? '—'}°</span></div>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs">{es?'Cobertura de giro':'Rotation coverage'}: {compassCalibrationScore}%</span><span className="text-[10px] text-[var(--ink-soft)]">{compassAccuracy !== null ? (compassAccuracy >= 3 ? (es?'Sensor preciso':'Sensor high') : compassAccuracy === 2 ? (es?'Sensor medio':'Sensor medium') : (es?'Sensor bajo':'Sensor low')) : '—'}</span></div>
+          <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--surface)]"><div className="h-full rounded-full bg-[var(--palm)]" style={{width:compassCalibrationScore+'%'}}/></div>
+          <p className="mt-2 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es?'Mueve lentamente el teléfono en forma de ocho durante 15–20 segundos. Aléjalo de imanes, fundas magnéticas, vehículos y metal. El indicador muestra cobertura de orientación, no certifica una calibración del sistema.':'Slowly move the phone in a figure-eight for 15–20 seconds. Keep it away from magnets, magnetic cases, vehicles and metal. The indicator measures heading coverage; it does not certify OS calibration.'}</p>
+          <div className="mt-3 rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] p-3">
+            <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={gpsDiagnosticsEnabled} onChange={event => { gpsDiagnosticsEnabledRef.current = event.target.checked; setGpsDiagnosticsEnabled(event.target.checked); setGpsDiagnosticsStatus(event.target.checked ? (es ? 'La próxima sesión GPS guardará muestras locales.' : 'The next GPS session will save local samples.') : (es ? 'La captura de diagnóstico está desactivada.' : 'Diagnostic capture is off.')); }} className="mt-0.5" /><span><b>{es ? 'Guardar datos para mejorar la precisión GPS' : 'Save data to improve GPS accuracy'}</b><span className="mt-1 block text-[var(--ink-soft)]">{es ? 'Opcional. Guarda coordenadas, precisión, velocidad, rumbo y lecturas rechazadas en este teléfono. No se sube nada automáticamente.' : 'Optional. Saves coordinates, accuracy, speed, heading and rejected fixes on this phone. Nothing is uploaded automatically.'}</span></span></label>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-[var(--ink-soft)]">{gpsDiagnosticsCount} {es ? 'muestras guardadas' : 'samples saved'}</span><div className="flex gap-2"><button onClick={() => void exportGpsDiagnostics()} disabled={gpsDiagnosticsCount === 0} className="rounded-lg border border-[var(--line)] px-3 py-2 text-[10px] font-bold disabled:opacity-40">{es ? 'Exportar JSON' : 'Export JSON'}</button><button onClick={() => void clearGpsDiagnostics()} disabled={gpsDiagnosticsCount === 0} className="rounded-lg border border-[var(--line)] px-3 py-2 text-[10px] font-bold disabled:opacity-40">{es ? 'Borrar' : 'Clear'}</button></div></div>
+            {gpsDiagnosticsStatus && <p className="mt-2 text-[10px] text-[var(--ink-soft)]" role="status">{gpsDiagnosticsStatus}</p>}
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startCompassSensor} disabled={compassActive} className="rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{es?'Iniciar brújula':'Start compass'}</button><button onClick={stopCompassSensor} disabled={!compassActive} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es?'Detener':'Stop'}</button></div>
+          {compassStatus && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{compassStatus}</p>}
+          {liveFix && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">GPS: {liveFix.lat.toFixed(7)}, {liveFix.lon.toFixed(7)} · ±{liveFix.accuracy.toFixed(1)} m · {liveFix.altitude === null ? 'alt —' : 'alt '+liveFix.altitude.toFixed(1)+' m'} · {liveFix.speed === null ? 'speed —' : (liveFix.speed*3.6).toFixed(1)+' km/h'}</p>}
+          {liveFix && liveFix.accuracy > 10 && <p className="mt-2 rounded-lg bg-amber-100 p-2 text-[10px] text-amber-900">{es?'Este punto no cumple el objetivo de 10 m. Espera una señal mejor; la precisión indicada es la incertidumbre estimada por Android.':'This fix does not meet the 10 m target. Wait for a better signal; the displayed accuracy is Android’s estimated uncertainty.'}</p>}
+        </div>
         <div className="my-4 grid grid-cols-2 gap-2">
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length}</b><p className="text-xs text-[var(--ink-soft)]">{es ? 'Puntos capturados' : 'Points captured'}</p></div>
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length >= 3 ? (area >= 10000 ? (area / 10000).toFixed(3) : area.toFixed(1)) : manualArea.toFixed(1)}</b><p className="text-xs text-[var(--ink-soft)]">{points.length >= 3 && area >= 10000 ? 'ha' : 'm²'} {es ? 'área estimada' : 'estimated area'}</p></div>
