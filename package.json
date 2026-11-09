@@ -17,10 +17,11 @@
     "test:light": "node --import tsx src/services/lightIntelligence.test.mjs && node --import tsx src/services/cameraLightCalibration.test.mjs && node --import tsx src/services/luxReadingFilter.test.mjs",
     "test:gps": "node --import tsx src/services/gpsTracking.test.mjs",
     "test:android-wiring": "node src/services/androidWiring.test.mjs",
-    "test:field": "npm run test:gps && npm run test:android-wiring && npm run test:light && npm run test:catalog && npm run test:customer",
+    "test:field": "npm run test:gps && npm run test:android-wiring && npm run test:light && npm run test:catalog && npm run test:customer && npm run test:admin-dashboard",
     "test:camera-light": "node --import tsx src/services/cameraLightCalibration.test.mjs",
     "test:catalog": "node src/services/catalogPublication.test.mjs",
-    "test:customer": "node src/services/customerExperience.test.mjs"
+    "test:customer": "node src/services/customerExperience.test.mjs",
+    "test:admin-dashboard": "node src/services/adminDashboard.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
