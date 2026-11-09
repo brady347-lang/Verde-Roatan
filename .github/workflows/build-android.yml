@@ -12,6 +12,7 @@ on:
       - feature/rootwise-continuous-intelligence-engine
       - feature/rootwise-unified-development
       - fix/rootwise-ui-tools-gps-light-v2
+      - feat/rootwise-field-capture-customer-catalog
 
 permissions:
   contents: write
