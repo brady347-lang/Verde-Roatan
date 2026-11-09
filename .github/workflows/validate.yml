@@ -14,6 +14,21 @@ permissions:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: order_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      ORDER_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/order_test
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -35,6 +50,8 @@ jobs:
         run: npm run test:worker
       - name: Field tool tests (GPS tracking, Android wiring, light meter)
         run: npm run test:field
+      - name: Order, payment and inventory database integration tests
+        run: npm run test:orders
       - name: TypeScript check
         run: npm run lint
       - name: Production web build

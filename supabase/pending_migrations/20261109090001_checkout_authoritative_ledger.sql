@@ -70,6 +70,23 @@ BEGIN
     IF v_order.customer_id IS DISTINCT FROM p_customer_id THEN
       RAISE EXCEPTION 'Checkout token does not belong to this customer';
     END IF;
+
+    -- A reused token must describe the same checkout; never silently return a different cart's order.
+    IF v_order.currency IS DISTINCT FROM p_currency
+       OR v_order.delivery_zone_id IS DISTINCT FROM p_delivery_zone_id
+       OR EXISTS (
+         SELECT 1 FROM (
+           (SELECT oi.product_id, oi.quantity FROM public.order_items oi WHERE oi.order_id = v_order.id
+            EXCEPT
+            SELECT x.product_id, x.quantity FROM jsonb_to_recordset(p_items) AS x(product_id uuid, quantity integer))
+           UNION ALL
+           (SELECT x.product_id, x.quantity FROM jsonb_to_recordset(p_items) AS x(product_id uuid, quantity integer)
+            EXCEPT
+            SELECT oi.product_id, oi.quantity FROM public.order_items oi WHERE oi.order_id = v_order.id)
+         ) AS d
+       ) THEN
+      RAISE EXCEPTION 'Checkout token was already used for a different cart';
+    END IF;
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'product_id', oi.product_id,
       'product_name', oi.product_name,
@@ -100,7 +117,7 @@ BEGIN
   SELECT * INTO v_zone
   FROM public.delivery_zones
   WHERE id = p_delivery_zone_id AND is_active = true
-  FOR UPDATE;
+  FOR SHARE; -- a shared lock keeps the zone stable without serializing every checkout in it
   IF NOT FOUND THEN RAISE EXCEPTION 'Selected delivery zone is unavailable'; END IF;
   IF v_zone.currency NOT IN ('USD', 'HNL') THEN RAISE EXCEPTION 'Unsupported delivery zone currency'; END IF;
 
@@ -139,6 +156,23 @@ BEGIN
     END IF;
     IF v_order.customer_id IS DISTINCT FROM p_customer_id THEN
       RAISE EXCEPTION 'Checkout token does not belong to this customer';
+    END IF;
+
+    -- A reused token must describe the same checkout; never silently return a different cart's order.
+    IF v_order.currency IS DISTINCT FROM p_currency
+       OR v_order.delivery_zone_id IS DISTINCT FROM p_delivery_zone_id
+       OR EXISTS (
+         SELECT 1 FROM (
+           (SELECT oi.product_id, oi.quantity FROM public.order_items oi WHERE oi.order_id = v_order.id
+            EXCEPT
+            SELECT x.product_id, x.quantity FROM jsonb_to_recordset(p_items) AS x(product_id uuid, quantity integer))
+           UNION ALL
+           (SELECT x.product_id, x.quantity FROM jsonb_to_recordset(p_items) AS x(product_id uuid, quantity integer)
+            EXCEPT
+            SELECT oi.product_id, oi.quantity FROM public.order_items oi WHERE oi.order_id = v_order.id)
+         ) AS d
+       ) THEN
+      RAISE EXCEPTION 'Checkout token was already used for a different cart';
     END IF;
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'product_id', oi.product_id, 'product_name', oi.product_name,

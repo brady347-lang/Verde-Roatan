@@ -23,6 +23,7 @@ DECLARE
   v_transaction_status text := 'completed';
   v_transaction_created boolean := false;
   v_allowed boolean := false;
+  v_item record;
 BEGIN
   IF p_order_id IS NULL THEN
     RAISE EXCEPTION 'A valid order ID is required';
@@ -147,6 +148,31 @@ BEGIN
       END
   WHERE id = v_order.id;
 
+  -- Cancellation returns the stock that checkout reserved, exactly once.
+  -- The same-status guard above makes 'cancelled' reachable only once per order.
+  -- Products are locked in id order, matching checkout, to avoid deadlocks.
+  IF p_next_status = 'cancelled' THEN
+    FOR v_item IN
+      SELECT oi.product_id, SUM(oi.quantity)::integer AS quantity
+      FROM public.order_items oi
+      WHERE oi.order_id = v_order.id AND oi.product_id IS NOT NULL
+      GROUP BY oi.product_id
+      ORDER BY oi.product_id
+    LOOP
+      PERFORM 1 FROM public.products WHERE id = v_item.product_id FOR UPDATE;
+      UPDATE public.products
+      SET stock_quantity = stock_quantity + v_item.quantity, updated_at = now()
+      WHERE id = v_item.product_id;
+    END LOOP;
+
+    -- The order-level ledger entry was never paid; do not leave it pending forever.
+    UPDATE public.transaction_records
+    SET status = 'cancelled'
+    WHERE related_order_id = v_order.id
+      AND transaction_type = 'customer_order'
+      AND status = 'pending';
+  END IF;
+
   IF v_transaction_type IS NOT NULL AND NOT EXISTS (
     SELECT 1
     FROM public.transaction_records tr
@@ -155,14 +181,14 @@ BEGIN
   ) THEN
     INSERT INTO public.transaction_records (
       related_order_id, transaction_type, customer_name, supplier_id, supplier_name,
-      amount, currency, exchange_rate, status, responsible_name, responsible_role,
+      amount, currency, exchange_rate, payment_method, status, responsible_name, responsible_role,
       notes, reference_number
     ) VALUES (
       v_order.id, v_transaction_type, v_order.customer_name,
       v_order.assigned_supplier_id, v_order.assigned_supplier_name,
       v_transaction_amount,
       CASE WHEN v_order.currency IN ('HNL', 'USD') THEN v_order.currency ELSE 'HNL' END,
-      v_order.usd_to_hnl_rate, v_transaction_status, v_responsible_name, 'admin',
+      v_order.usd_to_hnl_rate, v_order.payment_method, v_transaction_status, v_responsible_name, 'admin',
       COALESCE(p_notes, 'Order status changed to ' || p_next_status),
       v_order.id::text
     );
