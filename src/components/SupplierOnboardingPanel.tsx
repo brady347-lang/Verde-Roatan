@@ -44,7 +44,8 @@ export const SupplierOnboardingPanel: React.FC<{
   session: AuthSession;
   isAdmin: boolean;
   temporarySupplier?: boolean;
-}> = ({ lang, session, isAdmin, temporarySupplier = false }) => {
+  onCatalogChanged?: () => Promise<void> | void;
+}> = ({ lang, session, isAdmin, temporarySupplier = false, onCatalogChanged }) => {
   const spanish = lang === 'es';
   const [businessName, setBusinessName] = useState('');
   const [contactName, setContactName] = useState(session.user.full_name || '');
@@ -73,7 +74,7 @@ export const SupplierOnboardingPanel: React.FC<{
 
   const loadProductReviews = useCallback(async () => {
     if (!isAdmin) return;
-    const rows = await requestRows('products?select=id,name,scientific_name,description,image_url,listing_status,image_review_status,listing_review_notes,image_review_notes,photo_quality_score,photo_quality_status,photo_quality_notes,photo_width,photo_height,photo_file_size_bytes,created_at&listing_status=eq.pending_review&is_active=eq.false&order=created_at.asc', session.access_token);
+    const rows = await requestRows('products?select=id,name,scientific_name,description,image_url,listing_status,image_review_status,listing_review_notes,image_review_notes,photo_quality_score,photo_quality_status,photo_quality_notes,photo_width,photo_height,photo_file_size_bytes,created_at&listing_status=eq.pending_review&order=created_at.asc', session.access_token);
     setProductReviews(Array.isArray(rows) ? rows : []);
   }, [isAdmin, session.access_token]);
 
@@ -111,9 +112,9 @@ export const SupplierOnboardingPanel: React.FC<{
     setLoading(true); setError(''); setMessage('');
     const note = (reviewNotes[item.id] || '').trim();
     try {
-      await requestRows('products?id=eq.' + encodeURIComponent(item.id), session.access_token, {
+      const updatedRows = await requestRows('products?id=eq.' + encodeURIComponent(item.id), session.access_token, {
         method: 'PATCH',
-        headers: { Prefer: 'return=minimal' },
+        headers: { Prefer: 'return=representation' },
         body: JSON.stringify({
           listing_status: decision === 'approve' ? 'approved' : 'rejected',
           image_review_status: decision === 'approve' ? 'approved' : 'rejected',
@@ -124,8 +125,10 @@ export const SupplierOnboardingPanel: React.FC<{
           is_active: decision === 'approve'
         })
       });
+      if (!Array.isArray(updatedRows) || updatedRows.length !== 1) throw new Error('No product row was updated. Refresh the review queue and verify administrator permissions.');
       setMessage(spanish ? (decision === 'approve' ? 'Producto aprobado y publicado.' : 'Producto rechazado.') : (decision === 'approve' ? 'Product approved and published.' : 'Product rejected.'));
       await loadProductReviews();
+      if (decision === 'approve') await onCatalogChanged?.();
     } catch (err: any) { setError(err.message || 'Could not review product.'); }
     finally { setLoading(false); }
   };
