@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../../supabase/pending_migrations/20261109090000_order_lifecycle_integrity.sql', import.meta.url), 'utf8');
 const checkoutMigration = readFileSync(new URL('../../supabase/pending_migrations/20261109090001_checkout_authoritative_ledger.sql', import.meta.url), 'utf8');
+const productVisibilityMigration = readFileSync(new URL('../../supabase/pending_migrations/20261109090002_product_visibility_hardening.sql', import.meta.url), 'utf8');
 const adminOrders = readFileSync(new URL('../components/AdminOrderCommandCenter.tsx', import.meta.url), 'utf8');
 
 assert.match(app, /p_order_id:\s*orderForSync\.id\s*,/, 'order status RPC must receive the UUID primary key');
@@ -44,6 +45,7 @@ assert.match(checkoutMigration, /'subtotal', v_order\.subtotal/, 'checkout must 
 assert.match(checkoutMigration, /'delivery_fee', v_order\.delivery_fee/, 'checkout must return the database delivery fee');
 assert.match(checkoutMigration, /'total', v_order\.total/, 'checkout must return the database total');
 assert.match(checkoutMigration, /ON CONFLICT \(checkout_token\) DO NOTHING/, 'checkout retries must be idempotent in the database');
+assert.ok(productVisibilityMigration.includes('DROP POLICY IF EXISTS "Public can view active products"'), 'the older permissive product policy must be removed so inactive nursery stock stays private');
 
 
 console.log('Order lifecycle and financial-ledger regression checks passed.');
