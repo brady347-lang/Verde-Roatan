@@ -2,8 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { Geolocation } from '@capacitor/geolocation';
 import { RootWiseDeviceSensors } from '@rootwise/device-sensors';
-import { CircleMarker, MapContainer, Polygon, Polyline, TileLayer, useMap } from 'react-leaflet';
-import 'leaflet/dist/leaflet.css';
+import { RootWiseMap } from '../components/RootWiseMap';
 import { Activity, Camera, Calculator, Check, CircleDot, Compass, Leaf, MapPin, Play, RotateCcw, Square, Sun, Trees, Waves } from 'lucide-react';
 import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
@@ -29,24 +28,7 @@ const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: strin
 };
 function cardinalDirection(degrees:number) { return ['N','NE','E','SE','S','SW','W','NW'][Math.round(degrees/45)%8]; }
 function gpsDistanceMeters(a:{lat:number;lon:number},b:{lat:number;lon:number}) { const rad=(v:number)=>v*Math.PI/180; const x=rad(b.lon-a.lon)*6371000*Math.cos(rad((a.lat+b.lat)/2)); const y=rad(b.lat-a.lat)*6371000; return Math.hypot(x,y); }
-function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
-  const map = useMap();
-  useEffect(() => {
-    if (!points.length) return;
-    const latest = points[points.length - 1];
-    if (follow) {
-      // Keep the walker centered at a useful field zoom instead of repeatedly fitting
-      // the ever-growing route (which would zoom farther out as the user walks).
-      if (map.getZoom() < 18) map.setZoom(18, { animate: false });
-      map.panTo([latest.lat, latest.lon], { animate: true, duration: 0.15 });
-      return;
-    }
-    const bounds = points.map((point) => [point.lat, point.lon] as [number, number]);
-    if (bounds.length === 1) map.setView(bounds[0], 18);
-    else map.fitBounds(bounds, { padding: [24, 24], maxZoom: 19 });
-  }, [map, points, follow]);
-  return null;
-}
+
 export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const es = lang === 'es';
   const [points, setPoints] = useState<Point[]>([]);
@@ -846,14 +828,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         {points.length > 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)]">
           <div className="flex items-center justify-between bg-[var(--surface-2)] px-3 py-2"><b className="text-xs">{es ? 'Vista del terreno' : 'Field view'}</b><span className="text-[10px] text-[var(--ink-soft)]">{points.length >= 3 ? (es ? 'Perímetro trazado' : 'Boundary plotted') : (es ? 'Puntos GPS' : 'GPS points')}</span></div>
           <div className="grid grid-cols-2 gap-1 bg-[var(--surface-2)] px-2 pb-2"><button type="button" onClick={() => setAreaView('map')} className={`rounded-lg px-3 py-2 text-xs font-bold ${areaView === 'map' ? 'bg-[var(--palm)] text-white' : 'bg-[var(--surface)] text-[var(--ink-soft)]'}`}>{es ? 'Mapa' : 'Map'}</button><button type="button" onClick={() => setAreaView('plot')} className={`rounded-lg px-3 py-2 text-xs font-bold ${areaView === 'plot' ? 'bg-[var(--palm)] text-white' : 'bg-[var(--surface)] text-[var(--ink-soft)]'}`}>{es ? 'Diagrama verde' : 'Green plot'}</button></div>
-          {areaView === 'map' ? <MapContainer center={[points[0].lat, points[0].lon]} zoom={18} scrollWheelZoom={false} style={{ height: '280px', width: '100%' }}>
-            <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <MapViewport points={points} follow={tracking} />
-            {(tracking || points.length < 3) && points.length >= 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: '#16845B', weight: 4 }} />}
-            {!tracking && points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: '#16845B', weight: 3, fillColor: '#39A879', fillOpacity: 0.28 }} />}
-            {points.length > 0 && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lon]} radius={7} pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#0b8f62', fillOpacity: 1 }} />}
-            {points.map((point, index) => <CircleMarker key={index} center={[point.lat, point.lon]} radius={7} pathOptions={{ color: '#FFFFFF', weight: 2, fillColor: '#126B4B', fillOpacity: 1 }} />)}
-          </MapContainer> : <FieldPlotDiagram points={points} lang={lang} areaM2={measurement.area} perimeterM={measurement.perimeter} />}
+          {areaView === 'map' ? <RootWiseMap points={points} follow={tracking} lang={lang} /> : <FieldPlotDiagram points={points} lang={lang} areaM2={measurement.area} perimeterM={measurement.perimeter} />}
           {selfCrossing && points.length >= 4 && <p className="border-t border-[var(--line)] p-2 text-[10px] text-amber-700">{es ? 'El recorrido se cruza consigo mismo. El área no es fiable; deshaz los últimos puntos o reinicia el perímetro sin cruzarlo.' : 'The walked path crosses itself, so the area shown is not reliable. Undo the last points, or reset and walk the boundary without crossing it.'}</p>}
         </div>}
         {points.length === 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)] p-3">
