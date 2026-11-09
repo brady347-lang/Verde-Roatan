@@ -7,6 +7,9 @@ import 'leaflet/dist/leaflet.css';
 import { Activity, Camera, Calculator, Check, CircleDot, Compass, Leaf, MapPin, Play, RotateCcw, Square, Sun, Trees, Waves } from 'lucide-react';
 import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
+import { listLightReadings, saveLightReading, type LightReadingSample, type LightReadingMethod } from '../lib/lightHistoryStore';
+import { LightHistoryChart } from '../components/LightHistoryChart';
+import { FieldPlotDiagram } from '../components/FieldPlotDiagram';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
 import { buildCalibrationProfile, estimateLuxFromCamera, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
@@ -48,6 +51,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [plotNotes, setPlotNotes] = useState('');
   const [editingPlotId, setEditingPlotId] = useState<string | null>(null);
   const [plotStorageError, setPlotStorageError] = useState('');
+  const [areaView, setAreaView] = useState<'map' | 'plot'>('map');
+  const [lightSamples, setLightSamples] = useState<LightReadingSample[]>([]);
+  const [lightRecording, setLightRecording] = useState(false);
+  const lightSessionIdRef = useRef<string | null>(null);
+  const lastLightSampleAtRef = useRef(0);
+  useEffect(() => {
+    let active = true;
+    listLightReadings(1200).then(rows => { if (active) setLightSamples(rows); }).catch(error => console.warn('Light history is unavailable on this device.', error));
+    return () => { active = false; };
+  }, []);
   useEffect(() => {
     let active = true;
     listSavedPlots().then((plots) => { if (active) setSavedPlots(plots); }).catch(() => {
@@ -169,6 +182,18 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setCameraResponse(null);
     setCameraEstimatedLux(null);
   };
+  const recordLightReading = (luxValue: number, method: LightReadingMethod) => {
+    const timestamp = Date.now();
+    if (!Number.isFinite(luxValue) || luxValue < 0 || timestamp - lastLightSampleAtRef.current < 900) return;
+    lastLightSampleAtRef.current = timestamp;
+    const sessionId = lightSessionIdRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'light-' + timestamp);
+    lightSessionIdRef.current = sessionId;
+    const fix = lastAcceptedFixRef.current;
+    const sample: LightReadingSample = { id: sessionId + ':' + timestamp, sessionId, timestamp, lux: Math.max(0, luxValue), method, ...(fix ? { latitude: fix.lat, longitude: fix.lon, accuracy: fix.accuracy } : {}) };
+    setLightSamples(current => [...current.slice(-1199), sample]);
+    void saveLightReading(sample).catch(error => console.warn('Could not save light reading locally.', error));
+  };
+
   const startCameraFallback = async () => {
     stopCameraFallback();
     const requestGeneration = ++cameraRequestGenerationRef.current;
@@ -227,6 +252,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       setCameraResponse(response);
       const estimate = cameraProfile ? estimateLuxFromCamera(response, cameraProfile) : null;
       setCameraEstimatedLux(estimate?.lux ?? null);
+      if (estimate?.lux !== undefined && estimate?.lux !== null) recordLightReading(estimate.lux, 'camera_estimated');
       setSensorStatus(estimate
         ? (es ? 'Cámara activa · lux estimados con el perfil calibrado de este teléfono.' : 'Camera active · lux estimated with this phone’s calibrated profile.')
         : (es ? 'Cámara activa · brillo relativo solamente. Añade lecturas profesionales en Calibración para estimar lux.' : 'Camera active · relative brightness only. Add professional readings in Calibration to estimate lux.'));
@@ -343,7 +369,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     stopCameraCalibration();
   }, []);
   useEffect(() => { if (tool !== 'area' && trackingActiveRef.current) void stopGpsTracking(); }, [tool]);
-  useEffect(() => { if (tool !== 'light') { if (sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } stopCameraFallback(); } }, [tool]);
+  useEffect(() => { if (tool !== 'light' && tool !== 'area' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); setLightRecording(false); lightSessionIdRef.current = null; stopCameraFallback(); } }, [tool]);
   const startLightSensor = async () => {
     stopCameraFallback();
     sensorRef.current?.stop();
@@ -351,6 +377,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
     setLiveLux(null);
     setSensorStatus(es ? 'Esperando la primera lectura del sensor…' : 'Waiting for the first sensor reading…');
+    if (!lightSessionIdRef.current) lightSessionIdRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'light-' + Date.now();
+    setLightRecording(true);
     try {
       if (Capacitor.isNativePlatform()) {
         let receivedReading = false;
@@ -359,6 +387,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(Math.max(0, event.lux));
+          recordLightReading(Math.max(0, event.lux), 'sensor_measured');
           setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
         });
         const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
@@ -396,6 +425,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(sensor.illuminance);
+          recordLightReading(sensor.illuminance, 'sensor_measured');
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
       });
@@ -409,6 +439,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       try { await startCameraFallback(); }
       catch (cameraError) {
         const detail = cameraError instanceof Error ? cameraError.message : '';
+        setLightRecording(false);
         setSensorStatus(es
           ? (/NotAllowed|denied|permission/i.test(detail) ? 'El permiso de cámara está denegado. Actívalo en Ajustes → Aplicaciones → Rootwise → Permisos → Cámara.' : 'No se pudo iniciar el sensor ni la cámara. Comprueba los permisos y vuelve a intentarlo.')
           : (/NotAllowed|denied|permission/i.test(detail) ? 'Camera permission is denied. Enable it in Settings → Apps → Rootwise → Permissions → Camera.' : 'Neither the light sensor nor camera could start. Check permissions and try again.'));
@@ -422,6 +453,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     sensorTimeoutRef.current = null;
     stopCameraFallback();
     setLiveLux(null);
+    setLightRecording(false);
+    lightSessionIdRef.current = null;
     setSensorStatus(es ? 'Sensor detenido.' : 'Sensor stopped.');
   };
   const openPhoneLocationSettings = async () => {
@@ -485,7 +518,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
-      const options = { enableHighAccuracy: true, maximumAge: 1000, timeout: 20000 };
+      const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 45000, minimumUpdateInterval: 1000 };
       if (Capacitor.isNativePlatform()) {
         let permission = await Geolocation.checkPermissions();
         if (!hasPreciseLocation(permission)) permission = await Geolocation.requestPermissions();
@@ -506,6 +539,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           return;
         }
         gpsWatchRef.current = watchId;
+        // Seed the map with a fresh fix immediately; the watch continues delivering live movement.
+        void Geolocation.getCurrentPosition({ enableHighAccuracy: true, maximumAge: 0, timeout: 45000 })
+          .then(position => { if (trackingActiveRef.current) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp); })
+          .catch(error => { if (trackingActiveRef.current && !gpsHasFirstFixRef.current) { setTrackingStatus(es ? 'GPS activo · buscando la primera posición…' : 'GPS active · searching for the first position…'); console.warn('Initial GPS fix is pending; live watch remains active.', error); } });
       } else {
         if (!navigator.geolocation) throw new Error('GEOLOCATION_UNAVAILABLE');
         if (!window.isSecureContext) throw new Error('GEOLOCATION_REQUIRES_HTTPS');
@@ -525,7 +562,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           if (!trackingActiveRef.current || gpsHasFirstFixRef.current) return;
           setTrackingStatus(es ? 'GPS sigue buscando señal. Mantén RootWise abierto, activa Ubicación precisa y prueba al aire libre.' : 'GPS is still waiting for a fix. Keep RootWise open, enable Precise location and try outdoors.');
           setGpsError(es ? 'Todavía no se recibió una posición GPS. Comprueba Ubicación y vuelve a intentarlo en un espacio abierto.' : 'No GPS position has arrived yet. Check Location and try again in an open area.');
-        }, 25000);
+        }, 30000);
       }
     } catch (error) {
       trackingActiveRef.current = false;
@@ -636,17 +673,17 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         </div>
         {points.length > 0 && <div className="mb-3 rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]"><p>{es ? 'Perímetro estimado' : 'Estimated perimeter'}: <b className="text-[var(--ink)]">{measurement.perimeter.toFixed(1)} m</b></p><p>{es ? 'Precisión GPS promedio' : 'Average GPS accuracy'}: <b className="text-[var(--ink)]">{(points.reduce((sum, point) => sum + point.accuracy, 0) / points.length).toFixed(1)} m</b></p></div>}
         {points.length > 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)]">
-          <div className="flex items-center justify-between bg-[var(--surface-2)] px-3 py-2"><b className="text-xs">{es ? "Mapa del terreno medido" : "Measured land map"}</b><span className="text-[10px] text-[var(--ink-soft)]">{points.length >= 3 ? (es ? "Perímetro trazado" : "Boundary plotted") : (es ? "Puntos GPS" : "GPS points")}</span></div>
-          <MapContainer center={[points[0].lat, points[0].lon]} zoom={18} scrollWheelZoom={false} style={{ height: "280px", width: "100%" }}>
+          <div className="flex items-center justify-between bg-[var(--surface-2)] px-3 py-2"><b className="text-xs">{es ? 'Vista del terreno' : 'Field view'}</b><span className="text-[10px] text-[var(--ink-soft)]">{points.length >= 3 ? (es ? 'Perímetro trazado' : 'Boundary plotted') : (es ? 'Puntos GPS' : 'GPS points')}</span></div>
+          <div className="grid grid-cols-2 gap-1 bg-[var(--surface-2)] px-2 pb-2"><button type="button" onClick={() => setAreaView('map')} className={`rounded-lg px-3 py-2 text-xs font-bold ${areaView === 'map' ? 'bg-[var(--palm)] text-white' : 'bg-[var(--surface)] text-[var(--ink-soft)]'}`}>{es ? 'Mapa' : 'Map'}</button><button type="button" onClick={() => setAreaView('plot')} className={`rounded-lg px-3 py-2 text-xs font-bold ${areaView === 'plot' ? 'bg-[var(--palm)] text-white' : 'bg-[var(--surface)] text-[var(--ink-soft)]'}`}>{es ? 'Diagrama verde' : 'Green plot'}</button></div>
+          {areaView === 'map' ? <MapContainer center={[points[0].lat, points[0].lon]} zoom={18} scrollWheelZoom={false} style={{ height: '280px', width: '100%' }}>
             <TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <MapViewport points={points} follow={tracking} />
-            {(tracking || points.length < 3) && points.length >= 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 4 }} />}
-            {!tracking && points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: "#16845B", weight: 3, fillColor: "#39A879", fillOpacity: 0.28 }} />}
+            {(tracking || points.length < 3) && points.length >= 2 && <Polyline positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: '#16845B', weight: 4 }} />}
+            {!tracking && points.length >= 3 && <Polygon positions={points.map((point) => [point.lat, point.lon] as [number, number])} pathOptions={{ color: '#16845B', weight: 3, fillColor: '#39A879', fillOpacity: 0.28 }} />}
             {points.length > 0 && <CircleMarker center={[points[points.length - 1].lat, points[points.length - 1].lon]} radius={7} pathOptions={{ color: '#ffffff', weight: 2, fillColor: '#0b8f62', fillOpacity: 1 }} />}
-            {points.map((point, index) => <CircleMarker key={index} center={[point.lat, point.lon]} radius={7} pathOptions={{ color: "#FFFFFF", weight: 2, fillColor: "#126B4B", fillOpacity: 1 }} />)}
-          </MapContainer>
-          {points.length < 3 && <p className="bg-[var(--surface-2)] px-3 py-2 text-[11px] text-[var(--ink-soft)]">{es ? "Captura al menos 3 esquinas para cerrar y calcular el área del polígono." : "Capture at least 3 corners to close the boundary and calculate its area."}</p>}
-          {!tracking && selfCrossing && <p role="alert" className="bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-800">{es ? 'El recorrido se cruza a sí mismo, así que el área mostrada no es fiable. Deshaz los últimos puntos o reinicia y camina el borde sin cruzarlo.' : 'The walked path crosses itself, so the area shown is not reliable. Undo the last points, or reset and walk the boundary without crossing it.'}</p>}
+            {points.map((point, index) => <CircleMarker key={index} center={[point.lat, point.lon]} radius={7} pathOptions={{ color: '#FFFFFF', weight: 2, fillColor: '#126B4B', fillOpacity: 1 }} />)}
+          </MapContainer> : <FieldPlotDiagram points={points} lang={lang} areaM2={measurement.area} perimeterM={measurement.perimeter} />}
+          {selfCrossing && points.length >= 4 && <p className="border-t border-[var(--line)] p-2 text-[10px] text-amber-700">{es ? 'El recorrido se cruza consigo mismo. El área no es fiable; deshaz los últimos puntos o reinicia el perímetro sin cruzarlo.' : 'The walked path crosses itself, so the area shown is not reliable. Undo the last points, or reset and walk the boundary without crossing it.'}</p>}
         </div>}
         {points.length === 0 && <div className="mb-3 overflow-hidden rounded-2xl border border-[var(--line)] p-3">
           <b className="text-xs">{es ? "Vista previa del área rectangular" : "Rectangular area preview"}</b>
@@ -722,6 +759,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         </div>
         <div className="grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={startGpsTracking} className="flex items-center justify-center gap-2 rounded-xl bg-[var(--palm)] px-3 py-3 text-sm font-bold text-white disabled:opacity-50"><Play className="h-4 w-4" />{gpsBusy ? (es ? 'Iniciando…' : 'Starting…') : (es ? 'Iniciar recorrido' : 'Start walk')}</button><button disabled={!tracking} onClick={() => void stopGpsTracking()} className="flex items-center justify-center gap-2 rounded-xl border border-[var(--line)] px-3 py-3 text-sm font-bold disabled:opacity-40"><Square className="h-4 w-4" />{es ? 'Detener recorrido' : 'Stop walk'}</button></div>
         {trackingStatus && <p role="status" className="mt-2 rounded-xl bg-[var(--surface-2)] p-2 text-xs text-[var(--ink-soft)]">{trackingStatus}</p>}
+        <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
+          <div className="flex items-center justify-between gap-2"><div><b className="text-xs">{es ? 'Registrar luz durante el recorrido' : 'Record light during this walk'}</b><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Guarda lux con hora y, cuando hay GPS, con la posición del recorrido.' : 'Saves lux with time and, when GPS is available, the walk position.'}</p></div><button type="button" onClick={() => lightRecording ? stopLightSensor() : void startLightSensor()} className={`shrink-0 rounded-xl px-3 py-2 text-[10px] font-bold ${lightRecording ? 'border border-[var(--line)] text-[var(--ink)]' : 'bg-[var(--palm)] text-white'}`}>{lightRecording ? (es ? 'Detener' : 'Stop') : (es ? 'Grabar luz' : 'Record light')}</button></div>
+          {sensorStatus && lightRecording && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{sensorStatus}</p>}
+          <video ref={cameraVideoRef} autoPlay muted playsInline className={`mt-2 aspect-video w-full rounded-xl bg-black object-cover ${cameraFallbackActive ? '' : 'hidden'}`} />
+          <canvas ref={cameraCanvasRef} className="hidden" />
+          {(lightRecording || lightSamples.length > 0) && <div className="mt-3"><LightHistoryChart readings={lightSamples.filter(sample => !lightSessionIdRef.current || sample.sessionId === lightSessionIdRef.current)} lang={lang} recording={lightRecording} /></div>}
+        </div>
         <div className="mt-2 grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={capturePoint} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><MapPin className="mr-1 inline h-4 w-4" />{es ? 'Capturar punto manual' : 'Add manual point'}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy || tracking} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><RotateCcw className="mr-1 inline h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
         {points.length > 0 && <button disabled={tracking} onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full disabled:opacity-40 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
         {points.length > 0 && <ol className="mt-3 space-y-1 text-[11px] text-[var(--ink-soft)]">{points.map((point, index) => <li key={index}>#{index + 1} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)} · ±{point.accuracy.toFixed(0)}m</li>)}</ol>}
@@ -773,6 +817,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
 
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
+        <div className="mt-3"><LightHistoryChart readings={lightSamples.filter(sample => !lightSessionIdRef.current || sample.sessionId === lightSessionIdRef.current)} lang={lang} recording={lightRecording} /></div>
         <div className="mt-3 rounded-2xl border border-[var(--line)] p-3">
           <div className="flex items-center gap-2"><Camera className="h-4 w-4 text-[var(--palm)]" /><b className="text-sm">{es ? 'Calibración de cámara' : 'Camera calibration'}</b></div>
           <p className="mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Rutina avanzada local para crear un perfil de respuesta de esta cámara. No se guardan ni se envían imágenes.' : 'Advanced on-device routine to create this camera’s response profile. Images are not saved or uploaded.'}</p>
