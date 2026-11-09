@@ -15,9 +15,9 @@ export const LIGHT_BAND_LIMITS: Array<{ below: number; band: LightBand }> = [
   { below: 100, band: 'deep_shade' }, { below: 1000, band: 'low_light' },
   { below: 10000, band: 'bright_indirect' }, { below: 25000, band: 'partial_sun' }
 ];
-export function bandForLux(lux: number): LightBand {
-  const safe = Number.isFinite(lux) ? Math.max(0, lux) : 0;
-  return LIGHT_BAND_LIMITS.find(limit => safe < limit.below)?.band ?? 'full_sun';
+export function bandForLux(lux: number): LightBand | null {
+  if (!Number.isFinite(lux) || lux < 0) return null;
+  return LIGHT_BAND_LIMITS.find(limit => lux < limit.below)?.band ?? 'full_sun';
 }
 
 const BAND_ORDER: Record<LightBand, number> = { deep_shade: 0, low_light: 1, bright_indirect: 2, partial_sun: 3, full_sun: 4 };
@@ -25,7 +25,7 @@ const REQUIREMENT_ORDER: Record<LightRequirement, number> = { deep_shade: 0, fil
 
 export type LightFit = 'matches' | 'close' | 'mismatch';
 export interface LightInterpretation {
-  lux: number; band: LightBand; method: LightMethod; measured: boolean;
+  lux: number | null; band: LightBand | null; method: LightMethod; measured: boolean;
   requirement: LightRequirement | null; fit: LightFit | null;
   direction: 'increase_light' | 'reduce_light' | 'keep' | null;
   summary: string;
@@ -52,8 +52,8 @@ export function interpretLight(
   now?: Date
 ): IntelligenceResult<LightInterpretation> {
   const valid = Number.isFinite(reading.lux) && reading.lux >= 0;
-  const lux = valid ? reading.lux : 0;
-  const band = bandForLux(lux);
+  const lux = valid ? reading.lux : null;
+  const band = valid ? bandForLux(reading.lux) : null;
   const measured = reading.method === 'sensor_measured';
   const caveats = [
     'A single reading does not show daily light, sun duration or season.',
@@ -62,15 +62,17 @@ export function interpretLight(
   if (!valid) caveats.push('Invalid reading ignored.');
   let fit: LightFit | null = null;
   let direction: LightInterpretation['direction'] = null;
-  if (requirement) {
+  if (requirement && valid && band !== null) {
     const diff = BAND_ORDER[band] - REQUIREMENT_ORDER[requirement.value];
     fit = Math.abs(diff) === 0 ? 'matches' : Math.abs(diff) === 1 ? 'close' : 'mismatch';
     direction = fit === 'matches' ? 'keep' : diff < 0 ? 'increase_light' : 'reduce_light';
     if (requirement.provenance !== 'verified_fact' && requirement.provenance !== 'source_supported') caveats.push('The plant\'s light requirement is not yet verified.');
   } else caveats.push('Plant not identified: showing the light level only.');
   const how = measured ? 'Measured' : 'Estimated';
-  const summary = `${how} ${Math.round(lux).toLocaleString('en-US')} lux (${band.replace('_', ' ')})` +
-    (requirement ? `; plant needs ${requirement.value.replace('_', ' ')} → ${fit}.` : '.');
+  const summary = valid
+    ? `${how} ${Math.round(lux as number).toLocaleString('en-US')} lux (${(band as LightBand).replace('_', ' ')})` +
+      (requirement ? `; plant needs ${requirement.value.replace('_', ' ')} → ${fit}.` : '.')
+    : 'No valid light reading available; try measuring again.';
   const provenance: Provenance = measured ? 'sensor_measured' : 'camera_estimated';
   // Requirement reliability limits the recommendation as well as the reading.
   const reqConfidence = requirement ? (requirement.provenance === 'verified_fact' || requirement.provenance === 'source_supported' ? 0.8 : 0.5) : 0.6;
