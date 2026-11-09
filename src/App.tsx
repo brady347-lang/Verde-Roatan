@@ -1173,6 +1173,10 @@ export default function App() {
       delivered: 'completed'
     };
     const serverNextStatus = targetStatus || progression[currentForSync] || currentForSync;
+    if (serverNextStatus === currentForSync) {
+      showToast('This order is already in that status.');
+      return;
+    }
 
     // Persist status changes through the existing Supabase RPC before updating the UI.
     if (isAdmin && session?.access_token) {
