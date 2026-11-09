@@ -97,27 +97,47 @@ function orientation(ax: number, ay: number, bx: number, by: number, cx: number,
   return value > 0 ? 1 : 2;
 }
 
+function onSegment(ax: number, ay: number, bx: number, by: number, px: number, py: number) {
+  return px <= Math.max(ax, bx) + 1e-12 && px >= Math.min(ax, bx) - 1e-12
+    && py <= Math.max(ay, by) + 1e-12 && py >= Math.min(ay, by) - 1e-12;
+}
+
+function segmentsIntersect(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }, d: { x: number; y: number }) {
+  const o1 = orientation(a.x, a.y, b.x, b.y, c.x, c.y);
+  const o2 = orientation(a.x, a.y, b.x, b.y, d.x, d.y);
+  const o3 = orientation(c.x, c.y, d.x, d.y, a.x, a.y);
+  const o4 = orientation(c.x, c.y, d.x, d.y, b.x, b.y);
+  if (o1 !== o2 && o3 !== o4) return true;
+  return (o1 === 0 && onSegment(a.x, a.y, b.x, b.y, c.x, c.y))
+    || (o2 === 0 && onSegment(a.x, a.y, b.x, b.y, d.x, d.y))
+    || (o3 === 0 && onSegment(c.x, c.y, d.x, d.y, a.x, a.y))
+    || (o4 === 0 && onSegment(c.x, c.y, d.x, d.y, b.x, b.y));
+}
+
 /**
- * True when the closed boundary crosses itself (e.g. a figure-eight walk). The shoelace area of a
- * self-crossing polygon is not the area the user walked around, so the UI warns instead of
- * presenting the number as reliable. Includes the closing edge (last point back to the first).
+ * True when the closed boundary crosses or overlaps itself (e.g. a figure-eight walk).
+ * Coordinates are projected locally with wrapped longitude so antimeridian plots work too.
  */
 export function hasSelfIntersection(points: Array<{ lat: number; lon: number }>): boolean {
   const n = points.length;
   if (n < 4) return false;
+  const meanLat = toRadians(points.reduce((sum, point) => sum + point.lat, 0) / n);
+  const sinLon = points.reduce((sum, point) => sum + Math.sin(toRadians(point.lon)), 0);
+  const cosLon = points.reduce((sum, point) => sum + Math.cos(toRadians(point.lon)), 0);
+  const lon0 = Math.atan2(sinLon, cosLon) * 180 / Math.PI;
+  const projected = points.map(point => ({
+    x: toRadians(((point.lon - lon0 + 540) % 360) - 180) * Math.cos(meanLat),
+    y: toRadians(point.lat)
+  }));
   for (let i = 0; i < n; i += 1) {
-    const a = points[i];
-    const b = points[(i + 1) % n];
+    const a = projected[i];
+    const b = projected[(i + 1) % n];
     for (let j = i + 1; j < n; j += 1) {
-      // Skip edges that share a vertex with edge i.
-      if (j === i || (j + 1) % n === i || (i + 1) % n === j) continue;
-      const c = points[j];
-      const d = points[(j + 1) % n];
-      const o1 = orientation(a.lon, a.lat, b.lon, b.lat, c.lon, c.lat);
-      const o2 = orientation(a.lon, a.lat, b.lon, b.lat, d.lon, d.lat);
-      const o3 = orientation(c.lon, c.lat, d.lon, d.lat, a.lon, a.lat);
-      const o4 = orientation(c.lon, c.lat, d.lon, d.lat, b.lon, b.lat);
-      if (o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0 && o1 !== o2 && o3 !== o4) return true;
+      // Skip edges that share a vertex with edge i, including first/last adjacency.
+      if ((j + 1) % n === i || (i + 1) % n === j) continue;
+      const c = projected[j];
+      const d = projected[(j + 1) % n];
+      if (segmentsIntersect(a, b, c, d)) return true;
     }
   }
   return false;
