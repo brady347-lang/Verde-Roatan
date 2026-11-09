@@ -5,6 +5,8 @@ export type LightReadingSample = {
   sessionId: string;
   timestamp: number;
   lux: number;
+  /** Unfiltered device/camera value retained for diagnostics; chart uses lux. */
+  rawLux?: number;
   method: LightReadingMethod;
   latitude?: number;
   longitude?: number;
