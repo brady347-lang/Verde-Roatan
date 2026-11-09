@@ -943,7 +943,23 @@ export default function App() {
     try {
       const res = await submitOrderCheckout(
         {
-          checkout_token: crypto.randomUUID(),
+          checkout_token: (() => {
+            const fingerprint = JSON.stringify({
+              name: details.name,
+              phone: details.phone,
+              address: details.address,
+              notes: details.notes,
+              timing: details.timing,
+              currency: details.currency,
+              consent: details.consent,
+              zone: selectedZoneId,
+              items: cart
+            });
+            if (!checkoutAttemptRef.current || checkoutAttemptRef.current.fingerprint !== fingerprint) {
+              checkoutAttemptRef.current = { fingerprint, token: crypto.randomUUID() };
+            }
+            return checkoutAttemptRef.current.token;
+          })(),
           customer_name: details.name,
           customer_phone: details.phone,
           delivery_zone_id: selectedZoneId,
@@ -1112,6 +1128,7 @@ export default function App() {
       setActiveOrders((prev) => [newOrder, ...prev]);
       setOrderResult(res);
       setCart([]);
+      checkoutAttemptRef.current = null;
       showToast(lang === 'es' ? '¡Pedido registrado! Rastreando entrega...' : 'Order registered! Tracking delivery...');
     } catch (err: any) {
       showToast(err.message || 'Order dispatch failed');
