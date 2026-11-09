@@ -20,7 +20,8 @@
     "test:field": "npm run test:gps && npm run test:android-wiring && npm run test:light && npm run test:catalog && npm run test:customer",
     "test:camera-light": "node --import tsx src/services/cameraLightCalibration.test.mjs",
     "test:catalog": "node src/services/catalogPublication.test.mjs",
-    "test:customer": "node src/services/customerExperience.test.mjs"
+    "test:customer": "node src/services/customerExperience.test.mjs",
+    "test:botanical-training": "node services/rootwise-botanical-training/scripts/manifestWiring.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
