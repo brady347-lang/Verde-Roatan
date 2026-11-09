@@ -42,7 +42,7 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
   const line = coords.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
   const area = coords.length ? `${line} L ${coords[coords.length - 1].x.toFixed(1)} ${(top + innerH).toFixed(1)} L ${coords[0].x.toFixed(1)} ${(top + innerH).toFixed(1)} Z` : '';
   const latest = visible[visible.length - 1];
-  const geoTaggedCount = visible.filter(sample => Number.isFinite(sample.latitude) && Number.isFinite(sample.longitude)).length;
+  const geoTaggedCount = visible.filter(sample => sample.latitude !== undefined && sample.longitude !== undefined).length;
   const sourceLabel = new Set(visible.map(sample => sample.method)).size > 1
     ? (es ? 'Sensor + cámara' : 'Sensor + camera')
     : latest?.method === 'camera_estimated' ? (es ? 'Cámara estimada' : 'Camera estimate')
