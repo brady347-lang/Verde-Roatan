@@ -140,7 +140,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [gpsDiagnosticsCount, setGpsDiagnosticsCount] = useState(0);
   const [gpsDiagnosticsStatus, setGpsDiagnosticsStatus] = useState('');
   const gpsDiagnosticsSessionRef = useRef<string | null>(null);
-  const gpsDiagnosticsLastWriteRef = useRef(0);
+  const gpsDiagnosticsLastGpsWriteRef = useRef(0);
+  const gpsDiagnosticsLastCompassWriteRef = useRef(0);
   const gpsDiagnosticsWrite = (sample: GpsDiagnosticsSample) => {
     if (!gpsDiagnosticsEnabledRef.current) return;
     void saveGpsDiagnosticsSample(sample).then(() => {
@@ -566,8 +567,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setGpsError('');
     const fixTimestamp = timestamp ?? Date.now();
     const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp: fixTimestamp });
-    if (gpsDiagnosticsEnabledRef.current && fixTimestamp - gpsDiagnosticsLastWriteRef.current >= 900) {
-      gpsDiagnosticsLastWriteRef.current = fixTimestamp;
+    if (gpsDiagnosticsEnabledRef.current && fixTimestamp - gpsDiagnosticsLastGpsWriteRef.current >= 900) {
+      gpsDiagnosticsLastGpsWriteRef.current = fixTimestamp;
       const sessionId = gpsDiagnosticsSessionRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + Date.now());
       gpsDiagnosticsSessionRef.current = sessionId;
       gpsDiagnosticsWrite({
@@ -600,8 +601,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           const timestamp = Date.now();
           const sessionId = gpsDiagnosticsSessionRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + timestamp);
           gpsDiagnosticsSessionRef.current = sessionId;
-          if (timestamp - gpsDiagnosticsLastWriteRef.current >= 900) {
-            gpsDiagnosticsLastWriteRef.current = timestamp;
+          if (timestamp - gpsDiagnosticsLastCompassWriteRef.current >= 900) {
+            gpsDiagnosticsLastCompassWriteRef.current = timestamp;
             gpsDiagnosticsWrite({ id: sessionId + ':compass:' + timestamp, sessionId, kind: 'compass', timestamp, heading, pitch: event.pitch, roll: event.roll, sensorAccuracy: event.accuracy });
           }
         }
@@ -633,7 +634,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     distanceOriginRef.current = null;
     if (gpsDiagnosticsEnabledRef.current) {
       gpsDiagnosticsSessionRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + Date.now();
-      gpsDiagnosticsLastWriteRef.current = 0;
+      gpsDiagnosticsLastGpsWriteRef.current = 0;
+      gpsDiagnosticsLastCompassWriteRef.current = 0;
     }
     setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
     const lastPoint = points[points.length - 1];
