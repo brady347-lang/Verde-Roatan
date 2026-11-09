@@ -201,6 +201,8 @@ export interface AuthUser {
   id: string;
   email: string;
   full_name?: string;
+  temporary_role?: 'customer' | 'supplier';
+  temporary_expires_at?: string;
 }
 
 export interface AuthSession {

@@ -38,5 +38,11 @@ assert.match(tools, /if \(!trackingActiveRef\.current\) \{[\s\S]*?clearWatch\(\{
 assert.match(tools, /map\.panTo\(\[latest\.lat, latest\.lon\]/, 'live map must follow the latest GPS point');
 assert.match(tools, /MapViewport points=\{points\} follow=\{tracking\}/, 'map follow mode must be tied to active tracking');
 assert.match(tools, /evaluateFix\(previousPoint, \{ lat: latitude, lon: longitude, accuracy, timestamp: Date\.now\(\) \}\)/, 'manual GPS points must pass accuracy and duplicate filtering');
+assert.match(tools, /gpsFirstFixTimeoutRef/, 'GPS must report when no first fix arrives');
+assert.match(tools, /GPS connected · waiting for the first location/, 'tracking must not claim live GPS before a fix');
+assert.match(tools, /25000/, 'the first-fix wait must have a bounded feedback timeout');
+assert.match(tools, /cameraRequestGenerationRef/, 'late camera permission results must be invalidated when the tool is stopped');
+assert.match(tools, /requestGeneration !== cameraRequestGenerationRef\.current/, 'stopped camera requests must not reactivate a stream');
+assert.doesNotMatch(tools, /luxInput/, 'ordinary light readings must not require manual lux entry');
 
 console.log('androidWiring tests passed');

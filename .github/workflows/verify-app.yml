@@ -2,9 +2,9 @@ name: Verify RootWise app
 
 on:
   push:
-    branches: [main]
+    branches: [main, feature/rootwise-unified-development, fix/rootwise-ui-tools-gps-light-v2]
   pull_request:
-    branches: [main]
+    branches: [main, feature/rootwise-unified-development]
 
 jobs:
   web-build:

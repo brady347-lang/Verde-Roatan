@@ -9,11 +9,11 @@ import { CatalogItem, Language } from '../types';
 import { deleteMeasuredPlot, listSavedPlots, saveMeasuredPlot, type SavedPlot } from '../lib/measuredPlotStore';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
-import { buildCalibrationProfile, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
+import { buildCalibrationProfile, estimateLuxFromCamera, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = TrackPoint;
-const CAMERA_CALIBRATION_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ENABLE_CAMERA_CALIBRATION === 'true';
+const CAMERA_CALIBRATION_ENABLED = true;
 type MaterialType = '' | 'mulch' | 'gravel' | 'topsoil' | 'compost' | 'pavers';
 const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: string; terms: RegExp }> = {
   mulch: { en: 'Natural mulch', es: 'Mulch natural', terms: /mulch|bark|wood chip|corteza/i },
@@ -125,11 +125,17 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [waste, setWaste] = useState('10');
   const [bagLiters, setBagLiters] = useState('40');
   const [tool, setTool] = useState<'area' | 'materials' | 'irrigation' | 'light'>('area');
-  const [luxInput, setLuxInput] = useState('0');
+  const [cameraFallbackActive, setCameraFallbackActive] = useState(false);
+  const [cameraResponse, setCameraResponse] = useState<number | null>(null);
+  const [cameraEstimatedLux, setCameraEstimatedLux] = useState<number | null>(null);
+  const cameraEstimateIntervalRef = useRef<number | null>(null);
+  const cameraRequestGenerationRef = useRef(0);
   const [liveLux, setLiveLux] = useState<number | null>(null);
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
   const sensorTimeoutRef = useRef<number | null>(null);
+  const gpsFirstFixTimeoutRef = useRef<number | null>(null);
+  const gpsHasFirstFixRef = useRef(false);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -146,24 +152,117 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     { stage: 'bright', title: 'Bright daylight', instruction: 'Point at a bright ground or wall surface. Never point the camera directly at the sun.', esTitle: 'Luz diurna intensa', esInstruction: 'Apunta a una pared o superficie brillante. Nunca apuntes directamente al sol.' }
   ];
   const stopCameraCalibration = () => {
+    cameraRequestGenerationRef.current += 1;
     cameraStreamRef.current?.getTracks().forEach(track => track.stop());
     cameraStreamRef.current = null;
     if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
   };
+  const stopCameraFallback = () => {
+    cameraRequestGenerationRef.current += 1;
+    if (cameraEstimateIntervalRef.current !== null) window.clearInterval(cameraEstimateIntervalRef.current);
+    cameraEstimateIntervalRef.current = null;
+    cameraStreamRef.current?.getTracks().forEach(track => track.stop());
+    cameraStreamRef.current = null;
+    if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
+    setCameraFallbackActive(false);
+    setCameraCalibrationOpen(false);
+    setCameraResponse(null);
+    setCameraEstimatedLux(null);
+  };
+  const startCameraFallback = async () => {
+    stopCameraFallback();
+    const requestGeneration = ++cameraRequestGenerationRef.current;
+    sensorRef.current?.stop();
+    sensorRef.current = null;
+    if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+    sensorTimeoutRef.current = null;
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('CAMERA_UNAVAILABLE');
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }
+    });
+    if (requestGeneration !== cameraRequestGenerationRef.current) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
+    const video = cameraVideoRef.current;
+    if (!video) {
+      stream.getTracks().forEach(track => track.stop());
+      throw new Error('CAMERA_PREVIEW_UNAVAILABLE');
+    }
+    cameraStreamRef.current = stream;
+    video.srcObject = stream;
+    try {
+      await video.play();
+    } catch (error) {
+      stream.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+      video.srcObject = null;
+      throw error;
+    }
+    if (requestGeneration !== cameraRequestGenerationRef.current) {
+      stream.getTracks().forEach(track => track.stop());
+      if (cameraStreamRef.current === stream) cameraStreamRef.current = null;
+      if (video.srcObject === stream) video.srcObject = null;
+      return;
+    }
+    setCameraCalibrationOpen(false);
+    setCameraFallbackActive(true);
+    setLiveLux(null);
+    setCameraResponse(null);
+    setCameraEstimatedLux(null);
+    setSensorStatus(es
+      ? 'Cámara activa. Se muestra brillo relativo; calibra con un luxómetro profesional para obtener lux.'
+      : 'Camera active. Showing relative brightness; calibrate with a professional lux meter to estimate lux.');
+    cameraEstimateIntervalRef.current = window.setInterval(() => {
+      const currentVideo = cameraVideoRef.current;
+      const canvas = cameraCanvasRef.current;
+      if (!currentVideo || !canvas || currentVideo.readyState < 2) return;
+      canvas.width = 160;
+      canvas.height = 120;
+      const context = canvas.getContext('2d', { willReadFrequently: true });
+      if (!context) return;
+      context.drawImage(currentVideo, 0, 0, canvas.width, canvas.height);
+      const response = summarizeFrame(context.getImageData(0, 0, canvas.width, canvas.height).data);
+      setCameraResponse(response);
+      const estimate = cameraProfile ? estimateLuxFromCamera(response, cameraProfile) : null;
+      setCameraEstimatedLux(estimate?.lux ?? null);
+      setSensorStatus(estimate
+        ? (es ? 'Cámara activa · lux estimados con el perfil calibrado de este teléfono.' : 'Camera active · lux estimated with this phone’s calibrated profile.')
+        : (es ? 'Cámara activa · brillo relativo solamente. Añade lecturas profesionales en Calibración para estimar lux.' : 'Camera active · relative brightness only. Add professional readings in Calibration to estimate lux.'));
+    }, 1000);
+  };
   const startCameraCalibration = async () => {
+    stopCameraFallback();
+    const requestGeneration = ++cameraRequestGenerationRef.current;
+    sensorRef.current?.stop();
+    sensorRef.current = null;
+    if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+    sensorTimeoutRef.current = null;
+    setLiveLux(null);
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraStatus(es ? 'La cámara requiere un navegador seguro compatible.' : 'Camera access requires a supported secure browser context.');
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } } });
+      if (requestGeneration !== cameraRequestGenerationRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
       cameraStreamRef.current = stream;
       setCameraCalibrationOpen(true);
       setCameraStageIndex(0);
       setCameraSamples([]);
       setCameraReferenceLux('');
       setCameraStatus(es ? 'Cámara lista. Sigue cada paso.' : 'Camera ready. Follow each step.');
-      window.setTimeout(() => { if (cameraVideoRef.current) { cameraVideoRef.current.srcObject = stream; void cameraVideoRef.current.play().catch(() => undefined); } }, 0);
+      window.setTimeout(() => {
+        if (requestGeneration !== cameraRequestGenerationRef.current) return;
+        if (cameraVideoRef.current) {
+          cameraVideoRef.current.srcObject = stream;
+          void cameraVideoRef.current.play().catch(() => undefined);
+        }
+      }, 0);
     } catch (error) {
       const name = error instanceof Error ? error.name : '';
       setCameraStatus(name === 'NotAllowedError' || name === 'SecurityError'
@@ -212,11 +311,15 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       }
     }
   };
-  const lux = liveLux ?? Math.max(0, Number(luxInput) || 0);
+  const lux = liveLux ?? cameraEstimatedLux ?? 0;
+  const hasMeasuredLux = liveLux !== null || cameraEstimatedLux !== null;
   const lightAssessment = useMemo(() => assessLight(lux), [lux]);
   const lightMatches = useMemo(() => recommendPlantsForLight(lux), [lux]);
   const stopGpsTracking = async () => {
     trackingActiveRef.current = false;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
+    gpsHasFirstFixRef.current = false;
     setTracking(false);
     if (gpsWatchRef.current !== null) {
       if (typeof gpsWatchRef.current === 'string') await Geolocation.clearWatch({ id: gpsWatchRef.current }).catch(() => undefined);
@@ -227,17 +330,22 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   useEffect(() => () => {
     trackingActiveRef.current = false;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
+    cameraRequestGenerationRef.current += 1;
     if (gpsWatchRef.current !== null) {
       if (typeof gpsWatchRef.current === 'string') void Geolocation.clearWatch({ id: gpsWatchRef.current });
       else if (typeof navigator !== 'undefined' && navigator.geolocation) navigator.geolocation.clearWatch(gpsWatchRef.current);
     }
     sensorRef.current?.stop();
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+    if (cameraEstimateIntervalRef.current !== null) window.clearInterval(cameraEstimateIntervalRef.current);
     stopCameraCalibration();
   }, []);
   useEffect(() => { if (tool !== 'area' && trackingActiveRef.current) void stopGpsTracking(); }, [tool]);
-  useEffect(() => { if (tool !== 'light' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } }, [tool]);
+  useEffect(() => { if (tool !== 'light') { if (sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); } stopCameraFallback(); } }, [tool]);
   const startLightSensor = async () => {
+    stopCameraFallback();
     sensorRef.current?.stop();
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
@@ -255,10 +363,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         });
         const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
           // The native layer could not re-register the sensor after the app resumed. Drop the stale
-          // live value so the manual lux entry is what the guidance is based on.
+          // Switch to the rear camera when the native sensor becomes unavailable.
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(null);
-          setSensorStatus(es ? 'El sensor de luz no pudo reanudarse al volver a la app. Toca «Leer sensor» de nuevo o introduce los lux manualmente.' : 'The light sensor could not resume when you returned to the app. Tap Read sensor again or enter lux manually.');
+          void startCameraFallback().catch(() => setSensorStatus(es ? 'El sensor no pudo reanudarse y la cámara tampoco está disponible. Revisa el permiso de cámara.' : 'The sensor could not resume and the camera is unavailable. Check camera permission.'));
         });
         try {
           await RootWiseDeviceSensors.startAmbientLight();
@@ -273,7 +381,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           void errorListener.remove();
         } };
         sensorTimeoutRef.current = window.setTimeout(() => {
-          if (!receivedReading) setSensorStatus(es ? 'El sensor inició, pero Android no ha enviado lecturas. Comprueba que el teléfono tenga sensor de luz ambiental y vuelve a intentarlo.' : 'The sensor started, but Android has not delivered a reading. Confirm the phone has an ambient light sensor and try again.');
+          if (!receivedReading) void startCameraFallback().catch(() => setSensorStatus(es ? 'No hay lectura del sensor y no se pudo abrir la cámara. Revisa el permiso de cámara.' : 'No sensor reading arrived and the camera could not start. Check camera permission.'));
         }, 6000);
         return;
       }
@@ -291,17 +399,20 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
       });
-      sensor.onerror = () => setSensorStatus(es ? 'No se pudo leer el sensor. Introduce los lux manualmente.' : 'Sensor read failed. Enter lux manually.');
+      sensor.onerror = () => { void startCameraFallback().catch(() => setSensorStatus(es ? 'Falló el sensor y no se pudo abrir la cámara.' : 'Sensor failed and the camera could not start.')); };
       sensor.start();
       sensorRef.current = sensor;
       sensorTimeoutRef.current = window.setTimeout(() => {
-        if (!receivedReading) setSensorStatus(es ? 'El sensor no ha enviado lecturas. Introduce los lux manualmente.' : 'The sensor has not delivered readings. Enter lux manually.');
+        if (!receivedReading) void startCameraFallback().catch(() => setSensorStatus(es ? 'El sensor no respondió y no se pudo abrir la cámara.' : 'The sensor did not respond and the camera could not start.'));
       }, 6000);
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : '';
-      setSensorStatus(es
-        ? (/UNAVAILABLE|does not expose/i.test(detail) ? 'Este dispositivo o navegador no expone el sensor de luz. Introduce los lux manualmente.' : 'No se pudo iniciar el sensor de luz. Introduce los lux manualmente.')
-        : (/UNAVAILABLE|does not expose/i.test(detail) ? 'This device does not expose an ambient light sensor to the app. Enter lux manually.' : 'Could not start the light sensor. Enter lux manually.'));
+    } catch {
+      try { await startCameraFallback(); }
+      catch (cameraError) {
+        const detail = cameraError instanceof Error ? cameraError.message : '';
+        setSensorStatus(es
+          ? (/NotAllowed|denied|permission/i.test(detail) ? 'El permiso de cámara está denegado. Actívalo en Ajustes → Aplicaciones → Rootwise → Permisos → Cámara.' : 'No se pudo iniciar el sensor ni la cámara. Comprueba los permisos y vuelve a intentarlo.')
+          : (/NotAllowed|denied|permission/i.test(detail) ? 'Camera permission is denied. Enable it in Settings → Apps → Rootwise → Permissions → Camera.' : 'Neither the light sensor nor camera could start. Check permissions and try again.'));
+      }
     }
   };
   const stopLightSensor = () => {
@@ -309,6 +420,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
     sensorTimeoutRef.current = null;
+    stopCameraFallback();
     setLiveLux(null);
     setSensorStatus(es ? 'Sensor detenido.' : 'Sensor stopped.');
   };
@@ -342,10 +454,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }
   };
   const reportGpsError = (raw: string | undefined) => {
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
     const kind = classifyGpsError(raw);
     setGpsError(gpsErrorText(kind, raw));
   };
   const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number) => {
+    gpsHasFirstFixRef.current = true;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
+    setGpsError('');
     const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp });
     if (decision.accept === false) {
       if (decision.reason === 'inaccurate') setTrackingStatus(es ? 'Esperando una señal GPS más precisa…' : 'Waiting for a more accurate GPS fix…');
@@ -360,6 +478,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     if (trackingActiveRef.current) return;
     setGpsBusy(true);
     setGpsError('');
+    gpsHasFirstFixRef.current = false;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
     setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
@@ -396,9 +517,20 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         );
       }
       setTracking(true);
-      setTrackingStatus(es ? 'Sigue caminando por el borde. El mapa se actualiza en vivo.' : 'Walk the boundary. Your map updates live as you move.');
+      if (gpsHasFirstFixRef.current) {
+        setTrackingStatus(es ? 'Seguimiento GPS en vivo · el mapa se actualiza al caminar.' : 'Live GPS tracking · the map updates as you walk.');
+      } else {
+        setTrackingStatus(es ? 'GPS conectado · esperando la primera ubicación…' : 'GPS connected · waiting for the first location…');
+        gpsFirstFixTimeoutRef.current = window.setTimeout(() => {
+          if (!trackingActiveRef.current || gpsHasFirstFixRef.current) return;
+          setTrackingStatus(es ? 'GPS sigue buscando señal. Mantén RootWise abierto, activa Ubicación precisa y prueba al aire libre.' : 'GPS is still waiting for a fix. Keep RootWise open, enable Precise location and try outdoors.');
+          setGpsError(es ? 'Todavía no se recibió una posición GPS. Comprueba Ubicación y vuelve a intentarlo en un espacio abierto.' : 'No GPS position has arrived yet. Check Location and try again in an open area.');
+        }, 25000);
+      }
     } catch (error) {
       trackingActiveRef.current = false;
+      if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+      gpsFirstFixTimeoutRef.current = null;
       const message = error instanceof Error ? error.message : '';
       if (message === 'GEOLOCATION_REQUIRES_HTTPS') {
         setGpsError(es ? 'La ubicación del navegador requiere HTTPS.' : 'Browser location requires HTTPS.');
@@ -637,8 +769,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       {tool === 'light' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medidor inteligente de luz' : 'Intelligent light meter'}</h2></div>
         <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Mide la iluminación del lugar y compárala con las necesidades de luz de las plantas del Centro de Conocimiento Botánico.' : 'Measure the site illumination and compare it with plant light requirements from the Botanical Knowledge Center.'}</p>
-        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{liveLux !== null ? Math.round(liveLux).toLocaleString() : Math.round(lux).toLocaleString()} lux</b><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
-        <label className="block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Lectura de luz (lux)' : 'Light reading (lux)'}<input type="number" min="0" max="200000" value={luxInput} onChange={event => { setLuxInput(event.target.value); setLiveLux(null); }} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
+        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{hasMeasuredLux ? Math.round(lux).toLocaleString() : cameraFallbackActive && cameraResponse !== null ? `${Math.round(cameraResponse * 100)}%` : '—'} {hasMeasuredLux ? 'lux' : cameraFallbackActive ? (es ? 'brillo relativo' : 'relative brightness') : 'lux'}</b><p className="text-[11px] font-semibold text-[var(--ink-soft)]">{liveLux !== null ? (es ? 'Medido por el sensor ambiental del dispositivo' : 'Measured by the device ambient-light sensor') : cameraEstimatedLux !== null ? (es ? 'Estimación de cámara calibrada · no sustituye un luxómetro' : 'Calibrated camera estimate · not a replacement for a lux meter') : cameraFallbackActive ? (es ? 'Brillo relativo de cámara · no es una lectura de lux' : 'Camera relative brightness · not a lux reading') : (es ? 'Aún no hay lectura. Toca «Leer sensor».' : 'No reading yet. Tap “Read sensor”.')}</p><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
+
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
         <div className="mt-3 rounded-2xl border border-[var(--line)] p-3">
@@ -648,7 +780,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           {CAMERA_CALIBRATION_ENABLED && (!cameraCalibrationOpen ? <button onClick={startCameraCalibration} className="mt-3 w-full rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold"><Camera className="mr-1 inline h-4 w-4" />{es ? 'Iniciar calibración guiada' : 'Start guided calibration'}</button> : <div className="mt-3 space-y-3">
             <div className="flex items-center justify-between text-xs"><b>{es ? 'Paso' : 'Step'} {cameraStageIndex + 1} / 4</b><span className="text-[var(--ink-soft)]">{Math.round(((cameraStageIndex + 1) / 4) * 100)}%</span></div>
             <div className="h-1.5 overflow-hidden rounded-full bg-[var(--surface-2)]"><div className="h-full rounded-full bg-[var(--palm)]" style={{ width: ((cameraStageIndex + 1) / 4) * 100 + '%' }} /></div>
-            <video ref={cameraVideoRef} autoPlay muted playsInline className="w-full rounded-xl bg-black aspect-video object-cover" />
+            <video ref={cameraVideoRef} autoPlay muted playsInline className={`w-full rounded-xl bg-black aspect-video object-cover ${cameraFallbackActive || cameraCalibrationOpen ? '' : 'hidden'}`} />
             <b className="block text-sm">{es ? cameraStages[cameraStageIndex].esTitle : cameraStages[cameraStageIndex].title}</b>
             <p className="text-xs text-[var(--ink-soft)]">{es ? cameraStages[cameraStageIndex].esInstruction : cameraStages[cameraStageIndex].instruction}</p>
             <label className="block text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Lux medidos con un luxómetro (opcional)' : 'Lux measured with a lux meter (optional)'}<input type="number" min="0" value={cameraReferenceLux} onChange={event => setCameraReferenceLux(event.target.value)} placeholder={es ? 'Dejar vacío si no tienes luxómetro' : 'Leave blank if no lux meter'} className="mt-1 w-full rounded-xl border border-[var(--line)] bg-[var(--bg)] p-3 text-sm text-[var(--ink)]" /></label>
@@ -659,7 +791,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           {CAMERA_CALIBRATION_ENABLED && cameraStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{cameraStatus}</p>}
         </div>
         <div className="mt-5"><h3 className="flex items-center gap-2 text-base font-extrabold"><Leaf className="h-4 w-4 text-[var(--palm)]" />{es ? 'Plantas recomendadas' : 'Recommended plants'}</h3><p className="mb-3 mt-1 text-xs text-[var(--ink-soft)]">{es ? 'Coincidencias basadas en los requisitos de luz registrados en el Centro de Conocimiento.' : 'Matches based on sunlight requirements recorded in the Botanical Knowledge Center.'}</p>
-          {lightMatches.length ? <div className="space-y-2">{lightMatches.map(match => <div key={match.profile.id} className="rounded-2xl border border-[var(--line)] p-3"><div className="flex items-start justify-between gap-2"><div><b className="text-sm">{match.profile.identification.common_names[es ? 'es' : 'en'][0] || match.profile.taxonomy.scientific_name}</b><p className="text-xs italic text-[var(--ink-soft)]">{match.profile.taxonomy.scientific_name}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${match.fit === 'strong' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{match.fit === 'strong' ? (es ? 'Buena coincidencia' : 'Strong fit') : (es ? 'Posible' : 'Possible fit')}</span></div><p className="mt-1 text-xs text-[var(--ink-soft)]">{match.reason}</p></div>)}</div> : <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay perfiles públicos coincidentes todavía.' : 'No matching public profiles are available yet.'}</p>}
+          {!hasMeasuredLux ? <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'Toma una lectura con el sensor para ver plantas recomendadas.' : 'Take a sensor reading to see recommended plants.'}</p> : lightMatches.length ? <div className="space-y-2">{lightMatches.map(match => <div key={match.profile.id} className="rounded-2xl border border-[var(--line)] p-3"><div className="flex items-start justify-between gap-2"><div><b className="text-sm">{match.profile.identification.common_names[es ? 'es' : 'en'][0] || match.profile.taxonomy.scientific_name}</b><p className="text-xs italic text-[var(--ink-soft)]">{match.profile.taxonomy.scientific_name}</p></div><span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${match.fit === 'strong' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}`}>{match.fit === 'strong' ? (es ? 'Buena coincidencia' : 'Strong fit') : (es ? 'Posible' : 'Possible fit')}</span></div><p className="mt-1 text-xs text-[var(--ink-soft)]">{match.reason} {match.profile.is_verified ? (es ? 'Requisito verificado.' : 'Requirement verified.') : (es ? 'Requisito aún sin verificar.' : 'Requirement not yet verified.')}</p></div>)}</div> : <p className="rounded-xl bg-[var(--surface-2)] p-3 text-xs text-[var(--ink-soft)]">{es ? 'No hay perfiles públicos coincidentes todavía.' : 'No matching public profiles are available yet.'}</p>}
         </div>
         <p className="mt-4 rounded-xl border border-dashed border-[var(--line)] p-3 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es ? 'Una lectura puntual de lux no mide la luz diaria total ni la radiación fotosintética (PPFD/DLI). El sensor depende del hardware y permisos del teléfono. Observa el lugar durante varias horas antes de plantar.' : 'A single lux reading does not measure daily light integral or photosynthetic radiation (PPFD/DLI). Sensor availability depends on phone hardware and permissions. Observe the location across several hours before planting.'}</p>
       </section>}

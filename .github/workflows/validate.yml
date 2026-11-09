@@ -3,9 +3,12 @@ on:
   push:
     branches:
       - safety/supabase-target-hardening
+      - feature/rootwise-unified-development
+      - fix/rootwise-ui-tools-gps-light-v2
   pull_request:
     branches:
       - main
+      - feature/rootwise-unified-development
 permissions:
   contents: read
 jobs:

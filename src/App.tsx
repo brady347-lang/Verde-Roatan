@@ -30,8 +30,11 @@ import {
   INITIAL_REGISTERED_SUPPLIERS,
   ROATAN_DELIVERY_ZONES,
   STRINGS,
-  checkAdminIdentity
+  checkAdminIdentity,
+  SUPABASE_PUBLISHABLE_KEY,
+  SUPABASE_URL
 } from './data/initialData';
+import { mergeGardenItems, pullGarden, pushGarden } from './services/gardenSync';
 import {
   BchRateResponse,
   analyzeBotanicalImage,
@@ -74,6 +77,8 @@ import { Header } from './components/Header';
 import { CurrencyWidget } from './components/CurrencyWidget';
 import { Navigation, TabType } from './components/Navigation';
 import { BottomSheet } from './components/BottomSheet';
+import { HomeScreen } from './screens/HomeScreen';
+import { CommunityHomeScreen } from './screens/CommunityHomeScreen';
 import { RootWiseHomeScreen } from './screens/RootWiseHomeScreen';
 import { ToolsScreen } from './screens/ToolsScreen';
 import { ShopScreen } from './screens/ShopScreen';
@@ -110,7 +115,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-const TAB_ORDER: TabType[] = ['home', 'tools', 'explore', 'plants', 'svc', 'request', 'id', 'account'];
+const TAB_ORDER: TabType[] = ['home', 'explore', 'id', 'my-rootwise', 'tools', 'plants', 'svc', 'request', 'account'];
 
 export default function App() {
   // --- Persistent State ---
@@ -250,6 +255,12 @@ export default function App() {
     }
   });
 
+  useEffect(() => {
+    if (session?.user?.temporary_role === 'supplier') {
+      setTab('account');
+    }
+  }, [session?.user?.id, session?.user?.temporary_role]);
+
   // STRICT ADMIN PERMISSION: Only true if user authenticated with Supabase password
   const isAdmin = Boolean(
     session?.user?.email &&
@@ -270,6 +281,9 @@ export default function App() {
     const restoreSession = async () => {
       if (!session?.access_token) return;
       try {
+        if (session.user.temporary_expires_at && Date.parse(session.user.temporary_expires_at) <= Date.now()) {
+          throw new Error('Temporary testing access has expired.');
+        }
         let activeSession = session;
         const expiresAt = Number(session.expires_at || 0);
         if (session.refresh_token && (!expiresAt || expiresAt <= Math.floor(Date.now() / 1000) + 60)) {
@@ -282,7 +296,9 @@ export default function App() {
             user: {
               id: refreshed.user?.id || session.user.id,
               email: refreshed.user?.email || session.user.email,
-              full_name: refreshed.user?.user_metadata?.full_name || session.user.full_name
+              full_name: refreshed.user?.user_metadata?.full_name || session.user.full_name,
+              temporary_role: refreshed.user?.app_metadata?.temporary_access_role || session.user.temporary_role,
+              temporary_expires_at: refreshed.user?.app_metadata?.temporary_access_expires_at || session.user.temporary_expires_at
             }
           };
         }
@@ -293,7 +309,9 @@ export default function App() {
           user: {
             id: verifiedUser.id || activeSession.user.id,
             email: verifiedUser.email || activeSession.user.email,
-            full_name: verifiedUser.user_metadata?.full_name || activeSession.user.full_name
+            full_name: verifiedUser.user_metadata?.full_name || activeSession.user.full_name,
+            temporary_role: verifiedUser.app_metadata?.temporary_access_role || activeSession.user.temporary_role,
+            temporary_expires_at: verifiedUser.app_metadata?.temporary_access_expires_at || activeSession.user.temporary_expires_at
           }
         };
         setSession(verifiedSession);
@@ -481,6 +499,33 @@ export default function App() {
   useEffect(() => {
     safeSetItem('verde_garden', JSON.stringify(garden));
   }, [garden]);
+
+  // Private garden sync (owner-only table). Best effort: the phone copy always remains the source of truth for photos.
+  const gardenSyncReady = useRef(false);
+  const [gardenSyncTick, setGardenSyncTick] = useState(0);
+  useEffect(() => {
+    gardenSyncReady.current = false;
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    if (!token || !userId || token === 'local-admin-token' || session?.user?.temporary_role) return;
+    let cancelled = false;
+    void pullGarden({ baseUrl: SUPABASE_URL, apiKey: SUPABASE_PUBLISHABLE_KEY, accessToken: token, userId }).then(result => {
+      if (cancelled) return;
+      if (result.ok && result.items.length) setGarden(current => mergeGardenItems(current, result.items) as GardenItem[]);
+      gardenSyncReady.current = result.ok;
+      if (result.ok) setGardenSyncTick(tick => tick + 1);
+    });
+    return () => { cancelled = true; };
+  }, [session?.access_token, session?.user?.id]);
+  useEffect(() => {
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    if (!gardenSyncReady.current || !token || !userId || !garden.length) return;
+    const timer = window.setTimeout(() => {
+      void pushGarden({ baseUrl: SUPABASE_URL, apiKey: SUPABASE_PUBLISHABLE_KEY, accessToken: token, userId }, garden);
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [garden, gardenSyncTick, session?.access_token, session?.user?.id]);
 
   useEffect(() => {
     safeSetItem('verde_catalog', JSON.stringify(catalog));
@@ -1543,7 +1588,9 @@ export default function App() {
         user: {
           id: data.user?.id || 'uid',
           email: data.user?.email || email,
-          full_name: data.user?.user_metadata?.full_name || email.split('@')[0]
+          full_name: data.user?.user_metadata?.full_name || email.split('@')[0],
+          temporary_role: data.user?.app_metadata?.temporary_access_role,
+          temporary_expires_at: data.user?.app_metadata?.temporary_access_expires_at
         }
       };
       setSession(newSession);
@@ -1556,6 +1603,34 @@ export default function App() {
           : 'Signed in successfully'
       );
     }
+  };
+
+  const handleTemporarySignIn = async (code: string) => {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/temporary-access`, {
+      method: 'POST',
+      headers: {
+        apikey: SUPABASE_PUBLISHABLE_KEY,
+        Authorization: `Bearer ${SUPABASE_PUBLISHABLE_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ action: 'redeem', code })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.access_token) {
+      throw new Error(data.error || 'Temporary access code is invalid or expired.');
+    }
+    const newSession: AuthSession = {
+      access_token: data.access_token,
+      refresh_token: data.refresh_token,
+      expires_at: data.expires_at || Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600),
+      user: data.user
+    };
+    setSession(newSession);
+    safeSetItem('verde_auth_session', JSON.stringify(newSession));
+    if (data.user?.temporary_role === 'supplier') setTab('account');
+    showToast(data.user?.temporary_role === 'supplier'
+      ? 'Temporary supplier workspace opened.'
+      : 'Temporary customer access opened.');
   };
 
   const handleSignOut = () => {
@@ -1898,12 +1973,23 @@ export default function App() {
               className="flex flex-col min-h-full will-change-transform"
             >
               {tab === 'home' && (
+            <CommunityHomeScreen
+              lang={lang}
+              displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
+              isSignedIn={Boolean(session?.user)}
+              onOpenMyRootWise={() => setTab('my-rootwise')}
+              onNavigate={(nextTab) => setTab(nextTab)}
+            />
+          )}
+
+          {tab === 'my-rootwise' && (
             <RootWiseHomeScreen
               lang={lang}
               displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
               gardenCount={garden.length}
               plantCount={currentCatalog.filter((item) => item.t === 'plant').length}
               catalog={currentCatalog}
+              garden={garden}
               onNavigate={(nextTab) => setTab(nextTab)}
               onStartIdentify={() => {
                 setIdentifyMode('plant');
@@ -2056,6 +2142,7 @@ export default function App() {
               session={session}
               isAdmin={isAdmin}
               onSignIn={handleSignIn}
+              onTemporarySignIn={handleTemporarySignIn}
               onSignUp={handleSignUp}
               onSignOut={handleSignOut}
               garden={garden}
@@ -2120,15 +2207,17 @@ export default function App() {
         </main>
 
         {/* Persistent Bottom Tab Navigation */}
-        <div className="app-bottom-nav shrink-0 px-3 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
-          <Navigation
-            activeTab={tab}
-            onSelectTab={(nextTab) => setTab(nextTab)}
-            cartCount={cartCount}
-            activeOrdersCount={activeOrders.length}
-            lang={lang}
-          />
-        </div>
+        {session?.user?.temporary_role !== 'supplier' && (
+          <div className="app-bottom-nav shrink-0 px-3 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
+            <Navigation
+              activeTab={tab}
+              onSelectTab={(nextTab) => setTab(nextTab)}
+              cartCount={cartCount}
+              activeOrdersCount={activeOrders.length}
+              lang={lang}
+            />
+          </div>
+        )}
 
         {/* Global Toast Notification */}
         {toastMessage && (
