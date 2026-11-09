@@ -75,7 +75,7 @@ for (const fragment of [
   'Geolocation.getCurrentPosition(',
   "setAreaView('plot')",
   'FieldPlotDiagram points={points}',
-  "recordLightReading(Math.max(0, event.lux), 'sensor_measured')",
+  "recordLightReading(rawValue, 'sensor_measured', displayValue)",
   'saveLightReading(sample)',
   'lightSamples.filter'
 ]) assert.ok(tools.includes(fragment), `missing field capture behavior: ${fragment}`);
