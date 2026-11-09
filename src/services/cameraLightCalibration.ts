@@ -85,8 +85,12 @@ export function estimateLuxFromCamera(response: number, profile: CameraCalibrati
   }
   const span = right.response - left.response;
   if (span <= 0) return null;
-  const ratio = (value - left.response) / span;
-  const lux = (left.referenceLux || 0) + ratio * ((right.referenceLux || 0) - (left.referenceLux || 0));
+  const ratio = Math.max(0, Math.min(1, (value - left.response) / span));
+  // Lux spans several orders of magnitude. Interpolate in log space so the camera's
+  // mid-range response does not imply a misleading arithmetic midpoint in lux.
+  const leftLux = left.referenceLux || 0;
+  const rightLux = right.referenceLux || 0;
+  const lux = Math.exp(Math.log(leftLux) + ratio * (Math.log(rightLux) - Math.log(leftLux)));
   const outside = value < points[0].response || value > points[points.length - 1].response;
   return { lux: Math.max(0, lux), confidence: outside ? 'low' : 'moderate' };
 }
