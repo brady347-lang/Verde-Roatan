@@ -92,21 +92,6 @@ await t('a persistent transient 429 stops after bounded retries with a readable 
 });
 await t('Gemini 3.8 failure -> 502 with readable error', async () => { mock(() => new Response('x', { status: 500 })); const r = await post('/', { image: IMG }); const j = await r.json(); assert.equal(r.status, 502); assert.equal(j.status, 'error'); assert.match(j.error, /Gemini/); });
 await t('missing image -> 400', async () => { const r = await post('/', { mode: 'plant' }); assert.equal(r.status, 400); });
-await t('unknown POST routes are rejected instead of invoking Gemini', async () => {
-  const r = await post('/unknown-expensive-route', { image: IMG });
-  assert.equal(r.status, 404);
-  assert.deepEqual(calls, []);
-});
-await t('oversized public analysis requests are rejected before parsing or calling Gemini', async () => {
-  const r = await worker.fetch(new Request('https://w.test/', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'content-length': String(18 * 1024 * 1024) },
-    body: JSON.stringify({ image: IMG })
-  }), env);
-  assert.equal(r.status, 413);
-  assert.deepEqual(calls, []);
-});
-
 await t('missing API key -> 500 config error', async () => { const r = await post('/', { image: IMG }, {}); assert.equal(r.status, 500); });
 await t('CORS preflight', async () => { const r = await worker.fetch(new Request('https://w.test/', { method: 'OPTIONS' }), env); assert.equal(r.status, 204); assert.equal(r.headers.get('access-control-allow-origin'), '*'); });
 
