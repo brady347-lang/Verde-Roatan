@@ -6,6 +6,8 @@ import { readFileSync } from 'node:fs';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const manifest = read('../../capacitor-plugins/rootwise-device-sensors/android/src/main/AndroidManifest.xml');
+const pluginPackage = read('../../capacitor-plugins/rootwise-device-sensors/package.json');
+const rootPackage = read('../../package.json');
 const bridge = read('../../capacitor-plugins/rootwise-device-sensors/index.ts');
 const plugin = read('../../capacitor-plugins/rootwise-device-sensors/android/src/main/java/com/rootwise/devicesensors/RootWiseDeviceSensorsPlugin.java');
 const tools = read('../screens/ToolsScreen.tsx');
@@ -13,6 +15,11 @@ const navigation = read('../components/Navigation.tsx');
 const communityHome = read('../screens/CommunityHomeScreen.tsx');
 const myRootWise = read('../screens/RootWiseHomeScreen.tsx');
 const app = read('../App.tsx');
+
+// Capacitor must discover the local Android plugin during npm install and cap sync.
+assert.match(rootPackage, /"@rootwise\/device-sensors":\s*"file:\.\/capacitor-plugins\/rootwise-device-sensors"/);
+assert.match(pluginPackage, /"name":\s*"@rootwise\/device-sensors"/);
+assert.match(pluginPackage, /"android":\s*\{\s*"src":\s*"android"/);
 
 // Permissions: without CAMERA in the merged manifest Android never shows a camera prompt.
 for (const permission of ['CAMERA', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']) {
@@ -44,6 +51,9 @@ assert.match(app, /tab === 'my-rootwise'/, 'My RootWise must have its own naviga
 assert.match(app, /tab === 'tools'/, 'Tools must remain reachable from Home');
 assert.doesNotMatch(myRootWise, /onNavigate\('tools'\)/, 'My RootWise must stay focused on personal gardening intelligence');
 assert.match(tools, /id: 'light'/, 'the light meter must be available inside Tools');
+assert.match(tools, /startCameraFallback/, 'camera fallback must exist when the ambient sensor is unavailable');
+assert.match(tools, /getUserMedia/, 'camera fallback must acquire the phone camera');
+assert.match(tools, /setTimeout\(\(\) => \{[\s\S]*?if \(!receivedReading\) void startCameraFallback\(\)/, 'native sensor timeout must activate camera fallback');
 assert.doesNotMatch(tools, /luxInput/, 'normal light readings must come from sensors or camera, not manual lux entry');
 
 // GPS tracking safeguards in the screen.
