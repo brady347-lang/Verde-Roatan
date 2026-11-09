@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ArrowRight, BookOpen, Camera, Compass, Leaf, MapPin, Package, Sparkles } from 'lucide-react';
 import type { Language } from '../types';
 
@@ -20,7 +20,18 @@ const GUIDES = [
 
 export const CustomerAccountExperience: React.FC<Props> = ({ lang, displayName, gardenCount, orderCount, onNavigate }) => {
   const es = lang === 'es';
-  const [guideIndex, setGuideIndex] = useState<number | null>(null);
+  const [guideIndex, setGuideIndex] = useState<number | null>(() => {
+    try {
+      const saved = Number(localStorage.getItem('rootwise-customer-guide-step'));
+      return Number.isInteger(saved) && saved >= 0 && saved < GUIDES.length ? saved : null;
+    } catch { return null; }
+  });
+  useEffect(() => {
+    try {
+      if (guideIndex === null) localStorage.removeItem('rootwise-customer-guide-step');
+      else localStorage.setItem('rootwise-customer-guide-step', String(guideIndex));
+    } catch { /* The guide still works for this visit when local storage is unavailable. */ }
+  }, [guideIndex]);
   const guide = guideIndex === null ? null : GUIDES[guideIndex];
   return (
     <section className="flex flex-col gap-3">
