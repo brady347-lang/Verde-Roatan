@@ -44,15 +44,16 @@ export function evaluateFix(previous: (TrackPoint & { timestamp?: number }) | un
   }
   if (fix.accuracy > MAX_ACCEPTED_ACCURACY_M) return { accept: false, reason: 'inaccurate' };
   if (!previous) return { accept: true };
+  if (previous.timestamp !== undefined && fix.timestamp !== undefined && fix.timestamp <= previous.timestamp) {
+    return { accept: false, reason: 'stale' };
+  }
   const distance = distanceMeters(previous, fix);
   // Do not turn sub-uncertainty GPS jitter into extra boundary vertices. As reported
   // uncertainty grows, require a little more displacement before recording a point.
   const uncertaintySpacing = (previous.accuracy + fix.accuracy) * 0.35;
   if (distance < Math.max(MIN_POINT_SPACING_M, uncertaintySpacing)) return { accept: false, reason: 'duplicate' };
   if (previous.timestamp !== undefined && fix.timestamp !== undefined) {
-    const elapsedMs = fix.timestamp - previous.timestamp;
-    if (elapsedMs <= 0) return { accept: false, reason: 'stale' };
-    const seconds = elapsedMs / 1000;
+    const seconds = (fix.timestamp - previous.timestamp) / 1000;
     if (distance / seconds > MAX_WALK_SPEED_MPS) return { accept: false, reason: 'jump' };
   }
   return { accept: true };
