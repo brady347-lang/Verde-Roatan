@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, BadgeCheck, Leaf, Megaphone, Sprout, Users } from 'lucide-react';
+import { ArrowUpRight, BadgeCheck, Leaf, Megaphone, Sprout, Users, Wrench } from 'lucide-react';
 import { Language } from '../types';
 
 interface CommunityHomeScreenProps {
@@ -75,6 +75,15 @@ export const CommunityHomeScreen: React.FC<CommunityHomeScreenProps> = ({
           <span className="block text-xs text-white/70">{es ? 'Tu historial, observaciones y guía personal' : 'Your garden history, observations and personal guidance'}</span>
         </span>
         <ArrowUpRight className="h-5 w-5 shrink-0 text-emerald-200 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+      </button>
+
+      <button type="button" onClick={() => onNavigate('tools')} className="group flex items-center gap-3 rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-4 text-left shadow-sm transition-transform active:scale-[.99]">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-800"><Wrench className="h-5 w-5" /></span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-extrabold text-[var(--ink)]">{es ? 'Herramientas RootWise' : 'RootWise Tools'}</span>
+          <span className="mt-0.5 block text-xs text-[var(--ink-soft)]">{es ? 'Medir terrenos, revisar luz y planificar jardines' : 'Measure land, check light and plan garden projects'}</span>
+        </span>
+        <ArrowUpRight className="h-5 w-5 shrink-0 text-[var(--palm)]" />
       </button>
 
       <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3.5">
