@@ -37,6 +37,7 @@ assert.equal(evaluateFix(undefined, { lat: NaN, lon: 0, accuracy: 5 }).reason, '
 assert.equal(evaluateFix(undefined, { lat: 95, lon: 0, accuracy: 5 }).reason, 'invalid');
 assert.equal(evaluateFix(undefined, { lat: 0, lon: 200, accuracy: 5 }).reason, 'invalid');
 assert.equal(evaluateFix(undefined, { lat: 0, lon: 0, accuracy: -1 }).reason, 'invalid');
+assert.equal(evaluateFix(undefined, { lat: 0, lon: 0, accuracy: 0 }).reason, 'invalid', 'unknown zero accuracy must not be treated as perfect');
 assert.equal(evaluateFix(undefined, { lat: 0, lon: 0, accuracy: Infinity }).reason, 'invalid');
 // Stationary jitter within 2.5 m is a duplicate; 3 m of real movement is accepted.
 assert.equal(evaluateFix(at(0, 0), at(1, 1)).reason, 'duplicate');
@@ -45,6 +46,7 @@ assert.equal(evaluateFix(at(0, 0, 10), at(4, 0, 10)).reason, 'duplicate', 'large
 assert.deepEqual(evaluateFix(at(0, 0, 10), at(6, 0, 10)), { accept: true }, 'real movement beyond the uncertainty spacing is accepted');
 // A 200 m jump one second later is a GPS glitch, not walking.
 assert.equal(evaluateFix({ ...at(0, 0), timestamp: 1000 }, { ...at(200, 0), timestamp: 2000 }).reason, 'jump');
+assert.equal(evaluateFix({ ...at(0, 0), timestamp: 2000 }, { ...at(3, 0), timestamp: 1000 }).reason, 'stale', 'older fixes must not move the recorded boundary backwards');
 // The same distance after 100 s is plausible movement.
 assert.deepEqual(evaluateFix({ ...at(0, 0), timestamp: 1000 }, { ...at(200, 0), timestamp: 101000 }), { accept: true });
 // Without timestamps the jump guard is skipped rather than guessed.
