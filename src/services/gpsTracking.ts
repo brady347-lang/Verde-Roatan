@@ -45,7 +45,10 @@ export function evaluateFix(previous: (TrackPoint & { timestamp?: number }) | un
   if (fix.accuracy > MAX_ACCEPTED_ACCURACY_M) return { accept: false, reason: 'inaccurate' };
   if (!previous) return { accept: true };
   const distance = distanceMeters(previous, fix);
-  if (distance < MIN_POINT_SPACING_M) return { accept: false, reason: 'duplicate' };
+  // Do not turn sub-uncertainty GPS jitter into extra boundary vertices. As reported
+  // uncertainty grows, require a little more displacement before recording a point.
+  const uncertaintySpacing = (previous.accuracy + fix.accuracy) * 0.25;
+  if (distance < Math.max(MIN_POINT_SPACING_M, uncertaintySpacing)) return { accept: false, reason: 'duplicate' };
   if (previous.timestamp !== undefined && fix.timestamp !== undefined) {
     const seconds = (fix.timestamp - previous.timestamp) / 1000;
     if (seconds > 0 && distance / seconds > MAX_WALK_SPEED_MPS) return { accept: false, reason: 'jump' };
@@ -65,12 +68,13 @@ export function measurePolygon(points: TrackPoint[]): { area: number; perimeter:
   const denominator = Math.sqrt(1 - WGS84_E2 * sinLat * sinLat);
   const primeVerticalRadius = WGS84_A / denominator;
   const meridionalRadius = WGS84_A * (1 - WGS84_E2) / (denominator ** 3);
+  const meanLatDegrees = points.reduce((sum, point) => sum + point.lat, 0) / points.length;
   const xy = points.map((point) => {
     // Normalize longitude delta so a small plot crossing ±180° remains local.
     const deltaLon = ((point.lon - lon0 + 540) % 360) - 180;
     return {
       x: toRadians(deltaLon) * primeVerticalRadius * Math.cos(lat0),
-      y: toRadians(point.lat - points.reduce((sum, item) => sum + item.lat, 0) / points.length) * meridionalRadius
+      y: toRadians(point.lat - meanLatDegrees) * meridionalRadius
     };
   });
 
