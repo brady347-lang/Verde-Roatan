@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, Activity, AlertTriangle, Compass, Leaf, ScanLine, Sparkles, Sprout, UserRound, Wrench } from 'lucide-react';
+import { ArrowUpRight, Activity, AlertTriangle, Compass, Leaf, ScanLine, Sparkles, Sprout, UserRound } from 'lucide-react';
 import { CatalogItem, GardenItem, Language } from '../types';
 
 interface Props {
@@ -49,9 +49,6 @@ export const RootWiseHomeScreen: React.FC<Props> = ({
             <h1 className="mt-1 max-w-[18rem] text-[30px] font-extrabold leading-[1.05] tracking-tight">{es ? 'Diseña. Cultiva. Transforma.' : 'Design. Grow. Transform.'}</h1>
             <p className="mt-2 max-w-[19rem] text-sm leading-relaxed text-white/75">{es ? 'Herramientas profesionales e inteligencia botánica para cada espacio verde.' : 'Professional tools and botanical intelligence for every green space.'}</p>
           </div>
-          <button type="button" onClick={() => onNavigate('tools')} className="inline-flex w-fit items-center gap-2 rounded-xl bg-[#d7e8a5] px-4 py-3 text-sm font-extrabold text-[#173b2c] active:scale-95">
-            {es ? 'Explorar herramientas' : 'Explore professional tools'} <ArrowUpRight className="h-4 w-4" />
-          </button>
           <div className="flex gap-5 border-t border-white/15 pt-3 text-xs text-white/75">
             <span><b className="block text-lg text-white">{plantCount}</b>{es ? 'Plantas' : 'Plants'}</span>
             <span><b className="block text-lg text-white">{gardenCount}</b>{es ? 'Mi jardín' : 'My garden'}</span>
@@ -85,13 +82,7 @@ export const RootWiseHomeScreen: React.FC<Props> = ({
       <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3">
         <button onClick={() => onNavigate('account')} className="flex w-full items-center gap-3 text-left"><span className="rounded-xl bg-[var(--surface-2)] p-2 text-[var(--ink-soft)]"><UserRound className="h-5 w-5"/></span><span className="flex-1"><b className="block text-sm">{es ? 'Configuración de cuenta' : 'Account settings'}</b><small className="text-xs text-[var(--ink-soft)]">{es ? 'Datos personales, seguridad y preferencias' : 'Personal details, security and preferences'}</small></span><ArrowUpRight className="h-4 w-4 text-[var(--ink-soft)]"/></button>
       </section>
-      <section className="flex flex-col gap-3">
-        <div><p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-[var(--palm)]">{es ? 'HERRAMIENTAS ROOTWISE' : 'ROOTWISE TOOLS'}</p><h2 className="text-lg font-extrabold">{es ? 'Sigue trabajando en tu espacio verde' : 'Keep working on your green space'}</h2></div>
-        <div className="grid grid-cols-2 gap-3">
-          <button onClick={() => onNavigate('tools')} className="flex min-h-28 flex-col items-start justify-between rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3 text-left"><Wrench className="h-5 w-5 text-[var(--palm)]"/><span><b className="block text-sm">{es ? 'Herramientas' : 'Landscape tools'}</b><small className="text-xs text-[var(--ink-soft)]">{es ? 'Medir y planificar' : 'Measure and plan'}</small></span></button>
-          <button onClick={() => onNavigate('explore')} className="flex min-h-28 flex-col items-start justify-between rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3 text-left"><Compass className="h-5 w-5 text-sky-700"/><span><b className="block text-sm">{es ? 'Explorar' : 'Explore'}</b><small className="text-xs text-[var(--ink-soft)]">{es ? 'Servicios y catálogo' : 'Services and catalog'}</small></span></button>
-        </div>
-      </section>
+
     </div>
   );
 };
