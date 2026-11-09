@@ -369,7 +369,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     stopCameraCalibration();
   }, []);
   useEffect(() => { if (tool !== 'area' && trackingActiveRef.current) void stopGpsTracking(); }, [tool]);
-  useEffect(() => { if (tool !== 'light' && tool !== 'area' && sensorRef.current) { sensorRef.current.stop(); sensorRef.current = null; setLiveLux(null); setLightRecording(false); lightSessionIdRef.current = null; stopCameraFallback(); } }, [tool]);
+  useEffect(() => { if (tool !== 'light' && tool !== 'area') { sensorRef.current?.stop(); sensorRef.current = null; if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current); sensorTimeoutRef.current = null; setLiveLux(null); setLightRecording(false); lightSessionIdRef.current = null; stopCameraFallback(); } }, [tool]);
   const startLightSensor = async () => {
     stopCameraFallback();
     sensorRef.current?.stop();
