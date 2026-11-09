@@ -24,7 +24,7 @@ def main() -> None:
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--encoder", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--calibration", required=True, type=Path)
+    parser.add_argument("--calibration", type=Path)
     args = parser.parse_args()
 
     frame = pd.read_csv(args.manifest).fillna("")
@@ -98,27 +98,30 @@ def main() -> None:
             "embedding": [float(value) for value in centroid]
         })
 
-    calibration = json.loads(args.calibration.read_text(encoding="utf-8"))
-    if calibration.get("model_version") != MODEL_VERSION:
-        raise ValueError("Calibration model_version does not match the reference encoder.")
-    if calibration.get("calibration_method") != "global_max_cosine_threshold_on_separate_negative_set":
-        raise ValueError("Calibration method is missing or unsupported.")
-    threshold = float(calibration.get("global_acceptance_threshold", -1))
-    if not 0.0 <= threshold <= 1.0:
-        raise ValueError("Calibration threshold must be between 0 and 1.")
-    if int(calibration.get("negative_sample_count", 0)) < 1000:
-        raise ValueError("At least 1,000 negative calibration images are required.")
-    if int(calibration.get("positive_validation_count", 0)) < 100:
-        raise ValueError("At least 100 positive validation images are required.")
-
     payload = {
         "model_version": MODEL_VERSION,
         "embedding_dimension": 512,
         "normalization": "minus_one_to_one",
         "embedding_normalization": "l2",
-        "calibration": calibration,
         "entries": records
     }
+    # First pass: omit --calibration to generate reference centroids for calibration.
+    # Second pass: provide the calibrated report to create the Android-ready catalog.
+    if args.calibration:
+        calibration = json.loads(args.calibration.read_text(encoding="utf-8"))
+        if calibration.get("model_version") != MODEL_VERSION:
+            raise ValueError("Calibration model_version does not match the reference encoder.")
+        if calibration.get("calibration_method") != "global_max_cosine_threshold_on_separate_negative_set":
+            raise ValueError("Calibration method is missing or unsupported.")
+        threshold = float(calibration.get("global_acceptance_threshold", -1))
+        if not 0.0 <= threshold <= 1.0:
+            raise ValueError("Calibration threshold must be between 0 and 1.")
+        if int(calibration.get("negative_sample_count", 0)) < 1000:
+            raise ValueError("At least 1,000 negative calibration images are required.")
+        if int(calibration.get("positive_validation_count", 0)) < 100:
+            raise ValueError("At least 100 positive validation images are required.")
+        payload["calibration"] = calibration
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"Wrote {len(records)} species centroids to {args.output}")
