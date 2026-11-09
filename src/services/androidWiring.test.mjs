@@ -143,12 +143,12 @@ assert.match(mlPlugin, /interpreter\.run\(input, output\)/, 'native path must ex
 assert.match(mlPlugin, /getInputTensor\(0\)\.dataType\(\) != DataType\.FLOAT32/);
 assert.match(mlPlugin, /new int\[\]\{1, INPUT_HEIGHT, INPUT_WIDTH, 3\}/);
 assert.match(mlPlugin, /new int\[\]\{1, EMBEDDING_DIMENSION\}/);
-assert.match(mlPlugin, /MODEL_VERSION = "mobilenetv4_512d_v1"/);
-assert.match(mlPlugin, /source_id/);
+assert.match(mlPlugin, /MODEL_VERSION = "rootwise_mobilenetv3_512d_v1"/);
+assert.match(mlPlugin, /source_id/);\nassert.match(mlPlugin, /global_max_cosine_threshold_on_separate_negative_set/);\nassert.match(mlPlugin, /negative_sample_count/);\nassert.doesNotMatch(mlPlugin, /DEFAULT_THRESHOLD = 0\\.65/);
 assert.match(mlPlugin, /referenceCatalogReady/);
 assert.match(mlPlugin, /result\.put\("ready", modelReady && catalogReady && runtimeReady\)/);
 assert.match(mlService, /Capacitor\.isNativePlatform\(\)/);
-assert.match(mlService, /if \(!readiness\.ready\) return null/);
+assert.match(mlService, /if \(!readiness\.ready\) return null/);\nassert.doesNotMatch(mlService, /confidenceThreshold/);
 assert.match(apiService, /tryLocalBotanicalIdentification\(base64Image\)/);
 assert.match(apiService, /if \(localResult\?\.matched\) return localResult/);
 assert.match(apiService, /retain the local uncertain candidate/);
