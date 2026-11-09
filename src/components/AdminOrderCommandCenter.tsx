@@ -157,12 +157,12 @@ export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = (
           product_id: it.id,
           name: it.name,
           quantity: it.qty,
-          unit_price: Math.round(it.price * 0.65), // Standard wholesale base
+          unit_price: 0, // Supplier must provide a real quote before cost is recorded
           currency: it.currency,
           status: 'pending'
         })),
         status: 'pending_confirmation',
-        total_supplier_cost: Math.round(inspectedOrder.subtotal * 0.65),
+        total_supplier_cost: 0,
         currency: inspectedOrder.currency,
         payment_status: 'unpaid'
       };
@@ -195,7 +195,9 @@ export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = (
   };
 
   // Financial Reporting Calculations
-  const totalSales = orders.reduce((sum, o) => sum + (o.currency === 'USD' ? o.total * exchangeRateHnl : o.total), 0);
+  const totalSales = orders
+    .filter((order) => !['cancelled', 'refunded'].includes(String(order.canonical_status || order.status)))
+    .reduce((sum, order) => sum + (order.currency === 'USD' ? order.total * exchangeRateHnl : order.total), 0);
   const totalCustomerPayments = orders
     .filter((o) => o.payment_status === 'confirmed')
     .reduce((sum, o) => sum + (o.currency === 'USD' ? o.total * exchangeRateHnl : o.total), 0);
@@ -203,13 +205,14 @@ export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = (
     .filter((o) => o.payment_status === 'pending')
     .reduce((sum, o) => sum + (o.currency === 'USD' ? o.total * exchangeRateHnl : o.total), 0);
   const totalSupplierPurchases = supplierRequests.reduce(
-    (sum, r) => sum + (r.currency === 'USD' ? r.total_supplier_cost * exchangeRateHnl : r.total_supplier_cost),
+    (sum, request) => sum + (request.currency === 'USD' ? request.total_supplier_cost * exchangeRateHnl : request.total_supplier_cost),
     0
   );
   const supplierPaymentObligations = supplierRequests
-    .filter((r) => r.payment_status === 'unpaid')
-    .reduce((sum, r) => sum + (r.currency === 'USD' ? r.total_supplier_cost * exchangeRateHnl : r.total_supplier_cost), 0);
-  const estimatedGrossProfit = totalSales - totalSupplierPurchases;
+    .filter((request) => request.payment_status === 'unpaid' && request.total_supplier_cost > 0)
+    .reduce((sum, request) => sum + (request.currency === 'USD' ? request.total_supplier_cost * exchangeRateHnl : request.total_supplier_cost), 0);
+  const ordersMissingSupplierCost = orders.filter((order) => !order.assigned_supplier_id || !(Number(order.supplier_cost) > 0)).length;
+  const estimatedGrossProfit = ordersMissingSupplierCost > 0 ? null : totalSales - totalSupplierPurchases;
 
   const unreadNotifsCount = notifications.filter((n) => !n.is_read).length;
 
@@ -558,13 +561,17 @@ export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = (
 
             <div className="bg-[var(--surface)] border border-[var(--line)] rounded-2xl p-3 flex flex-col gap-1 shadow-xs">
               <span className="text-[11px] font-extrabold uppercase text-[var(--ink-soft)]">
-                Estimated Gross Profit
+                Gross Profit (Quoted Costs Only)
               </span>
               <b className="text-[18px] font-extrabold text-[var(--palm)]">
-                L {estimatedGrossProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                {estimatedGrossProfit === null
+                  ? 'Awaiting supplier quotes'
+                  : `L ${estimatedGrossProfit.toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
               </b>
               <small className="text-[10.5px] text-[var(--palm)] font-bold">
-                Margin: {totalSales > 0 ? Math.round((estimatedGrossProfit / totalSales) * 100) : 0}%
+                {estimatedGrossProfit === null
+                  ? `${ordersMissingSupplierCost} order(s) have no recorded supplier cost; margin is not calculated.`
+                  : `Margin: ${totalSales > 0 ? Math.round((estimatedGrossProfit / totalSales) * 100) : 0}%`}
               </small>
             </div>
           </div>
