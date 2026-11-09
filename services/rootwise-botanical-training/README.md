@@ -61,7 +61,11 @@ Copy both generated artifacts into the Android plugin assets directory only afte
 - `rootwise_mobilenetv3_512d.tflite`
 - `botanical_reference_embeddings.json`
 
-## Quality gates before release
+## Calibration and quality gates before release
+
+The catalog builder refuses to emit an Android-ready catalog without a separate negative-image calibration set (minimum 1,000 images) and positive validation set (minimum 100 images). The calibration script selects a global cosine threshold against the measured negative false-accept target and reports positive top-1 accuracy and accepted recall. This is an empirical guardrail, not a guarantee; expand and diversify the negative set and field-test before release.
+
+
 
 1. Check species-level precision/recall and top-1/top-3 accuracy on the untouched holdout set.
 2. Inspect confusion pairs, especially visually similar species.
