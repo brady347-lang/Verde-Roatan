@@ -9,6 +9,8 @@ const manifest = read('../../capacitor-plugins/rootwise-device-sensors/android/s
 const bridge = read('../../capacitor-plugins/rootwise-device-sensors/index.ts');
 const plugin = read('../../capacitor-plugins/rootwise-device-sensors/android/src/main/java/com/rootwise/devicesensors/RootWiseDeviceSensorsPlugin.java');
 const tools = read('../screens/ToolsScreen.tsx');
+const shop = read('../screens/ShopScreen.tsx');
+const app = read('../App.tsx');
 
 // Permissions: without CAMERA in the merged manifest Android never shows a camera prompt.
 for (const permission of ['CAMERA', 'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']) {
@@ -42,7 +44,7 @@ assert.match(tools, /gpsFirstFixTimeoutRef/, 'GPS must report when no first fix 
 assert.match(tools, /GPS connected · waiting for the first location/, 'tracking must not claim live GPS before a fix');
 assert.match(tools, /50000/, 'the first-fix wait must have a bounded feedback timeout');
 for (const fragment of [
-  'minimumUpdateInterval: 1000',
+  'minimumUpdateInterval: 500',
   'Geolocation.getCurrentPosition(',
   "setAreaView('plot')",
   'FieldPlotDiagram points={points}',
@@ -53,6 +55,12 @@ for (const fragment of [
 assert.match(tools, /cameraRequestGenerationRef/, 'late camera permission results must be invalidated when the tool is stopped');
 assert.match(tools, /requestGeneration !== cameraRequestGenerationRef\.current/, 'stopped camera requests must not reactivate a stream');
 assert.doesNotMatch(tools, /luxInput/, 'ordinary light readings must not require manual lux entry');
+
+// Shop must expose a direct, visible route to the existing cart and delivery checkout.
+assert.match(shop, /ShoppingBag/);
+assert.match(shop, /onOpenCart/);
+assert.match(shop, /cartCount > 0/);
+assert.match(app, /onOpenCart=\{\(\) => setTab\('request'\)\}/);
 
 console.log('androidWiring tests passed');
 
