@@ -38,6 +38,30 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
     }
 
     @PluginMethod
+    public void getAmbientLightSensorInfo(PluginCall call) {
+        if (sensorManager == null) {
+            sensorManager = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+        }
+        JSObject payload = new JSObject();
+        if (sensorManager == null) {
+            payload.put("available", false);
+            call.resolve(payload);
+            return;
+        }
+        lightSensor = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+        payload.put("available", lightSensor != null);
+        if (lightSensor != null) {
+            payload.put("name", lightSensor.getName());
+            payload.put("vendor", lightSensor.getVendor());
+            payload.put("maximumRange", lightSensor.getMaximumRange());
+            payload.put("resolution", lightSensor.getResolution());
+            payload.put("power", lightSensor.getPower());
+            payload.put("wakeUp", lightSensor.isWakeUpSensor());
+        }
+        call.resolve(payload);
+    }
+
+    @PluginMethod
     public void startAmbientLight(PluginCall call) {
         shouldListen = true;
         if (!registerAmbientLightListener()) {
@@ -56,8 +80,10 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
 
     @PluginMethod
     public void stopAmbientLight(PluginCall call) {
-        if (sensorManager != null && listening) {
-            sensorManager.unregisterListener(this);
+        if (sensorManager != null && listening && lightSensor != null) {
+            // Unregister only the light sensor. unregisterListener(this) would also stop
+            // the compass because both sensors share this listener instance.
+            sensorManager.unregisterListener(this, lightSensor);
         }
         listening = false;
         shouldListen = false;
@@ -129,8 +155,12 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
 
     @Override
     protected void handleOnPause() {
-        if (sensorManager != null && listening) sensorManager.unregisterListener(this);
+        if (sensorManager != null) {
+            if (listening && lightSensor != null) sensorManager.unregisterListener(this, lightSensor);
+            if (compassListening && rotationSensor != null) sensorManager.unregisterListener(this, rotationSensor);
+        }
         listening = false;
+        compassListening = false;
         super.handleOnPause();
     }
 
@@ -149,7 +179,9 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
     protected void handleOnDestroy() {
         if (sensorManager != null) sensorManager.unregisterListener(this);
         listening = false;
+        compassListening = false;
         shouldListen = false;
+        shouldListenCompass = false;
         super.handleOnDestroy();
     }
 }
