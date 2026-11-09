@@ -182,7 +182,14 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }
     cameraStreamRef.current = stream;
     video.srcObject = stream;
-    await video.play();
+    try {
+      await video.play();
+    } catch (error) {
+      stream.getTracks().forEach(track => track.stop());
+      cameraStreamRef.current = null;
+      video.srcObject = null;
+      throw error;
+    }
     setCameraCalibrationOpen(false);
     setCameraFallbackActive(true);
     setLiveLux(null);
@@ -211,6 +218,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   const startCameraCalibration = async () => {
     stopCameraFallback();
+    // Calibration owns the camera exclusively; stop a previously active phone sensor and
+    // clear its timeout so live readings cannot race with the guided calibration session.
+    sensorRef.current?.stop();
+    sensorRef.current = null;
+    if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+    sensorTimeoutRef.current = null;
+    setLiveLux(null);
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraStatus(es ? 'La cámara requiere un navegador seguro compatible.' : 'Camera access requires a supported secure browser context.');
       return;
