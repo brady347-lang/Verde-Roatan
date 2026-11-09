@@ -2043,6 +2043,8 @@ export default function App() {
               }
               onNavigateToIdentify={() => setTab('id')}
               onOpenGardenAdvisor={() => setIsGardenAdvisorOpen(true)}
+              cartCount={cartCount}
+              onOpenCart={() => setTab('request')}
             />
           )}
 
