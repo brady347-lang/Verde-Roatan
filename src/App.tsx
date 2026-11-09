@@ -255,6 +255,8 @@ export default function App() {
     }
   });
 
+  const [sessionRestoreComplete, setSessionRestoreComplete] = useState(false);
+
   useEffect(() => {
     if (session?.user?.temporary_role === 'supplier') {
       setTab('account');
@@ -321,6 +323,8 @@ export default function App() {
         setSession(null);
         localStorage.removeItem('verde_auth_session');
         console.info('Stored Supabase session was no longer valid; user signed out locally.', error);
+      } finally {
+        if (!cancelled) setSessionRestoreComplete(true);
       }
     };
     restoreSession();
@@ -333,7 +337,7 @@ export default function App() {
   // Temporary access is never extended beyond its separately enforced expiry.
   const sessionRefreshInFlight = useRef(false);
   useEffect(() => {
-    if (!session?.access_token || !session.refresh_token) return;
+    if (!sessionRestoreComplete || !session?.access_token || !session.refresh_token) return;
 
     let cancelled = false;
     const refreshIfNeeded = async () => {
@@ -394,7 +398,7 @@ export default function App() {
       window.removeEventListener('focus', onResume);
       document.removeEventListener('visibilitychange', onResume);
     };
-  }, [session]);
+  }, [session, sessionRestoreComplete]);
 
   // --- Identify State ---
   const [identifyMode, setIdentifyMode] = useState<'plant' | 'pest'>('plant');
