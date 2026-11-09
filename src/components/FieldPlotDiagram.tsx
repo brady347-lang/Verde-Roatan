@@ -33,7 +33,6 @@ export const FieldPlotDiagram: React.FC<Props> = ({ points, lang, areaM2, perime
   const path = projected.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
   const closedPath = points.length >= 3 ? `${path} Z` : path;
   const latest = projected[projected.length - 1];
-  const zoomLevels = [1, 2, 3, 4, 5];
   const detailTransform = latest
     ? `translate(${width / 2} ${height / 2}) scale(${detailZoom}) translate(${-latest.x} ${-latest.y})`
     : undefined;
