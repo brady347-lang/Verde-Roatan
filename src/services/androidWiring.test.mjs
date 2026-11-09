@@ -9,6 +9,8 @@ const manifest = read('../../capacitor-plugins/rootwise-device-sensors/android/s
 const bridge = read('../../capacitor-plugins/rootwise-device-sensors/index.ts');
 const plugin = read('../../capacitor-plugins/rootwise-device-sensors/android/src/main/java/com/rootwise/devicesensors/RootWiseDeviceSensorsPlugin.java');
 const tools = read('../screens/ToolsScreen.tsx');
+const lightChart = read('../components/LightHistoryChart.tsx');
+const lightStore = read('../lib/lightHistoryStore.ts');
 const shop = read('../screens/ShopScreen.tsx');
 const app = read('../App.tsx');
 
@@ -92,7 +94,11 @@ assert.match(plugin, /payload\.put\("sensorName"/, 'native plugin must report th
 assert.match(plugin, /payload\.put\("resolution"/, 'native plugin must report sensor resolution');
 assert.match(bridge, /sensorVendor\?: string/, 'bridge typing must expose sensor diagnostics');
 assert.match(tools, /luxFilterRef\.current\.push\(rawValue\)/, 'native light display must be stabilized');
-assert.match(tools, /recordLightReading\(Math\.max\(0, event\.lux\), 'sensor_measured'\)/, 'light history must keep the raw sensor value');
+assert.match(tools, /recordLightReading\(rawValue, 'sensor_measured', displayValue\)/, 'light history chart must use the same filtered value shown in the live display');
+assert.match(tools, /rawLux: Math\.max\(0, luxValue\)/, 'unfiltered lux must remain available for diagnostics');
+assert.match(lightStore, /rawLux\?: number/, 'history must preserve raw sensor values separately');
+assert.match(lightChart, /const yMin = 0/, 'lux chart vertical axis must start at zero to avoid exaggerated visual differences');
+assert.match(lightChart, /Smoothed lux to match the main reading/, 'chart must explain that plotted values match the smoothed live reading');
 assert.ok(tools.includes('estimateLuxFromCamera('), 'main calibrated camera estimates must remain');
 assert.ok(tools.includes('buildCalibrationProfile('), 'camera calibration flow must remain');
 
