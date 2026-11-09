@@ -511,6 +511,14 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setLightRecording(true);
     try {
       if (Capacitor.isNativePlatform()) {
+        const sensorInfo = await RootWiseDeviceSensors.getAmbientLightSensorInfo();
+        if (!sensorInfo.available) throw new Error('NO_AMBIENT_LIGHT_SENSOR');
+        if (sensorInfo.name) setSensorDetails({
+          name: sensorInfo.name,
+          vendor: String(sensorInfo.vendor ?? ''),
+          accuracy: -1,
+          resolution: Number(sensorInfo.resolution ?? 0)
+        });
         let receivedReading = false;
         const listener = await RootWiseDeviceSensors.addListener('lightReading', (event) => {
           if (!Number.isFinite(event.lux)) return;
@@ -523,12 +531,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           recordLightReading(Math.max(0, event.lux), 'sensor_measured');
           setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
         });
-        const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
-          // The native layer could not re-register the sensor after the app resumed. Drop the stale
-          // Switch to the rear camera when the native sensor becomes unavailable.
+        const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', (event) => {
+          // Keep the native failure visible; a camera estimate is not a sensor measurement.
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(null);
-          void startCameraFallback().catch(() => { setLightRecording(false); setSensorStatus(es ? 'El sensor no pudo reanudarse y la cámara tampoco está disponible. Revisa el permiso de cámara.' : 'The sensor could not resume and the camera is unavailable. Check camera permission.'); });
+          setSensorStatus(es ? 'El sensor ambiental de Android no pudo reanudarse: ' + event.message : 'Android ambient-light sensor could not resume: ' + event.message);
+          void startCameraFallback().catch((cameraError) => {
+            const detail = cameraError instanceof Error ? cameraError.message : 'CAMERA_START_FAILED';
+            setLightRecording(false);
+            setSensorStatus(es ? 'Falló el sensor Android (' + event.message + ') y la cámara (' + detail + ').' : 'Android sensor failed (' + event.message + ') and camera fallback failed (' + detail + ').');
+          });
         });
         try {
           await RootWiseDeviceSensors.startAmbientLight();
@@ -543,7 +555,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           void errorListener.remove();
         } };
         sensorTimeoutRef.current = window.setTimeout(() => {
-          if (!receivedReading) void startCameraFallback().catch(() => { setLightRecording(false); setSensorStatus(es ? 'No hay lectura del sensor y no se pudo abrir la cámara. Revisa el permiso de cámara.' : 'No sensor reading arrived and the camera could not start. Check camera permission.'); });
+          if (!receivedReading) {
+            setSensorStatus(es
+              ? 'Android detectó ' + (sensorInfo.name || 'el sensor de luz') + ', pero no entregó lecturas en 6 segundos. Probando la estimación de cámara.'
+              : 'Android detected ' + (sensorInfo.name || 'the light sensor') + ', but it produced no readings within 6 seconds. Trying the camera estimate.');
+            void startCameraFallback().catch((cameraError) => {
+              const detail = cameraError instanceof Error ? cameraError.message : 'CAMERA_START_FAILED';
+              setLightRecording(false);
+              setSensorStatus(es ? 'El sensor Android no entregó datos y la cámara falló (' + detail + ').' : 'Android sensor produced no data and camera fallback failed (' + detail + ').');
+            });
+          }
         }, 6000);
         return;
       }
@@ -569,14 +590,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       sensorTimeoutRef.current = window.setTimeout(() => {
         if (!receivedReading) void startCameraFallback().catch(() => { setLightRecording(false); setSensorStatus(es ? 'El sensor no respondió y no se pudo abrir la cámara.' : 'The sensor did not respond and the camera could not start.'); });
       }, 6000);
-    } catch {
+    } catch (sensorError) {
+      const sensorDetail = sensorError instanceof Error ? sensorError.message : String(sensorError);
+      setSensorStatus(es ? 'Sensor ambiental no disponible (' + sensorDetail + '). Probando la cámara como estimación, no como lectura de lux.' : 'Ambient-light sensor unavailable (' + sensorDetail + '). Trying the camera as an estimate, not a lux reading.');
       try { await startCameraFallback(); }
       catch (cameraError) {
-        const detail = cameraError instanceof Error ? cameraError.message : '';
+        const cameraDetail = cameraError instanceof Error ? cameraError.message : 'CAMERA_START_FAILED';
         setLightRecording(false);
         setSensorStatus(es
-          ? (/NotAllowed|denied|permission/i.test(detail) ? 'El permiso de cámara está denegado. Actívalo en Ajustes → Aplicaciones → Rootwise → Permisos → Cámara.' : 'No se pudo iniciar el sensor ni la cámara. Comprueba los permisos y vuelve a intentarlo.')
-          : (/NotAllowed|denied|permission/i.test(detail) ? 'Camera permission is denied. Enable it in Settings → Apps → Rootwise → Permissions → Camera.' : 'Neither the light sensor nor camera could start. Check permissions and try again.'));
+          ? 'Fallaron el sensor (' + sensorDetail + ') y la cámara (' + cameraDetail + '). Comprueba los permisos y el hardware.'
+          : 'Both the ambient-light sensor (' + sensorDetail + ') and camera (' + cameraDetail + ') failed. Check permissions and device hardware.');
       }
     }
   };
