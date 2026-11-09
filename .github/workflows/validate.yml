@@ -4,6 +4,7 @@ on:
     branches:
       - safety/supabase-target-hardening
       - feature/rootwise-unified-development
+      - fix/rootwise-ui-tools-gps-light
   pull_request:
     branches:
       - main
@@ -31,6 +32,8 @@ jobs:
           node --input-type=module --check < workers/verde-roatan-legal-worker.js
       - name: Worker regression tests
         run: npm run test:worker
+      - name: Field sensor and GPS regression tests
+        run: npm run test:field
       - name: TypeScript check
         run: npm run lint
       - name: Production web build
