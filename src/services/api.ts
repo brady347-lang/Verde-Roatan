@@ -279,10 +279,19 @@ export async function fetchDeliveryZones(): Promise<DeliveryZone[]> {
 
 export async function fetchCatalog(): Promise<CatalogItem[]> {
   try {
-    const response = await fetch(`${API_URL}/plants`, { cache: 'no-store' });
-    const payload = await response.json();
-    if (!response.ok || payload.status !== 'success' || !Array.isArray(payload.plants)) {
-      throw new Error('Catalog service returned an invalid response.');
+    let workerPlants: any[] = [];
+    let workerReadSucceeded = false;
+    try {
+      const response = await fetch(`${API_URL}/plants`, { cache: 'no-store' });
+      const payload = await response.json();
+      if (response.ok && payload.status === 'success' && Array.isArray(payload.plants)) {
+        workerPlants = payload.plants;
+        workerReadSucceeded = true;
+      } else {
+        console.warn('Legacy catalog worker returned an invalid response; trying approved Supabase listings.');
+      }
+    } catch (error) {
+      console.warn('Legacy catalog worker is unavailable; trying approved Supabase listings.', error);
     }
 
     // Supplier listings live in public.products, not necessarily in the legacy /plants worker.
@@ -305,6 +314,8 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
     } catch (error) {
       console.warn('Supplier catalog could not be refreshed from Supabase.', error);
     }
+
+    if (!workerReadSucceeded && !productReadSucceeded) throw new Error('Neither the legacy catalog nor the approved supplier catalog is available.');
 
     const productStatusById = new Map<string, any>(productRows.map(row => [String(row.id), row]));
     const isUuid = (value: unknown) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(String(value || ''));
@@ -348,7 +359,7 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
       };
     };
 
-    const workerItems = payload.plants
+    const workerItems = workerPlants
       .filter((row: any) => {
         const id = String(row?.id || '');
         if (!isUuid(id)) return true;
