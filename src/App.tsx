@@ -973,36 +973,47 @@ export default function App() {
       );
 
       const zone = zones.find((z) => z.id === selectedZoneId) || zones[0];
-      const itemsList = cart.map((ci) => {
-        const it = currentCatalog.find((c) => String(c.id) === String(ci.id));
-        return {
-          id: ci.id,
-          name: it?.name || 'Island Specimen',
-          price: it?.price || 250,
-          currency: it?.currency || details.currency,
-          qty: ci.qty,
-          size: it?.size,
-          image_url: it?.image_url,
-          supplier_name: it?.nursery
-        };
-      });
-
-      const sub = itemsList.reduce((acc, it) => acc + it.price * it.qty, 0);
-      const fee = zone ? zone.fee : 100;
+      const serverItems = Array.isArray(res?.items) ? res.items : null;
+      const itemsList = serverItems
+        ? serverItems.map((item) => {
+            const catalogItem = currentCatalog.find((entry) => String(entry.id) === String(item.product_id));
+            return {
+              id: String(item.product_id || catalogItem?.id || ''),
+              name: String(item.product_name || catalogItem?.name || 'Island Specimen'),
+              price: Number(item.unit_price),
+              currency: item.currency === 'USD' ? 'USD' as const : 'HNL' as const,
+              qty: Number(item.quantity),
+              size: item.size || catalogItem?.size,
+              image_url: item.image_url || catalogItem?.image_url,
+              supplier_name: item.supplier_name || catalogItem?.nursery
+            };
+          })
+        : cart.map((ci) => {
+            const item = currentCatalog.find((entry) => String(entry.id) === String(ci.id));
+            return {
+              id: ci.id,
+              name: item?.name || 'Island Specimen',
+              price: item?.price || 0,
+              currency: item?.currency || details.currency,
+              qty: ci.qty,
+              size: item?.size,
+              image_url: item?.image_url,
+              supplier_name: item?.nursery
+            };
+          });
+      const localSubtotal = itemsList.reduce((acc, item) => acc + item.price * item.qty, 0);
+      const sub = Number.isFinite(Number(res?.subtotal)) ? Number(res.subtotal) : localSubtotal;
+      const fee = Number.isFinite(Number(res?.delivery_fee)) ? Number(res.delivery_fee) : Number(zone?.fee || 0);
+      const serverTotal = Number(res?.total);
+      const orderTotal = Number.isFinite(serverTotal) ? serverTotal : sub + fee;
       const orderCode = String(res?.order_id || res?.id || '').trim();
       if (!orderCode) throw new Error('The server did not return a confirmed order number. Your cart has been kept intact.');
-      const activeExchangeRate = rateData?.hnlPerUsd || 26;
-
-      // Identify primary nursery / supplier
-      const firstNurseryName = itemsList[0]?.supplier_name;
-      const matchingSupplier = registeredSuppliers.find(
-        (s) => s.name.toLowerCase() === firstNurseryName?.toLowerCase()
-      ) || registeredSuppliers[0];
-
-      const estSupplierCost = Math.round(sub * 0.6);
+      const activeExchangeRate = Number(res?.usd_to_hnl_rate) > 0
+        ? Number(res.usd_to_hnl_rate)
+        : rateData?.hnlPerUsd || 26;
 
       const newOrder: ActiveOrder = {
-        id: `ord_${Date.now()}`,
+        id: orderCode,
         order_id: orderCode,
         created_at: new Date().toISOString(),
         items: itemsList,
@@ -1016,16 +1027,16 @@ export default function App() {
         currency: details.currency,
         subtotal: sub,
         delivery_fee: fee,
-        total: sub + fee,
+        total: orderTotal,
         status: 'placed',
         canonical_status: 'order_placed',
-        payment_status: 'pending',
-        payment_method: 'card_pos',
+        payment_status: res?.payment_status || 'pending',
+        payment_method: res?.payment_method || 'cash_on_delivery',
         delivery_type: 'island_delivery',
         exchange_rate_used: activeExchangeRate,
-        assigned_supplier_id: matchingSupplier?.id || 'sup-1',
-        assigned_supplier_name: matchingSupplier?.name || 'Verde Roatán Nursery (Sandy Bay)',
-        supplier_cost: estSupplierCost,
+        assigned_supplier_id: '',
+        assigned_supplier_name: 'Awaiting supplier assignment',
+        supplier_cost: 0,
         supplier_cost_currency: details.currency,
         supplier_paid: false,
         status_history: [
@@ -1051,25 +1062,8 @@ export default function App() {
         ]
       };
 
-      // 1. Record customer order transaction
-      const orderTxn = createTransactionRecord({
-        related_order_id: orderCode,
-        type: 'customer_order',
-        customer_name: details.name,
-        supplier_name: newOrder.assigned_supplier_name,
-        amount: newOrder.total,
-        currency: details.currency,
-        exchange_rate: activeExchangeRate,
-        payment_method: 'card_pos',
-        status: 'pending',
-        responsible_role: 'customer',
-        responsible_name: details.name,
-        notes: `New customer order with ${itemsList.length} items (${newOrder.zone_name})`,
-        reference_number: orderCode
-      });
-      setTransactions((prev) => [orderTxn, ...prev]);
-
-      // 2. Create Administrator Notification for Customer Event
+      // The checkout database function is responsible for the persistent customer-order ledger entry.
+      // Keep this client handler focused on the operational notification only.
       const adminNotif = createNotificationEvent({
         category: 'customer',
         event_type: 'order_placed',
@@ -1081,51 +1075,9 @@ export default function App() {
       });
       setNotifications((prev) => [adminNotif, ...prev]);
 
-      // 3. Automatically generate Supplier Purchase Request for assigned grower
-      const supItems: SupplierPurchaseRequest['items'] = itemsList.map((it, idx) => ({
-        id: `spi-${Date.now()}-${idx}`,
-        product_id: it.id,
-        name: it.name,
-        quantity: it.qty,
-        unit_price: Math.round(it.price * 0.6),
-        currency: details.currency,
-        status: 'pending' as const,
-        notes: it.size ? `Specimen size: ${it.size}` : undefined
-      }));
-
-      const totalSupCost = supItems.reduce((acc, it) => acc + it.unit_price * it.quantity, 0);
-
-      const supReq: SupplierPurchaseRequest = {
-        id: `req-${Date.now()}`,
-        order_id: orderCode,
-        supplier_id: matchingSupplier?.id || 'sup-1',
-        supplier_name: matchingSupplier?.name || 'Verde Roatán Nursery (Sandy Bay)',
-        supplier_location: matchingSupplier?.location || 'Roatán, Bay Islands',
-        items: supItems,
-        total_supplier_cost: totalSupCost,
-        currency: details.currency,
-        payment_status: 'unpaid',
-        status: 'pending_confirmation',
-        estimated_prep_hours: 4,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        supplier_notes: `Purchase request generated automatically for Order #${orderCode}. Delivery destination: ${zone?.name || 'Roatan'}`
-      };
-      setSupplierRequests((prev) => [supReq, ...prev]);
-
-      // 4. Create Supplier Event Notification
-      const supNotif = createNotificationEvent({
-        category: 'supplier',
-        event_type: 'purchase_request_created',
-        related_order_id: orderCode,
-        entity_name: supReq.supplier_name,
-        title: `Supplier Purchase Request #${orderCode}`,
-        description: `Purchase order queued for ${supReq.supplier_name} with ${itemsList.length} requested items.`,
-        priority: 'normal'
-      });
-      setNotifications((prev) => [supNotif, ...prev]);
-
-      setActiveOrders((prev) => [newOrder, ...prev]);
+      // Do not fabricate a supplier assignment or wholesale price. The order remains
+      // unassigned until an administrator links a real supplier record and receives a quote.
+      setActiveOrders((prev) => [newOrder, ...prev.filter((order) => order.order_id !== orderCode)]);
       setOrderResult(res);
       setCart([]);
       checkoutAttemptRef.current = null;
