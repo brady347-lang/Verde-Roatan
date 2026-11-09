@@ -132,7 +132,8 @@ public class RootWiseDeviceSensorsPlugin extends Plugin implements SensorEventLi
     @Override
     protected void handleOnResume() {
         super.handleOnResume();
-        if (shouldListenCompass && sensorManager != null && rotationSensor != null) compassListening = sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_UI);\n        if (shouldListen && !registerAmbientLightListener()) {
+        if (shouldListenCompass && sensorManager != null && rotationSensor != null) compassListening = sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_UI);
+        if (shouldListen && !registerAmbientLightListener()) {
             JSObject payload = new JSObject();
             payload.put("message", "Ambient light sensor could not resume.");
             notifyListeners("lightSensorError", payload);
