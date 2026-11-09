@@ -39,6 +39,14 @@ assert.match(tools, /disabled=\{tracking\} onClick=\{\(\) => setPoints/, 'undo m
 assert.match(tools, /if \(!trackingActiveRef\.current\) \{[\s\S]*?clearWatch\(\{ id: watchId \}\)[\s\S]*?return;/, 'stop during watcher start must release the watcher and not re-enter tracking state');
 assert.match(tools, /RootWiseMap points=\{points\} follow=\{tracking\}/, 'RootWise open map must receive the live track and follow state');
 const rootWiseMap = read('../components/RootWiseMap.tsx');
+const fieldPlotDiagram = read('../components/FieldPlotDiagram.tsx');
+assert.match(fieldPlotDiagram, /useState\(2\)/, 'field plot detail zoom must have a usable default');
+assert.match(fieldPlotDiagram, /Math\.max\(1, value - 1\)/, 'field plot detail zoom must have a lower bound');
+assert.match(fieldPlotDiagram, /Math\.min\(5, value \+ 1\)/, 'field plot detail zoom must have an upper bound');
+assert.match(fieldPlotDiagram, /translate\(\$\{width \/ 2\} \$\{height \/ 2\}\) scale\(\$\{detailZoom\}\)/, 'detail zoom must magnify around the latest GPS point');
+assert.match(fieldPlotDiagram, /Full plot overview|Vista general/, 'full plot overview must remain available beside the close-up');
+assert.match(fieldPlotDiagram, /areaM2\.toFixed\(2\)/, 'area summary must remain based on the complete plot, not the zoom');
+assert.match(fieldPlotDiagram, /Precision close-up|Zoom de precisión/, 'field plot must provide a separate precision close-up');
 assert.match(rootWiseMap, /tiles\.openfreemap\.org\/styles\/liberty/, 'field map must use the OpenStreetMap-derived open vector basemap');
 assert.match(rootWiseMap, /map\.easeTo\(\{ center: \[latest\.lon, latest\.lat\]/, 'MapLibre must follow the latest accepted GPS point');
 assert.match(rootWiseMap, /rootwise-field-area/);
