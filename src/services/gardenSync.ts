@@ -8,6 +8,38 @@ import { toMemoryRow, type GardenMemoryRow } from '../lib/gardenMemory.ts';
 export interface SyncConfig { baseUrl: string; apiKey: string; accessToken: string; userId: string; fetchImpl?: typeof fetch; }
 export interface GardenLike { id: string; date: string; mode: 'plant' | 'pest'; name: string; photo?: string | null; photoId?: string | null; data: unknown; }
 
+export function gardenStorageKey(userId?: string | null): string {
+  return userId ? 'verde_garden_user_' + userId : 'verde_garden_guest';
+}
+
+/** Garden records are private: a signed-in account reads only its own device cache. */
+export function readLocalGarden<T extends GardenLike = GardenLike>(
+  userId?: string | null,
+  storage: Pick<Storage, 'getItem'> = localStorage
+): T[] {
+  try {
+    const raw = storage.getItem(gardenStorageKey(userId))
+      // The legacy unscoped key is guest-only; never attach it to an authenticated account.
+      ?? (!userId ? storage.getItem('verde_garden') : null);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.id === 'string') as T[] : [];
+  } catch {
+    return [];
+  }
+}
+
+export function writeLocalGarden(
+  userId: string | null | undefined,
+  items: GardenLike[],
+  storage: Pick<Storage, 'setItem'> = localStorage
+): void {
+  try {
+    storage.setItem(gardenStorageKey(userId), JSON.stringify(items));
+  } catch {
+    // Device storage is best-effort; private server sync remains separately guarded.
+  }
+}
+
 export function gardenItemToRow(userId: string, item: GardenLike): GardenMemoryRow {
   return toMemoryRow({
     userId, type: item.mode === 'plant' ? 'garden_plant' : 'garden_observation', localId: item.id,
