@@ -26,6 +26,16 @@ const reversed = measurePolygon([...square].reverse());
 assert.ok(Math.abs(reversed.area - squareResult.area) < 1e-6);
 assert.deepEqual(measurePolygon(square.slice(0, 2)), { area: 0, perimeter: 0 });
 assert.deepEqual(measurePolygon([]), { area: 0, perimeter: 0 });
+// A small square crossing +180°/-180° must remain a small local polygon, not span the globe.
+const datelineAt = (eastM, northM, accuracy = 3) => ({
+  lat: 16.3 + northM / mPerLat,
+  lon: ((179.99996 + eastM / mPerLon + 180) % 360) - 180,
+  accuracy
+});
+const datelineSquare = [datelineAt(0, 0), datelineAt(10, 0), datelineAt(10, 10), datelineAt(0, 10)];
+const datelineResult = measurePolygon(datelineSquare);
+assert.ok(Math.abs(datelineResult.area - 100) < 0.5, `antimeridian square area ~100, got ${datelineResult.area}`);
+assert.ok(Math.abs(datelineResult.perimeter - 40) < 0.2, `antimeridian perimeter ~40, got ${datelineResult.perimeter}`);
 
 // --- fix filtering
 assert.equal(MAX_ACCEPTED_ACCURACY_M, 5, 'small boundary tracking must reject fixes worse than 5 m');
@@ -59,6 +69,8 @@ assert.equal(hasSelfIntersection(square.slice(0, 3)), false, 'triangles cannot s
 assert.equal(hasSelfIntersection([at(0, 0), at(10, 10), at(10, 0), at(0, 10)]), true);
 // Concave L-shape does not cross itself.
 assert.equal(hasSelfIntersection([at(0, 0), at(10, 0), at(10, 5), at(5, 5), at(5, 10), at(0, 10)]), false);
+// The same bow-tie crossing the antimeridian must still be detected.
+assert.equal(hasSelfIntersection([datelineAt(0, 0), datelineAt(10, 10), datelineAt(10, 0), datelineAt(0, 10)]), true);
 
 // --- error classification
 assert.equal(classifyGpsError('LOCATION_PERMISSION_DENIED'), 'permission_denied');
