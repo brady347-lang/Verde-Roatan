@@ -45,6 +45,8 @@ assert.match(checkoutMigration, /'subtotal', v_order\.subtotal/, 'checkout must 
 assert.match(checkoutMigration, /'delivery_fee', v_order\.delivery_fee/, 'checkout must return the database delivery fee');
 assert.match(checkoutMigration, /'total', v_order\.total/, 'checkout must return the database total');
 assert.match(checkoutMigration, /ON CONFLICT \(checkout_token\) DO NOTHING/, 'checkout retries must be idempotent in the database');
+const checkoutOwnershipGuardCount = (checkoutMigration.match(/v_order\.customer_id IS DISTINCT FROM p_customer_id/g) || []).length;
+assert.equal(checkoutOwnershipGuardCount, 2, 'both existing-order and concurrent-retry paths must enforce customer ownership');
 assert.ok(productVisibilityMigration.includes('DROP POLICY IF EXISTS "Public can view active products"'), 'the older permissive product policy must be removed so inactive nursery stock stays private');
 
 
