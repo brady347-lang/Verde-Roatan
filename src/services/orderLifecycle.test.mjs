@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 
 const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../../supabase/migrations/20261109090000_order_lifecycle_integrity.sql', import.meta.url), 'utf8');
+const checkoutMigration = readFileSync(new URL('../../supabase/migrations/20261109090001_checkout_authoritative_ledger.sql', import.meta.url), 'utf8');
+const adminOrders = readFileSync(new URL('../components/AdminOrderCommandCenter.tsx', import.meta.url), 'utf8');
 
 assert.match(app, /p_order_id:\s*orderForSync\.id\s*,/, 'order status RPC must receive the UUID primary key');
 assert.doesNotMatch(app, /p_order_id:\s*orderForSync\.order_id\s*,/, 'human-readable order numbers must never be passed to the UUID RPC');
@@ -24,5 +26,22 @@ assert.match(migration, /WHEN p_next_status = 'refund_requested' THEN 'refund_re
 assert.match(migration, /WHEN p_next_status = 'refunded' THEN 'refunded'/, 'refund completion must update payment status');
 assert.match(migration, /tr\.transaction_type = v_transaction_type/, 'the financial ledger must avoid duplicate order event entries');
 assert.match(migration, /v_transaction_amount := 0/, 'cancellation must be recorded as an audit event, not a cash movement');
+assert.match(app, /checkoutAttemptRef\.current\.fingerprint !== fingerprint/, 'identical checkout retries must reuse their idempotency token');
+assert.match(app, /checkoutAttemptRef\.current\.token/, 'checkout must send the retained idempotency token');
+assert.match(app, /Number\.isFinite\(Number\(res\?\.total\)\)/, 'the app must use the server-confirmed checkout total');
+assert.match(app, /payment_method: res\?\.payment_method \|\| 'cash_on_delivery'/, 'the local order must reflect the backend payment method');
+assert.doesNotMatch(app, /Math\.round\(sub \* 0\.6\)/, 'supplier costs must not be fabricated as a retail percentage');
+assert.doesNotMatch(app, /Math\.round\(it\.price \* 0\.6\)/, 'supplier line costs must not be fabricated');
+assert.match(adminOrders, /unit_price: 0, \/\/ Supplier must provide a real quote/, 'supplier purchase requests must wait for an actual quote');
+assert.match(adminOrders, /ordersMissingSupplierCost > 0 \? null/, 'gross profit must be withheld when supplier costs are missing');
+
+assert.match(checkoutMigration, /'customer_order'/, 'checkout must write the initial order ledger record');
+assert.match(checkoutMigration, /'order_placed', 'customer'/, 'checkout must persist the initial order status history');
+assert.match(checkoutMigration, /'items', v_items/, 'checkout must return database-priced order items');
+assert.match(checkoutMigration, /'subtotal', v_order\.subtotal/, 'checkout must return the database subtotal');
+assert.match(checkoutMigration, /'delivery_fee', v_order\.delivery_fee/, 'checkout must return the database delivery fee');
+assert.match(checkoutMigration, /'total', v_order\.total/, 'checkout must return the database total');
+assert.match(checkoutMigration, /ON CONFLICT \(checkout_token\) DO NOTHING/, 'checkout retries must be idempotent in the database');
+
 
 console.log('Order lifecycle and financial-ledger regression checks passed.');
