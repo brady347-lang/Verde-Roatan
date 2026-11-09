@@ -39,7 +39,16 @@ type BotanicalReferenceCatalog = {
   model_version: "rootwise_mobilenetv3_512d_v1";
   embedding_dimension: 512;
   normalization: "minus_one_to_one";
-  calibration: {\n    model_version: "rootwise_mobilenetv3_512d_v1";\n    calibration_method: "global_max_cosine_threshold_on_separate_negative_set";\n    global_acceptance_threshold: number;\n    negative_sample_count: number; // minimum 1,000\n    positive_validation_count: number; // minimum 100\n    target_false_accept_rate: number;\n    measured_negative_false_accept_rate: number;\n  };\n  entries: Array<{
+  calibration: {
+    model_version: "rootwise_mobilenetv3_512d_v1";
+    calibration_method: "global_max_cosine_threshold_on_separate_negative_set";
+    global_acceptance_threshold: number;
+    negative_sample_count: number; // minimum 1,000
+    positive_validation_count: number; // minimum 100
+    target_false_accept_rate: number;
+    measured_negative_false_accept_rate: number;
+  };
+  entries: Array<{
     id: string;
     common_name: string;
     scientific_name: string;
