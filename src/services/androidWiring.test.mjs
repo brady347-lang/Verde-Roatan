@@ -55,3 +55,14 @@ assert.match(tools, /requestGeneration !== cameraRequestGenerationRef\.current/,
 assert.doesNotMatch(tools, /luxInput/, 'ordinary light readings must not require manual lux entry');
 
 console.log('androidWiring tests passed');
+
+// Compass must be backed by Android's rotation-vector sensor and expose live readings.
+assert.match(plugin, /Sensor\.TYPE_ROTATION_VECTOR/);
+assert.match(plugin, /notifyListeners\("compassReading"/);
+assert.match(bridge, /startCompass\(\): Promise<void>/);
+assert.match(bridge, /addListener\(eventName: 'compassReading'/);
+assert.match(tools, /startCompassSensor/);
+assert.match(tools, /compassCalibrationScore/);
+assert.match(tools, /distanceOriginRef/);
+assert.match(tools, /gpsDistanceMeters\(distanceOriginRef\.current, liveFix\)/);
+assert.match(tools, /liveFix\.accuracy > 10/);
