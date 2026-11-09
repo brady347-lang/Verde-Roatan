@@ -42,6 +42,11 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
   const line = coords.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
   const area = coords.length ? `${line} L ${coords[coords.length - 1].x.toFixed(1)} ${(top + innerH).toFixed(1)} L ${coords[0].x.toFixed(1)} ${(top + innerH).toFixed(1)} Z` : '';
   const latest = visible[visible.length - 1];
+  const geoTaggedCount = visible.filter(sample => Number.isFinite(sample.latitude) && Number.isFinite(sample.longitude)).length;
+  const sourceLabel = new Set(visible.map(sample => sample.method)).size > 1
+    ? (es ? 'Sensor + cámara' : 'Sensor + camera')
+    : latest?.method === 'camera_estimated' ? (es ? 'Cámara estimada' : 'Camera estimate')
+      : latest ? (es ? 'Sensor ambiental' : 'Ambient sensor') : '';
 
   return (
     <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3">
@@ -79,8 +84,8 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
         </svg>
       </div>
       <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--ink-soft)]">
-        <span>{visible.length} {es ? 'lecturas' : 'readings'} · lux</span>
-        <span>{latest ? new Date(latest.timestamp).toLocaleTimeString(es ? 'es-HN' : 'en-US') : '—'}</span>
+        <span>{visible.length} {es ? 'lecturas' : 'readings'} · {geoTaggedCount} GPS</span>
+        <span>{sourceLabel} · {latest ? new Date(latest.timestamp).toLocaleTimeString(es ? 'es-HN' : 'en-US') : '—'}</span>
       </div>
     </section>
   );
