@@ -13,6 +13,13 @@ where is_active = true
   );
 
 alter table public.products
+  add constraint products_active_requires_approval
+  check (
+    is_active = false
+    or (listing_status = 'approved' and image_review_status = 'approved')
+  ) not valid;
+
+alter table public.products
   validate constraint products_active_requires_approval;
 
 -- Remove the older permissive policy that exposed every active row, including pending
