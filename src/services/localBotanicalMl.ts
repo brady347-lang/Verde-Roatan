@@ -17,8 +17,7 @@ export async function tryLocalBotanicalIdentification(image: string): Promise<AI
 
   const local = await RootWiseBotanicalML.identify({
     image,
-    topK: 3,
-    confidenceThreshold: 0.65
+    topK: 3
   });
 
   if (local.status !== 'success' || !Array.isArray(local.candidates)) return null;
