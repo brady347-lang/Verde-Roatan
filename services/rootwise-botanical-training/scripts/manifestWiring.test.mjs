@@ -3,19 +3,21 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const train = readFileSync(new URL('./train.py', import.meta.url), 'utf8');
-const splitFunction = train.match(/def assign_group_splits[\\s\\S]*?\\n\\ndef make_dataset/);
-assert.ok(splitFunction, 'assign_group_splits must remain present');
-const source = splitFunction[0];
+const start = train.indexOf('def assign_group_splits');
+const end = train.indexOf('\n\ndef make_dataset', start);
+assert.ok(start >= 0 && end > start, 'assign_group_splits must remain present');
+const source = train.slice(start, end);
 
-assert.match(source, /has_any_explicit_split = supplied_splits\\.ne\(""\)\\.any\(\)/);
-assert.match(source, /has_all_explicit_splits = supplied_splits\\.ne\(""\)\\.all\(\)/);
-assert.match(
-  source,
-  /has_any_explicit_split and not has_all_explicit_splits[\\s\\S]*?raise ValueError/,
-  'partially populated split columns must fail instead of silently regenerating all splits'
-);
-assert.match(source, /result\\.groupby\("observation_group"\)\["split"\]\\.nunique\(\)/);
-assert.match(source, /An observation_group appears in more than one split/);
-assert.match(source, /Deterministic group split within each species/);
+for (const fragment of [
+  'has_any_explicit_split = supplied_splits.ne("").any()',
+  'has_all_explicit_splits = supplied_splits.ne("").all()',
+  'has_any_explicit_split and not has_all_explicit_splits',
+  'partially populated split columns must fail',
+  'result.groupby("observation_group")["split"].nunique()',
+  'An observation_group appears in more than one split',
+  'Deterministic group split within each species'
+]) {
+  assert.ok(source.includes(fragment), `missing dataset split integrity guard: ${fragment}`);
+}
 
 console.log('botanical training manifest guards passed (source-level; no model training performed)');
