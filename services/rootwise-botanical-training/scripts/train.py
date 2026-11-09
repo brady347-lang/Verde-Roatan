@@ -124,9 +124,7 @@ def build_models(class_count: int):
     features = layers.GlobalAveragePooling2D(name="global_pool")(features)
     features = layers.Dropout(0.25)(features)
     embedding = layers.Dense(EMBEDDING_DIM, use_bias=False, name="embedding_projection")(features)
-    embedding = layers.Lambda(
-        lambda value: tf.math.l2_normalize(value, axis=1), name="embedding"
-    )(embedding)
+    embedding = layers.UnitNormalization(axis=1, name="embedding")(embedding)
     classifier = layers.Dense(class_count, activation="softmax", name="species_classifier")(embedding)
     training_model = keras.Model(inputs, classifier, name="rootwise_botanical_classifier")
     encoder = keras.Model(inputs, embedding, name="rootwise_botanical_encoder")
