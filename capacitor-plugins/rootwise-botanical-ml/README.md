@@ -17,7 +17,7 @@ Place both files in the plugin module assets directory:
 
 `capacitor-plugins/rootwise-botanical-ml/android/src/main/assets/`
 
-1. `botanical_mobilenetv4_512d.tflite`
+1. `rootwise_mobilenetv3_512d.tflite`
 2. `botanical_reference_embeddings.json`
 
 The current repository intentionally does not contain either artifact. Do not add synthetic/random embeddings.
@@ -26,9 +26,9 @@ The current repository intentionally does not contain either artifact. Do not ad
 
 - Input: FLOAT32 `[1, 224, 224, 3]`, RGB, values normalized to [-1, 1].
 - Output: FLOAT32 `[1, 512]`.
-- Model version: `mobilenetv4_512d_v1`.
+- Model version: `rootwise_mobilenetv3_512d_v1`.
 
-The model contract must be confirmed against the actual AI Studio export before installing a model. If the exported model differs, update this adapter to match the real contract; do not reshape or reinterpret tensors speculatively.
+The model contract is defined by the RootWise training pipeline in `services/rootwise-botanical-training/`. The model is trained and exported by RootWise; do not substitute an unrelated AI Studio export or reinterpret tensors speculatively.
 
 ### Reference catalog schema
 
