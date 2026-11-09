@@ -188,7 +188,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     lastLightSampleAtRef.current = timestamp;
     const sessionId = lightSessionIdRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'light-' + timestamp);
     lightSessionIdRef.current = sessionId;
-    const fix = lastAcceptedFixRef.current;
+    const fix = trackingActiveRef.current ? lastAcceptedFixRef.current : null;
     const sample: LightReadingSample = { id: sessionId + ':' + timestamp, sessionId, timestamp, lux: Math.max(0, luxValue), method, ...(fix ? { latitude: fix.lat, longitude: fix.lon, accuracy: fix.accuracy } : {}) };
     setLightSamples(current => [...current.slice(-1199), sample]);
     void saveLightReading(sample).catch(error => console.warn('Could not save light reading locally.', error));
@@ -395,7 +395,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           // Switch to the rear camera when the native sensor becomes unavailable.
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(null);
-          void startCameraFallback().catch(() => setSensorStatus(es ? 'El sensor no pudo reanudarse y la cámara tampoco está disponible. Revisa el permiso de cámara.' : 'The sensor could not resume and the camera is unavailable. Check camera permission.'));
+          void startCameraFallback().catch(() => { setLightRecording(false); setSensorStatus(es ? 'El sensor no pudo reanudarse y la cámara tampoco está disponible. Revisa el permiso de cámara.' : 'The sensor could not resume and the camera is unavailable. Check camera permission.'); });
         });
         try {
           await RootWiseDeviceSensors.startAmbientLight();
@@ -410,7 +410,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           void errorListener.remove();
         } };
         sensorTimeoutRef.current = window.setTimeout(() => {
-          if (!receivedReading) void startCameraFallback().catch(() => setSensorStatus(es ? 'No hay lectura del sensor y no se pudo abrir la cámara. Revisa el permiso de cámara.' : 'No sensor reading arrived and the camera could not start. Check camera permission.'));
+          if (!receivedReading) void startCameraFallback().catch(() => { setLightRecording(false); setSensorStatus(es ? 'No hay lectura del sensor y no se pudo abrir la cámara. Revisa el permiso de cámara.' : 'No sensor reading arrived and the camera could not start. Check camera permission.'); });
         }, 6000);
         return;
       }
@@ -429,11 +429,11 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
       });
-      sensor.onerror = () => { void startCameraFallback().catch(() => setSensorStatus(es ? 'Falló el sensor y no se pudo abrir la cámara.' : 'Sensor failed and the camera could not start.')); };
+      sensor.onerror = () => { void startCameraFallback().catch(() => { setLightRecording(false); setSensorStatus(es ? 'Falló el sensor y no se pudo abrir la cámara.' : 'Sensor failed and the camera could not start.'); }); };
       sensor.start();
       sensorRef.current = sensor;
       sensorTimeoutRef.current = window.setTimeout(() => {
-        if (!receivedReading) void startCameraFallback().catch(() => setSensorStatus(es ? 'El sensor no respondió y no se pudo abrir la cámara.' : 'The sensor did not respond and the camera could not start.'));
+        if (!receivedReading) void startCameraFallback().catch(() => { setLightRecording(false); setSensorStatus(es ? 'El sensor no respondió y no se pudo abrir la cámara.' : 'The sensor did not respond and the camera could not start.'); });
       }, 6000);
     } catch {
       try { await startCameraFallback(); }
