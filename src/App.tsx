@@ -322,6 +322,12 @@ export default function App() {
       } catch (error) {
         if (cancelled) return;
         setSession(null);
+        setGarden([]);
+        setActiveOrders([]);
+        setOrderHistory([]);
+        setTransactions([]);
+        setSupplierRequests([]);
+        setNotifications([]);
         localStorage.removeItem('verde_auth_session');
         console.info('Stored Supabase session was no longer valid; user signed out locally.', error);
       }
@@ -1529,6 +1535,12 @@ export default function App() {
           full_name: data.user?.user_metadata?.full_name || name
         }
       };
+      setGarden(readLocalGarden<GardenItem>(newSession.user.id));
+      setActiveOrders([]);
+      setOrderHistory([]);
+      setTransactions([]);
+      setSupplierRequests([]);
+      setNotifications([]);
       setSession(newSession);
       safeSetItem('verde_auth_session', JSON.stringify(newSession));
       showToast(lang === 'es' ? '¡Bienvenido a RootWise!' : 'Welcome to RootWise!');
@@ -1557,6 +1569,12 @@ export default function App() {
           temporary_expires_at: data.user?.app_metadata?.temporary_access_expires_at
         }
       };
+      setGarden(readLocalGarden<GardenItem>(newSession.user.id));
+      setActiveOrders([]);
+      setOrderHistory([]);
+      setTransactions([]);
+      setSupplierRequests([]);
+      setNotifications([]);
       setSession(newSession);
       safeSetItem('verde_auth_session', JSON.stringify(newSession));
       showToast(
@@ -1589,6 +1607,12 @@ export default function App() {
       expires_at: data.expires_at || Math.floor(Date.now() / 1000) + Number(data.expires_in || 3600),
       user: data.user
     };
+    setGarden(readLocalGarden<GardenItem>(newSession.user.id));
+    setActiveOrders([]);
+    setOrderHistory([]);
+    setTransactions([]);
+    setSupplierRequests([]);
+    setNotifications([]);
     setSession(newSession);
     safeSetItem('verde_auth_session', JSON.stringify(newSession));
     if (data.user?.temporary_role === 'supplier') setTab('account');
@@ -1598,6 +1622,12 @@ export default function App() {
   };
 
   const handleSignOut = () => {
+    setGarden([]);
+    setActiveOrders([]);
+    setOrderHistory([]);
+    setTransactions([]);
+    setSupplierRequests([]);
+    setNotifications([]);
     setSession(null);
     localStorage.removeItem('verde_auth_session');
     localStorage.removeItem('verde_is_admin');
