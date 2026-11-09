@@ -105,7 +105,7 @@ jobs:
             if ./gradlew assembleDebug 2>&1 | tee /tmp/gradle-build.log; then
               exit 0
             fi
-            if ! grep -Eiq 'HTTP (502|503|504)|Gateway Time-out|timed out|Read timed out|Connection reset|UnknownHostException|Temporary failure in name resolution|Could not (GET|HEAD)|Could not download.*gradle' /tmp/gradle-build.log; then
+            if ! grep -Eiq 'HTTP (502|503|504)|HTTP response code: (502|503|504)|Gateway Time-out|timed out|Read timed out|Connection reset|UnknownHostException|Temporary failure in name resolution|Could not (GET|HEAD)|Could not download.*gradle' /tmp/gradle-build.log; then
               echo "Gradle failed for a non-network reason; stopping without retry."
               exit 1
             fi
