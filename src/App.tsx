@@ -49,6 +49,8 @@ import {
   fetchAdminOrders,
   fetchCustomerOrders,
   fetchAdminTransactions,
+  fetchAdminSupplierPurchaseRequests,
+  fetchAdminNotifications,
   fetchDeliveryZones,
   refineBotanicalIdentification,
   submitOrderCheckout,
@@ -374,6 +376,8 @@ export default function App() {
   const [notifications, setNotifications] = useState<NotificationEvent[]>(() => {
     return loadSavedNotifications();
   });
+  const [adminSyncStatus, setAdminSyncStatus] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle');
+  const [adminSyncError, setAdminSyncError] = useState('');
 
   // Persistent Storage Sync
   useEffect(() => {
@@ -632,23 +636,38 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Admin command center reads the real order ledger from Supabase after admin authentication.
+  // Load the administrator command center as one coherent snapshot. Never silently
+  // present partially loaded order history, supplier requests, or notifications as live data.
   useEffect(() => {
-    if (!isAdmin || !session?.access_token) return;
+    if (!isAdmin || !session?.access_token) {
+      setAdminSyncStatus('idle');
+      setAdminSyncError('');
+      return;
+    }
     let cancelled = false;
-    fetchAdminOrders(session.access_token).then((remoteOrders) => {
+    setAdminSyncStatus('loading');
+    setAdminSyncError('');
+    Promise.all([
+      fetchAdminOrders(session.access_token, true),
+      fetchAdminTransactions(session.access_token),
+      fetchAdminSupplierPurchaseRequests(session.access_token),
+      fetchAdminNotifications(session.access_token)
+    ]).then(([remoteOrders, remoteTransactions, remoteSupplierRequests, remoteNotifications]) => {
       if (cancelled) return;
       const active = remoteOrders.filter((order) => !['delivered', 'completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
       const archived = remoteOrders.filter((order) => ['delivered', 'completed', 'cancelled', 'refunded'].includes(String(order.canonical_status)));
       setActiveOrders(active);
       setOrderHistory(archived);
+      setTransactions(remoteTransactions);
+      setSupplierRequests(remoteSupplierRequests);
+      setNotifications(remoteNotifications);
+      setAdminSyncStatus('ready');
     }).catch((error) => {
-      console.warn('Supabase admin order sync unavailable; retaining locally cached records.', error);
-    });
-    fetchAdminTransactions(session.access_token).then((remoteTransactions) => {
-      if (!cancelled) setTransactions(remoteTransactions);
-    }).catch((error) => {
-      console.warn('Supabase transaction ledger is not readable for this session; retaining local records.', error);
+      if (cancelled) return;
+      const message = error instanceof Error ? error.message : 'The administrator dashboard could not synchronize with Supabase.';
+      setAdminSyncError(message);
+      setAdminSyncStatus('error');
+      console.warn('Supabase administrator dashboard sync failed; cached values are retained and marked as stale.', error);
     });
     return () => { cancelled = true; };
   }, [isAdmin, session?.access_token]);
@@ -2204,6 +2223,8 @@ export default function App() {
               onMarkAllNotificationsRead={handleMarkAllNotificationsRead}
               exchangeRateHnl={rateData?.hnlPerUsd || 26}
               onSendOrderMessage={handleSendOrderMessage}
+              adminSyncStatus={adminSyncStatus}
+              adminSyncError={adminSyncError}
             />
           )}
           </motion.div>
