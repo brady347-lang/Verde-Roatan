@@ -62,6 +62,15 @@ assert.match(shop, /onOpenCart/);
 assert.match(shop, /cartCount > 0/);
 assert.match(app, /onOpenCart=\{\(\) => setTab\('request'\)\}/);
 
+// Light sensor diagnostics and stabilized display (ported from PR #64 onto the newer light pipeline).
+assert.match(plugin, /payload\.put\("sensorName"/, 'native plugin must report the sensor name');
+assert.match(plugin, /payload\.put\("resolution"/, 'native plugin must report sensor resolution');
+assert.match(bridge, /sensorVendor\?: string/, 'bridge typing must expose sensor diagnostics');
+assert.match(tools, /luxFilterRef\.current\.push\(rawValue\)/, 'native light display must be stabilized');
+assert.match(tools, /recordLightReading\(Math\.max\(0, event\.lux\), 'sensor_measured'\)/, 'light history must keep the raw sensor value');
+assert.ok(tools.includes('estimateLuxFromCamera('), 'main calibrated camera estimates must remain');
+assert.ok(tools.includes('buildCalibrationProfile('), 'camera calibration flow must remain');
+
 console.log('androidWiring tests passed');
 
 // Compass must be backed by Android's rotation-vector sensor and expose live readings.

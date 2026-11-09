@@ -12,6 +12,7 @@ import { LightHistoryChart } from '../components/LightHistoryChart';
 import { FieldPlotDiagram } from '../components/FieldPlotDiagram';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
+import { LuxReadingFilter } from '../services/luxReadingFilter';
 import { buildCalibrationProfile, estimateLuxFromCamera, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
 import { deleteGpsDiagnosticsSamples, listGpsDiagnosticsSamples, saveGpsDiagnosticsSample, type GpsDiagnosticsSample } from '../lib/gpsDiagnosticsStore';
 
@@ -212,6 +213,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const cameraEstimateIntervalRef = useRef<number | null>(null);
   const cameraRequestGenerationRef = useRef(0);
   const [liveLux, setLiveLux] = useState<number | null>(null);
+  // The displayed value is stabilized (median + smoothing); the raw sensor value is kept for history and diagnostics.
+  const [rawLux, setRawLux] = useState<number | null>(null);
+  const [sensorDetails, setSensorDetails] = useState<{ name: string; vendor: string; accuracy: number; resolution: number } | null>(null);
+  const luxFilterRef = useRef(new LuxReadingFilter());
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
   const sensorTimeoutRef = useRef<number | null>(null);
@@ -453,6 +458,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
     setLiveLux(null);
+    setRawLux(null);
+    setSensorDetails(null);
+    luxFilterRef.current.reset();
     setSensorStatus(es ? 'Esperando la primera lectura del sensor…' : 'Waiting for the first sensor reading…');
     if (!lightSessionIdRef.current) lightSessionIdRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'light-' + Date.now();
     setLightRecording(true);
@@ -463,7 +471,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           if (!Number.isFinite(event.lux)) return;
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
-          setLiveLux(Math.max(0, event.lux));
+          const rawValue = Math.max(0, event.lux);
+          setRawLux(rawValue);
+          if (typeof event.sensorName === 'string') setSensorDetails({ name: event.sensorName, vendor: String(event.sensorVendor ?? ''), accuracy: Number(event.accuracy ?? -1), resolution: Number(event.resolution ?? 0) });
+          setLiveLux(luxFilterRef.current.push(rawValue));
           recordLightReading(Math.max(0, event.lux), 'sensor_measured');
           setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
         });
@@ -501,7 +512,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         if (typeof sensor.illuminance === 'number' && Number.isFinite(sensor.illuminance)) {
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
-          setLiveLux(sensor.illuminance);
+          setRawLux(sensor.illuminance);
+          setLiveLux(luxFilterRef.current.push(sensor.illuminance));
           recordLightReading(sensor.illuminance, 'sensor_measured');
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
@@ -973,7 +985,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       {tool === 'light' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><Sun className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medidor inteligente de luz' : 'Intelligent light meter'}</h2></div>
         <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Mide la iluminación del lugar y compárala con las necesidades de luz de las plantas del Centro de Conocimiento Botánico.' : 'Measure the site illumination and compare it with plant light requirements from the Botanical Knowledge Center.'}</p>
-        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{hasMeasuredLux ? Math.round(lux).toLocaleString() : cameraFallbackActive && cameraResponse !== null ? `${Math.round(cameraResponse * 100)}%` : '—'} {hasMeasuredLux ? 'lux' : cameraFallbackActive ? (es ? 'brillo relativo' : 'relative brightness') : 'lux'}</b><p className="text-[11px] font-semibold text-[var(--ink-soft)]">{liveLux !== null ? (es ? 'Medido por el sensor ambiental del dispositivo' : 'Measured by the device ambient-light sensor') : cameraEstimatedLux !== null ? (es ? 'Estimación de cámara calibrada · no sustituye un luxómetro' : 'Calibrated camera estimate · not a replacement for a lux meter') : cameraFallbackActive ? (es ? 'Brillo relativo de cámara · no es una lectura de lux' : 'Camera relative brightness · not a lux reading') : (es ? 'Aún no hay lectura. Toca «Leer sensor».' : 'No reading yet. Tap “Read sensor”.')}</p><p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
+        <div className="my-4 rounded-2xl bg-[var(--surface-2)] p-4 text-center"><Sun className="mx-auto h-8 w-8 text-amber-500" /><b className="mt-2 block text-3xl tabular-nums">{hasMeasuredLux ? Math.round(lux).toLocaleString() : cameraFallbackActive && cameraResponse !== null ? `${Math.round(cameraResponse * 100)}%` : '—'} {hasMeasuredLux ? 'lux' : cameraFallbackActive ? (es ? 'brillo relativo' : 'relative brightness') : 'lux'}</b><p className="text-[11px] font-semibold text-[var(--ink-soft)]">{liveLux !== null ? (es ? 'Medido por el sensor ambiental del dispositivo' : 'Measured by the device ambient-light sensor') : cameraEstimatedLux !== null ? (es ? 'Estimación de cámara calibrada · no sustituye un luxómetro' : 'Calibrated camera estimate · not a replacement for a lux meter') : cameraFallbackActive ? (es ? 'Brillo relativo de cámara · no es una lectura de lux' : 'Camera relative brightness · not a lux reading') : (es ? 'Aún no hay lectura. Toca «Leer sensor».' : 'No reading yet. Tap “Read sensor”.')}</p>{liveLux !== null && rawLux !== null && <p className="text-[10px] tabular-nums text-[var(--ink-soft)]">{es ? 'Lectura cruda: ' : 'Raw reading: '}{rawLux.toFixed(1)} lux{sensorDetails ? ` · ${sensorDetails.name}${sensorDetails.vendor ? ' (' + sensorDetails.vendor + ')' : ''} · ${es ? 'resolución' : 'resolution'} ${sensorDetails.resolution}${sensorDetails.accuracy >= 0 ? ` · ${es ? 'precisión' : 'accuracy'} ${sensorDetails.accuracy}` : ''}` : ''}</p>}<p className="text-sm font-bold">{lightAssessment.label}</p><p className="mt-1 text-xs text-[var(--ink-soft)]">{lightAssessment.guidance}</p><p className="mt-1 text-[10px] text-[var(--ink-soft)]">{es ? 'Confianza orientativa: ' : 'Guidance confidence: '}{lightAssessment.confidence}</p></div>
 
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
