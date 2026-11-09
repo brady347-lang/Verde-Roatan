@@ -13,7 +13,7 @@ import { FieldPlotDiagram } from '../components/FieldPlotDiagram';
 import { assessLight, recommendPlantsForLight } from '../services/lightIntelligence';
 import { classifyGpsError, evaluateFix, hasPreciseLocation, hasSelfIntersection, measurePolygon, type TrackPoint } from '../services/gpsTracking';
 import { buildCalibrationProfile, estimateLuxFromCamera, getCameraDeviceKey, loadCalibration, saveCalibration, summarizeFrame, type CameraCalibrationSample, type CalibrationStage } from '../services/cameraLightCalibration';
-import { listGpsDiagnosticsSamples, saveGpsDiagnosticsSample, type GpsDiagnosticsSample } from '../lib/gpsDiagnosticsStore';
+import { deleteGpsDiagnosticsSamples, listGpsDiagnosticsSamples, saveGpsDiagnosticsSample, type GpsDiagnosticsSample } from '../lib/gpsDiagnosticsStore';
 
 interface Props { lang: Language; catalog: CatalogItem[]; }
 type Point = TrackPoint;
@@ -152,6 +152,17 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       console.warn('GPS diagnostics save failed.', error);
     });
   };
+  const clearGpsDiagnostics = async () => {
+    if (typeof window !== 'undefined' && !window.confirm(es ? '¿Eliminar todos los datos de diagnóstico GPS guardados en este dispositivo?' : 'Delete all GPS diagnostic data saved on this device?')) return;
+    try {
+      await deleteGpsDiagnosticsSamples();
+      setGpsDiagnosticsCount(0);
+      setGpsDiagnosticsStatus(es ? 'Datos de diagnóstico eliminados de este dispositivo.' : 'Diagnostic data deleted from this device.');
+    } catch (error) {
+      setGpsDiagnosticsStatus(es ? 'No se pudieron eliminar los datos GPS.' : 'Could not delete GPS diagnostics.');
+      console.warn('GPS diagnostics deletion failed.', error);
+    }
+  };
   const exportGpsDiagnostics = async () => {
     try {
       const samples = await listGpsDiagnosticsSamples();
@@ -166,7 +177,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       anchor.href = url;
       anchor.download = 'rootwise-gps-diagnostics-' + new Date().toISOString().replace(/[:.]/g, '-') + '.json';
       anchor.click();
-      URL.revokeObjectURL(url);
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500);
       setGpsDiagnosticsStatus(es ? 'Exportación preparada. Revisa tus descargas.' : 'Export prepared. Check your downloads.');
     } catch (error) {
       setGpsDiagnosticsStatus(es ? 'No se pudieron leer los datos para exportar.' : 'Could not read diagnostic data for export.');
@@ -807,7 +818,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <p className="mt-2 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es?'Mueve lentamente el teléfono en forma de ocho durante 15–20 segundos. Aléjalo de imanes, fundas magnéticas, vehículos y metal. El indicador muestra cobertura de orientación, no certifica una calibración del sistema.':'Slowly move the phone in a figure-eight for 15–20 seconds. Keep it away from magnets, magnetic cases, vehicles and metal. The indicator measures heading coverage; it does not certify OS calibration.'}</p>
           <div className="mt-3 rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] p-3">
             <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={gpsDiagnosticsEnabled} onChange={event => { gpsDiagnosticsEnabledRef.current = event.target.checked; setGpsDiagnosticsEnabled(event.target.checked); setGpsDiagnosticsStatus(event.target.checked ? (es ? 'La próxima sesión GPS guardará muestras locales.' : 'The next GPS session will save local samples.') : (es ? 'La captura de diagnóstico está desactivada.' : 'Diagnostic capture is off.')); }} className="mt-0.5" /><span><b>{es ? 'Guardar datos para mejorar la precisión GPS' : 'Save data to improve GPS accuracy'}</b><span className="mt-1 block text-[var(--ink-soft)]">{es ? 'Opcional. Guarda coordenadas, precisión, velocidad, rumbo y lecturas rechazadas en este teléfono. No se sube nada automáticamente.' : 'Optional. Saves coordinates, accuracy, speed, heading and rejected fixes on this phone. Nothing is uploaded automatically.'}</span></span></label>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-[var(--ink-soft)]">{gpsDiagnosticsCount} {es ? 'muestras guardadas' : 'samples saved'}</span><button onClick={() => void exportGpsDiagnostics()} disabled={gpsDiagnosticsCount === 0} className="rounded-lg border border-[var(--line)] px-3 py-2 text-[10px] font-bold disabled:opacity-40">{es ? 'Exportar JSON' : 'Export JSON'}</button></div>
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-[var(--ink-soft)]">{gpsDiagnosticsCount} {es ? 'muestras guardadas' : 'samples saved'}</span><div className="flex gap-2"><button onClick={() => void exportGpsDiagnostics()} disabled={gpsDiagnosticsCount === 0} className="rounded-lg border border-[var(--line)] px-3 py-2 text-[10px] font-bold disabled:opacity-40">{es ? 'Exportar JSON' : 'Export JSON'}</button><button onClick={() => void clearGpsDiagnostics()} disabled={gpsDiagnosticsCount === 0} className="rounded-lg border border-[var(--line)] px-3 py-2 text-[10px] font-bold disabled:opacity-40">{es ? 'Borrar' : 'Clear'}</button></div></div>
             {gpsDiagnosticsStatus && <p className="mt-2 text-[10px] text-[var(--ink-soft)]" role="status">{gpsDiagnosticsStatus}</p>}
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startCompassSensor} disabled={compassActive} className="rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{es?'Iniciar brújula':'Start compass'}</button><button onClick={stopCompassSensor} disabled={!compassActive} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es?'Detener':'Stop'}</button></div>
