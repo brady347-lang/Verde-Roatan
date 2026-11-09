@@ -168,6 +168,9 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
                 if (entry.optString("source_id").trim().isEmpty()) {
                     throw new IllegalArgumentException("Every reference entry must include a traceable source_id.");
                 }
+                if (entry.optBoolean("expert_verified", false) && entry.optString("verification_source").trim().isEmpty()) {
+                    throw new IllegalArgumentException("An expert_verified reference must include a traceable verification_source.");
+                }
                 JSONArray embedding = entry.getJSONArray("embedding");
                 if (embedding.length() != EMBEDDING_DIMENSION) {
                     throw new IllegalArgumentException("Reference entry " + entry.optString("id") + " does not contain 512 embedding values.");
