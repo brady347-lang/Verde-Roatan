@@ -16,6 +16,11 @@ assert.equal(profile.quality, 'reference_calibrated');
 const estimate = estimateLuxFromCamera(0.3, profile);
 assert.ok(estimate && Math.abs(estimate.lux - 1000) < 0.001);
 assert.equal(estimate?.confidence, 'moderate');
+const midRange = estimateLuxFromCamera(0.19, profile);
+assert.ok(midRange && Math.abs(midRange.lux - Math.sqrt(100 * 1000)) < 0.001);
+const belowRange = estimateLuxFromCamera(0, profile);
+assert.equal(belowRange?.lux, 0.5);
+assert.equal(belowRange?.confidence, 'low');
 assert.throws(() => buildCalibrationProfile('bad', [
   { ...stages[0], response: 0.2 }, { ...stages[1], response: 0.1 }, stages[2], stages[3]
 ]));
