@@ -42,9 +42,9 @@ import java.util.concurrent.Executors;
  */
 @CapacitorPlugin(name = "RootWiseBotanicalML")
 public class RootWiseBotanicalMLPlugin extends Plugin {
-    private static final String MODEL_ASSET = "botanical_mobilenetv4_512d.tflite";
+    private static final String MODEL_ASSET = "rootwise_mobilenetv3_512d.tflite";
     private static final String CATALOG_ASSET = "botanical_reference_embeddings.json";
-    private static final String MODEL_VERSION = "mobilenetv4_512d_v1";
+    private static final String MODEL_VERSION = "rootwise_mobilenetv3_512d_v1";
     private static final int INPUT_WIDTH = 224;
     private static final int INPUT_HEIGHT = 224;
     private static final int EMBEDDING_DIMENSION = 512;
