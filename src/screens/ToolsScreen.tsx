@@ -308,14 +308,14 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setCameraResponse(null);
     setCameraEstimatedLux(null);
   };
-  const recordLightReading = (luxValue: number, method: LightReadingMethod) => {
+  const recordLightReading = (luxValue: number, method: LightReadingMethod, displayLuxValue?: number) => {
     const timestamp = Date.now();
     if (!Number.isFinite(luxValue) || luxValue < 0 || timestamp - lastLightSampleAtRef.current < 900) return;
     lastLightSampleAtRef.current = timestamp;
     const sessionId = lightSessionIdRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'light-' + timestamp);
     lightSessionIdRef.current = sessionId;
     const fix = trackingActiveRef.current ? lastAcceptedFixRef.current : null;
-    const sample: LightReadingSample = { id: sessionId + ':' + timestamp, sessionId, timestamp, lux: Math.max(0, luxValue), method, ...(fix ? { latitude: fix.lat, longitude: fix.lon, accuracy: fix.accuracy } : {}) };
+    const sample: LightReadingSample = { id: sessionId + ':' + timestamp, sessionId, timestamp, lux: Math.max(0, displayLuxValue ?? luxValue), rawLux: Math.max(0, luxValue), method, ...(fix ? { latitude: fix.lat, longitude: fix.lon, accuracy: fix.accuracy } : {}) };
     setLightSamples(current => [...current.slice(-9999), sample]);
     void saveLightReading(sample).catch(error => { setLightStorageError(es ? 'La lectura está en vivo, pero no se pudo guardar en el dispositivo.' : 'The reading is live, but could not be saved on this device.'); console.warn('Could not save light reading locally.', error); });
   };
@@ -527,8 +527,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           const rawValue = Math.max(0, event.lux);
           setRawLux(rawValue);
           if (typeof event.sensorName === 'string') setSensorDetails({ name: event.sensorName, vendor: String(event.sensorVendor ?? ''), accuracy: Number(event.accuracy ?? -1), resolution: Number(event.resolution ?? 0) });
-          setLiveLux(luxFilterRef.current.push(rawValue));
-          recordLightReading(Math.max(0, event.lux), 'sensor_measured');
+          const displayValue = luxFilterRef.current.push(rawValue);
+          setLiveLux(displayValue);
+          recordLightReading(rawValue, 'sensor_measured', displayValue);
           setSensorStatus(es ? 'Sensor Android activo · lectura en vivo.' : 'Android sensor active · live reading received.');
         });
         const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', (event) => {
@@ -579,8 +580,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           receivedReading = true;
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setRawLux(sensor.illuminance);
-          setLiveLux(luxFilterRef.current.push(sensor.illuminance));
-          recordLightReading(sensor.illuminance, 'sensor_measured');
+          const displayValue = luxFilterRef.current.push(sensor.illuminance);
+          setLiveLux(displayValue);
+          recordLightReading(sensor.illuminance, 'sensor_measured', displayValue);
           setSensorStatus(es ? 'Sensor del navegador activo · lectura en vivo.' : 'Browser sensor active · live reading received.');
         }
       });
