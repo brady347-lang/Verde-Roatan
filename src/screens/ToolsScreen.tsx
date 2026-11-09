@@ -821,7 +821,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       const decision = evaluateFix(previousPoint, { lat: latitude, lon: longitude, accuracy, timestamp: Date.now() });
       if (decision.accept === false) {
         setGpsError(decision.reason === 'inaccurate'
-          ? (es ? 'La precisión GPS es demasiado baja para añadir este punto (se requiere ±30 m o mejor). Inténtalo al aire libre.' : 'GPS accuracy is too low to add this point (±30 m or better is required). Try again outdoors.')
+          ? (es ? 'La precisión GPS es demasiado baja para añadir este punto (se requiere ±5 m o mejor). Inténtalo al aire libre.' : 'GPS accuracy is too low to add this point (±5 m or better is required). Try again outdoors.')
           : decision.reason === 'duplicate'
             ? (es ? 'Este punto está demasiado cerca del último punto capturado.' : 'This point is too close to the last captured point.')
             : (es ? 'La ubicación recibida no es válida. Inténtalo de nuevo.' : 'The location fix is invalid. Please try again.'));
@@ -904,7 +904,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startCompassSensor} disabled={compassActive} className="rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{es?'Iniciar brújula':'Start compass'}</button><button onClick={stopCompassSensor} disabled={!compassActive} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es?'Detener':'Stop'}</button></div>
           {compassStatus && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{compassStatus}</p>}
           {liveFix && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">GPS: {liveFix.lat.toFixed(7)}, {liveFix.lon.toFixed(7)} · ±{liveFix.accuracy.toFixed(1)} m · {liveFix.altitude === null ? 'alt —' : 'alt '+liveFix.altitude.toFixed(1)+' m'} · {liveFix.speed === null ? 'speed —' : (liveFix.speed*3.6).toFixed(1)+' km/h'}</p>}
-          {liveFix && liveFix.accuracy > 10 && <p className="mt-2 rounded-lg bg-amber-100 p-2 text-[10px] text-amber-900">{es?'Este punto no cumple el objetivo de 10 m. Espera una señal mejor; la precisión indicada es la incertidumbre estimada por Android.':'This fix does not meet the 10 m target. Wait for a better signal; the displayed accuracy is Android’s estimated uncertainty.'}</p>}
+          {liveFix && liveFix.accuracy > 5 && <p className="mt-2 rounded-lg bg-amber-100 p-2 text-[10px] text-amber-900">{es?'Este punto no cumple el objetivo de 5 m. Espera una señal mejor; la precisión indicada es la incertidumbre estimada por Android.':'This fix does not meet the 5 m target. Wait for a better signal; the displayed accuracy is Android’s estimated uncertainty.'}</p>}
         </details>
         <div className="my-4 grid grid-cols-2 gap-2">
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length}</b><p className="text-xs text-[var(--ink-soft)]">{es ? 'Puntos capturados' : 'Points captured'}</p></div>
