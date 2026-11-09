@@ -66,7 +66,11 @@ export function measurePolygon(points: TrackPoint[]): { area: number; perimeter:
   // Meridional and prime-vertical radii account for Earth's ellipsoidal shape; using
   // raw degrees or a fixed metres-per-degree constant creates latitude-dependent bias.
   const lat0 = toRadians(points.reduce((sum, point) => sum + point.lat, 0) / points.length);
-  const lon0 = points.reduce((sum, point) => sum + point.lon, 0) / points.length;
+  // Circular mean: an arithmetic mean of +179.99996 and -179.99997 is ~0 and would make a tiny plot span the globe.
+  const lon0 = Math.atan2(
+    points.reduce((sum, point) => sum + Math.sin(toRadians(point.lon)), 0),
+    points.reduce((sum, point) => sum + Math.cos(toRadians(point.lon)), 0)
+  ) * 180 / Math.PI;
   const sinLat = Math.sin(lat0);
   const denominator = Math.sqrt(1 - WGS84_E2 * sinLat * sinLat);
   const primeVerticalRadius = WGS84_A / denominator;
