@@ -49,7 +49,6 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
     private static final int INPUT_HEIGHT = 224;
     private static final int EMBEDDING_DIMENSION = 512;
     private static final int MAX_IMAGE_BYTES = 12 * 1024 * 1024;
-    private static final float DEFAULT_THRESHOLD = 0.65f;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final Object inferenceLock = new Object();
@@ -93,9 +92,6 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
     public void identify(PluginCall call) {
         final String image = call.getString("image");
         final int topK = Math.max(1, Math.min(5, call.getInt("topK", 3)));
-        final double thresholdValue = call.getDouble("confidenceThreshold", (double) DEFAULT_THRESHOLD);
-        final float threshold = (float) Math.max(0.1, Math.min(0.99, thresholdValue));
-
         if (image == null || image.trim().isEmpty()) {
             call.reject("An image data URL or Base64 image is required.");
             return;
@@ -117,7 +113,7 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
 
                 JSObject result;
                 synchronized (inferenceLock) {
-                    result = runInference(bitmap, topK, threshold);
+                    result = runInference(bitmap, topK);
                 }
                 call.resolve(result);
             } catch (Exception error) {
@@ -161,6 +157,27 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
             }
             if (!"minus_one_to_one".equals(catalog.optString("normalization"))) {
                 throw new IllegalArgumentException("Reference catalog normalization must be minus_one_to_one.");
+            }
+            JSONObject calibration = catalog.optJSONObject("calibration");
+            if (calibration == null ||
+                    !MODEL_VERSION.equals(calibration.optString("model_version")) ||
+                    !"global_max_cosine_threshold_on_separate_negative_set".equals(calibration.optString("calibration_method"))) {
+                throw new IllegalArgumentException("A matching, separately calibrated acceptance threshold is required.");
+            }
+            double calibratedThreshold = calibration.optDouble("global_acceptance_threshold", -1);
+            if (Double.isNaN(calibratedThreshold) || Double.isInfinite(calibratedThreshold) ||
+                    calibratedThreshold < 0.0 || calibratedThreshold > 1.0) {
+                throw new IllegalArgumentException("The calibrated acceptance threshold must be between 0 and 1.");
+            }
+            if (calibration.optInt("negative_sample_count", 0) < 1000 ||
+                    calibration.optInt("positive_validation_count", 0) < 100) {
+                throw new IllegalArgumentException("Calibration requires at least 1,000 negative and 100 positive validation images.");
+            }
+            double measuredFalseAccept = calibration.optDouble("measured_negative_false_accept_rate", 1.0);
+            double targetFalseAccept = calibration.optDouble("target_false_accept_rate", 0.0);
+            if (Double.isNaN(measuredFalseAccept) || Double.isNaN(targetFalseAccept) ||
+                    measuredFalseAccept > targetFalseAccept || targetFalseAccept <= 0.0 || targetFalseAccept >= 0.1) {
+                throw new IllegalArgumentException("The measured negative false-accept rate does not meet the calibration target.");
             }
             JSONArray entries = catalog.getJSONArray("entries");
             for (int i = 0; i < entries.length(); i++) {
@@ -239,7 +256,7 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
         return true;
     }
 
-    private JSObject runInference(Bitmap original, int topK, float threshold) throws Exception {
+    private JSObject runInference(Bitmap original, int topK) throws Exception {
         long started = SystemClock.elapsedRealtimeNanos();
         Bitmap scaled = Bitmap.createScaledBitmap(original, INPUT_WIDTH, INPUT_HEIGHT, true);
         ByteBuffer input = ByteBuffer.allocateDirect(INPUT_WIDTH * INPUT_HEIGHT * 3 * 4)
@@ -289,10 +306,13 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
             JSObject prediction = new JSObject();
             prediction.put("label", entry.optString("scientific_name"));
             predictions.put(prediction);
-            if (i == 0 && match.score >= threshold) matched = true;
+            // Similarity scores are not probabilities; acceptance uses only the calibrated catalog threshold.
         }
 
+        JSONObject calibration = referenceCatalog.getJSONObject("calibration");
+        float calibratedThreshold = (float) calibration.getDouble("global_acceptance_threshold");
         float topScore = matches.isEmpty() ? 0f : matches.get(0).score;
+        matched = !matches.isEmpty() && topScore >= calibratedThreshold;
         JSObject evidence = new JSObject();
         evidence.put("status", "success");
         evidence.put("decision", matched ? "accept" : "review");
@@ -309,7 +329,7 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
         result.put("ml_visual_evidence", evidence);
         result.put("notice", matched
                 ? "On-device botanical candidate generated offline. Similarity is not a scientific verification."
-                : "The local model did not reach the configured similarity threshold. The result is uncertain.");
+                : "The local model did not reach its validation-calibrated acceptance threshold. The result is uncertain.");
         return result;
     }
 
