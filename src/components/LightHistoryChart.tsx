@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { LightReadingSample } from '../lib/lightHistoryStore';
+import type { LightReadingSample } from '../lib/lightHistoryStore';
 
 type Props = { readings: LightReadingSample[]; lang: 'en' | 'es'; recording?: boolean };
 
