@@ -1,5 +1,5 @@
 import { localizedName } from '../lib/catalogLocale';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   BookmarkCheck,
   Building2,
