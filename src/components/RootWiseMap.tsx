@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import maplibregl, { type GeoJSONSource, type Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
-import type { TrackPoint } from '../services/gpsTracking';
+import { measurePolygon, type TrackPoint } from '../services/gpsTracking';
+import { FieldPlotDiagram } from './FieldPlotDiagram';
 
 interface Props {
   points: TrackPoint[];
@@ -121,8 +122,9 @@ export const RootWiseMap: React.FC<Props> = ({ points, follow, lang }) => {
   return (
     <div className="relative w-full overflow-hidden rounded-b-2xl">
       <div ref={containerRef} className="h-[280px] w-full bg-[#e8f0e9]" aria-label={es ? 'Mapa de campo RootWise' : 'RootWise field map'} />
-      {mapError && <div className="absolute left-2 top-2 max-w-[85%] rounded-xl bg-white/95 px-3 py-2 text-[11px] text-slate-700 shadow">
-        {es ? 'El mapa base no está disponible sin conexión. Tus puntos GPS siguen guardados en este dispositivo.' : 'The basemap is unavailable offline. Your GPS points remain saved on this device.'}
+      {mapError && <div className="absolute inset-0 z-10 overflow-y-auto bg-[var(--surface)] p-3">
+        <p className="mb-2 rounded-xl bg-[var(--surface-2)] p-2 text-[11px] text-[var(--ink-soft)]">{es ? 'El mapa base no está disponible sin conexión. Se muestra tu croquis GPS local; los puntos siguen guardados en este dispositivo.' : 'The basemap is unavailable offline. Showing your local GPS field sketch; your points remain saved on this device.'}</p>
+        <FieldPlotDiagram points={points} lang={lang} areaM2={measurePolygon(points).area} perimeterM={measurePolygon(points).perimeter} />
       </div>}
     </div>
   );
