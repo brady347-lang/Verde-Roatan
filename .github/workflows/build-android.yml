@@ -9,6 +9,11 @@ on:
       - safety/supabase-target-hardening
       - feature/verde-knowledge-core
       - fix/verde-knowledge-learning
+      - feature/rootwise-continuous-intelligence-engine
+      - feature/rootwise-unified-development
+      - fix/rootwise-ui-tools-gps-light-v2
+      - feat/rootwise-field-capture-customer-catalog
+      - feat/gps-compass-calibration-live-accuracy
 
 permissions:
   contents: write
@@ -36,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      - name: Field sensor and GPS regression tests
+        run: npm run test:field
+
       - name: TypeScript check
         run: npm run lint
 
@@ -52,6 +60,19 @@ jobs:
 
       - name: Synchronize Capacitor
         run: npx cap sync android
+
+      - name: Install RootWise notification sound resources
+        run: |
+          set -euo pipefail
+          RAW_DIR=android/app/src/main/res/raw
+          mkdir -p "$RAW_DIR"
+          cp assets/rootwise-notification-sounds/01_rootwise_signature.wav "$RAW_DIR/rootwise_signature.wav"
+          cp assets/rootwise-notification-sounds/02_plant_identified.wav "$RAW_DIR/rootwise_plant_identified.wav"
+          cp assets/rootwise-notification-sounds/03_landscape_care_reminder.wav "$RAW_DIR/rootwise_care_reminder.wav"
+          cp assets/rootwise-notification-sounds/04_important_alert.wav "$RAW_DIR/rootwise_important_alert.wav"
+          cp assets/rootwise-notification-sounds/05_knowledge_center_update.wav "$RAW_DIR/rootwise_knowledge_update.wav"
+          cp assets/rootwise-notification-sounds/06_saved_success.wav "$RAW_DIR/rootwise_saved_success.wav"
+          ls -lh "$RAW_DIR"/rootwise_*.wav
 
       - name: Use the fixed debug signing key (so updates install over older builds)
         run: |
@@ -77,8 +98,9 @@ jobs:
       - name: Build debug APK
         working-directory: android
         run: |
+          set -o pipefail
           chmod +x gradlew
-          # Retry only transient distribution/network failures; never mask a real Gradle compile/configuration error.
+          # Retry only transient distribution/network failures; pipefail preserves Gradle's exit status through tee.
           for attempt in 1 2 3; do
             if ./gradlew assembleDebug 2>&1 | tee /tmp/gradle-build.log; then
               exit 0
@@ -93,6 +115,15 @@ jobs:
             fi
             echo "Transient Gradle network failure on attempt $attempt; retrying in $((attempt * 30))s."
             sleep $((attempt * 30))
+          done
+
+      - name: Verify merged APK permissions (camera and precise location prompts depend on these)
+        run: |
+          AAPT2="$(ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/aapt2 | sort -V | tail -1)"
+          PERMS="$("$AAPT2" dump permissions android/app/build/outputs/apk/debug/app-debug.apk)"
+          echo "$PERMS"
+          for p in android.permission.CAMERA android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION; do
+            echo "$PERMS" | grep -q "$p" || { echo "::error::Merged APK is missing $p"; exit 1; }
           done
 
       - name: Show APK signing fingerprint (must stay the same on every build)
