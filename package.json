@@ -41,8 +41,7 @@
     "@capacitor/android": "^7.0.0",
     "@capacitor/local-notifications": "^7.0.1",
     "@capacitor/geolocation": "^7.1.5",
-    "leaflet": "^1.9.4",
-    "react-leaflet": "^5.0.0",
+    "maplibre-gl": "^5.6.2",
     "@rootwise/device-sensors": "file:./capacitor-plugins/rootwise-device-sensors"
   },
   "devDependencies": {
