@@ -22,7 +22,9 @@ export const CustomerAccountExperience: React.FC<Props> = ({ lang, displayName, 
   const es = lang === 'es';
   const [guideIndex, setGuideIndex] = useState<number | null>(() => {
     try {
-      const saved = Number(localStorage.getItem('rootwise-customer-guide-step'));
+      const raw = localStorage.getItem('rootwise-customer-guide-step');
+      if (raw === null) return null;
+      const saved = Number(raw);
       return Number.isInteger(saved) && saved >= 0 && saved < GUIDES.length ? saved : null;
     } catch { return null; }
   });
