@@ -1,6 +1,7 @@
 import { registerPlugin, type PluginListenerHandle } from '@capacitor/core';
 
 export interface RootWiseDeviceSensorsPlugin {
+  getAmbientLightSensorInfo(): Promise<{ available: boolean; name?: string; vendor?: string; maximumRange?: number; resolution?: number; power?: number; wakeUp?: boolean }>;
   startAmbientLight(): Promise<void>;
   stopAmbientLight(): Promise<void>;
   startCompass(): Promise<void>;
