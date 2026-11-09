@@ -127,8 +127,8 @@ export const SupplierOnboardingPanel: React.FC<{
       });
       if (!Array.isArray(updatedRows) || updatedRows.length !== 1) throw new Error('No product row was updated. Refresh the review queue and verify administrator permissions.');
       setMessage(spanish ? (decision === 'approve' ? 'Producto aprobado y publicado.' : 'Producto rechazado.') : (decision === 'approve' ? 'Product approved and published.' : 'Product rejected.'));
-      await loadProductReviews();
       if (decision === 'approve') await onCatalogChanged?.();
+      await loadProductReviews();
     } catch (err: any) { setError(err.message || 'Could not review product.'); }
     finally { setLoading(false); }
   };
