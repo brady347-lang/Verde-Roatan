@@ -24,6 +24,12 @@ export interface RootWiseBotanicalMLResult {
   inference_time_ms: number;
   delegate_used: 'cpu';
   candidates: RootWiseBotanicalMLCandidate[];
+  ml_visual_evidence: {
+    status: 'success';
+    decision: 'accept' | 'review';
+    model_version: string;
+    top_predictions: Array<{ label: string }>;
+  };
   notice: string;
 }
 
