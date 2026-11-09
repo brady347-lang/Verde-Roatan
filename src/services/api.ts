@@ -15,6 +15,8 @@ import {
   AuthSession,
   ActiveOrder,
   TransactionRecord,
+  SupplierPurchaseRequest,
+  NotificationEvent,
   CatalogItem,
   DeliveryZone,
   GardenAdvisorResult,
@@ -677,7 +679,7 @@ export async function supabaseAuthRequest(path: string, payload: any, token?: st
   return data;
 }
 
-export async function fetchAdminOrders(token: string): Promise<ActiveOrder[]> {
+export async function fetchAdminOrders(token: string, strictRelatedReads = true): Promise<ActiveOrder[]> {
   const headers = {
     apikey: SUPABASE_PUBLISHABLE_KEY,
     Authorization: `Bearer ${token}`,
@@ -703,8 +705,16 @@ export async function fetchAdminOrders(token: string): Promise<ActiveOrder[]> {
         headers, cache: 'no-store'
       });
       const rows = await response.json().catch(() => []);
-      return response.ok && Array.isArray(rows) ? rows : [];
-    } catch {
+      if (!response.ok || !Array.isArray(rows)) {
+        const detail = Array.isArray(rows)
+          ? `Supabase could not read ${table} (${response.status}).`
+          : String(rows?.message || rows?.details || `Supabase returned invalid data for ${table}.`);
+        if (strictRelatedReads) throw new Error(detail);
+        return [];
+      }
+      return rows;
+    } catch (error) {
+      if (strictRelatedReads) throw error instanceof Error ? error : new Error(`Could not read ${table} from Supabase.`);
       return [];
     }
   };
@@ -791,7 +801,7 @@ export async function fetchAdminOrders(token: string): Promise<ActiveOrder[]> {
 // Customer reads use the same Supabase REST queries as the admin loader; RLS limits
 // this authenticated request to the signed-in customer's own orders and related rows.
 export async function fetchCustomerOrders(token: string): Promise<ActiveOrder[]> {
-  return fetchAdminOrders(token);
+  return fetchAdminOrders(token, false);
 }
 
 export async function fetchAdminTransactions(token: string): Promise<TransactionRecord[]> {
@@ -825,6 +835,57 @@ export async function fetchAdminTransactions(token: string): Promise<Transaction
     notes: String(row.notes || ''),
     reference_number: row.reference_number || undefined
   } as TransactionRecord));
+}
+
+
+export async function fetchAdminSupplierPurchaseRequests(token: string): Promise<SupplierPurchaseRequest[]> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/supplier_purchase_requests?select=*&order=created_at.desc&limit=200`, {
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    cache: 'no-store'
+  });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows)) throw new Error(rows?.message || rows?.details || 'Unable to load supplier purchase requests from Supabase.');
+  return rows.map((row: any) => ({
+    id: String(row.id), order_id: String(row.order_id), supplier_id: String(row.supplier_id),
+    supplier_name: String(row.supplier_name || ''), supplier_location: String(row.supplier_location || ''),
+    created_at: String(row.created_at || new Date().toISOString()),
+    updated_at: row.updated_at ? String(row.updated_at) : undefined,
+    items: Array.isArray(row.items) ? row.items.map((item: any) => ({
+      id: String(item.id || ''), product_id: String(item.product_id || item.catalog_item_id || ''),
+      name: String(item.name || item.item_name || 'Nursery item'), quantity: Number(item.quantity || 0),
+      unit_price: Number(item.unit_price || 0), currency: (item.currency || row.currency || 'HNL') as 'HNL' | 'USD',
+      status: (['pending', 'confirmed', 'unavailable', 'alternative_proposed'].includes(String(item.status)) ? item.status : 'pending') as SupplierPurchaseRequest['items'][number]['status'],
+      notes: item.notes ? String(item.notes) : undefined,
+      alternative_name: item.alternative_name ? String(item.alternative_name) : undefined,
+      alternative_price: item.alternative_price == null ? undefined : Number(item.alternative_price)
+    })) : [],
+    status: String(row.status || 'pending_confirmation') as SupplierPurchaseRequest['status'],
+    estimated_prep_hours: row.estimated_prep_hours == null ? undefined : Number(row.estimated_prep_hours),
+    estimated_ready_date: row.estimated_ready_date ? String(row.estimated_ready_date) : undefined,
+    supplier_notes: row.supplier_notes ? String(row.supplier_notes) : undefined,
+    total_supplier_cost: Number(row.total_supplier_cost || 0),
+    currency: (row.currency || 'HNL') as 'HNL' | 'USD',
+    payment_status: (row.payment_status || 'unpaid') as SupplierPurchaseRequest['payment_status']
+  }));
+}
+
+export async function fetchAdminNotifications(token: string): Promise<NotificationEvent[]> {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/notification_events?select=*&order=timestamp.desc&limit=200`, {
+    headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: `Bearer ${token}`, Accept: 'application/json' },
+    cache: 'no-store'
+  });
+  const rows = await response.json().catch(() => []);
+  if (!response.ok || !Array.isArray(rows)) throw new Error(rows?.message || rows?.details || 'Unable to load dashboard notifications from Supabase.');
+  return rows.map((row: any) => ({
+    id: String(row.id), category: String(row.category || 'operational') as NotificationEvent['category'],
+    event_type: String(row.event_type || 'system_event'),
+    related_order_id: row.related_order_id ? String(row.related_order_id) : undefined,
+    related_transaction_id: row.related_transaction_id ? String(row.related_transaction_id) : undefined,
+    entity_name: String(row.entity_name || 'RootWise'), title: String(row.title || 'System notification'),
+    description: String(row.description || ''), timestamp: String(row.timestamp || new Date().toISOString()),
+    is_read: Boolean(row.is_read),
+    priority: (['normal', 'high', 'urgent'].includes(String(row.priority)) ? row.priority : 'normal') as NotificationEvent['priority']
+  }));
 }
 
 export async function supabaseRpcRequest(functionName: string, args: Record<string, unknown>, token: string): Promise<any> {
