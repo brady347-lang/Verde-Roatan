@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowRight, BookOpen, Camera, Compass, Leaf, MapPin, Package, Sparkles } from 'lucide-react';
-import { Language } from '../types';
+import type { Language } from '../types';
 
 type Props = {
   lang: Language;
