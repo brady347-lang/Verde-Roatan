@@ -31,8 +31,10 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
   const innerW = chartW - left - right;
   const innerH = chartH - top - bottom;
   const yMax = Math.max(100, Math.ceil(max * 1.12 / 100) * 100);
-  const coords = visible.map((sample, index) => ({
-    x: left + (visible.length <= 1 ? innerW / 2 : (index / (visible.length - 1)) * innerW),
+  const firstTimestamp = visible[0]?.timestamp ?? 0;
+  const timeSpan = Math.max(1, (visible[visible.length - 1]?.timestamp ?? firstTimestamp) - firstTimestamp);
+  const coords = visible.map(sample => ({
+    x: left + (visible.length <= 1 ? innerW / 2 : ((sample.timestamp - firstTimestamp) / timeSpan) * innerW),
     y: top + innerH - (sample.lux / yMax) * innerH
   }));
   const line = coords.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
