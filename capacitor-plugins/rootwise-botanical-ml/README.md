@@ -7,9 +7,9 @@ This is an Android-native plugin for the existing RootWise Capacitor app. It doe
 The plugin exposes:
 
 - `getReadiness()`: reports whether both the trained model and its compatible local reference catalog are installed.
-- `identify({ image, topK, confidenceThreshold })`: decodes the image, runs LiteRT inference on-device, and performs cosine-similarity search against the local reference catalog.
+- `identify({ image, topK })`: decodes the image, runs LiteRT inference on-device, and performs cosine-similarity search against the local reference catalog.
 
-The plugin uses the Android CPU delegate with four LiteRT threads. It does not claim GPU/NPU acceleration. Model or catalog absence is a not-ready state, not a guessed result. The existing app then continues through its existing remote analysis path.
+The plugin uses the Android CPU delegate with four LiteRT threads. It does not claim GPU/NPU acceleration. It will not report a confident match unless the catalog contains a version-matched calibration report built from at least 1,000 separate negative images and 100 positive validation images. The app cannot override this threshold with a hard-coded value. Model or catalog absence is a not-ready state, not a guessed result. The existing app then continues through its existing remote analysis path.
 
 ## Required Android assets
 
@@ -20,7 +20,7 @@ Place both files in the plugin module assets directory:
 1. `rootwise_mobilenetv3_512d.tflite`
 2. `botanical_reference_embeddings.json`
 
-The current repository intentionally does not contain either artifact. Do not add synthetic/random embeddings.
+The current repository intentionally does not contain either artifact. Do not add synthetic/random embeddings. The catalog builder must be run twice: first to create reference centroids, then after calibration to produce the Android-ready catalog.
 
 ### Model contract
 
@@ -36,10 +36,10 @@ The JSON asset must follow this structure (the `embedding` array is abbreviated 
 
 ```typescript
 type BotanicalReferenceCatalog = {
-  model_version: "mobilenetv4_512d_v1";
+  model_version: "rootwise_mobilenetv3_512d_v1";
   embedding_dimension: 512;
   normalization: "minus_one_to_one";
-  entries: Array<{
+  calibration: {\n    model_version: "rootwise_mobilenetv3_512d_v1";\n    calibration_method: "global_max_cosine_threshold_on_separate_negative_set";\n    global_acceptance_threshold: number;\n    negative_sample_count: number; // minimum 1,000\n    positive_validation_count: number; // minimum 100\n    target_false_accept_rate: number;\n    measured_negative_false_accept_rate: number;\n  };\n  entries: Array<{
     id: string;
     common_name: string;
     scientific_name: string;
