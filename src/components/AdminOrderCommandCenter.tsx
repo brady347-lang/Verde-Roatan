@@ -93,7 +93,7 @@ export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = (
   // Selected Order for Full Modal Inspection & Workflow
   const [inspectingOrderId, setInspectingOrderId] = useState<string | null>(null);
   const [statusChangeNotes, setStatusChangeNotes] = useState('');
-  const [selectedNextStatus, setSelectedNextStatus] = useState<CanonicalOrderStatus>('order_processing');
+  const [selectedNextStatus, setSelectedNextStatus] = useState<CanonicalOrderStatus>('payment_pending');
   const [adminChatMsg, setAdminChatMsg] = useState('');
   const [adminChatRecipient, setAdminChatRecipient] = useState<'customer' | 'supplier' | 'all'>('customer');
 
