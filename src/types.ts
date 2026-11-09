@@ -215,9 +215,26 @@ export interface AuthSession {
 export interface OrderCheckoutResult {
   id?: string;
   order_id?: string;
+  subtotal?: number;
+  delivery_fee?: number;
   total?: number;
-  currency?: string;
+  currency?: 'USD' | 'HNL' | string;
   status?: string;
+  canonical_status?: string;
+  payment_status?: string;
+  payment_method?: string;
+  usd_to_hnl_rate?: number;
+  duplicate?: boolean;
+  items?: Array<{
+    product_id?: string | null;
+    product_name?: string;
+    quantity: number;
+    unit_price: number;
+    currency?: 'USD' | 'HNL' | string;
+    size?: string | null;
+    image_url?: string | null;
+    supplier_name?: string | null;
+  }>;
 }
 
 export type OrderDeliveryStatus =
