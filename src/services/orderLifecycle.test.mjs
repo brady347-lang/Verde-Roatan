@@ -29,7 +29,7 @@ assert.match(migration, /v_transaction_amount := 0/, 'cancellation must be recor
 assert.match(app, /checkoutAttemptRef\.current\.fingerprint !== fingerprint/, 'identical checkout retries must reuse their idempotency token');
 assert.match(app, /checkoutAttemptRef\.current\.token/, 'checkout must send the retained idempotency token');
 assert.match(app, /Number\.isFinite\(Number\(res\?\.total\)\)/, 'the app must use the server-confirmed checkout total');
-assert.match(app, /payment_method: res\?\.payment_method \|\| 'cash_on_delivery'/, 'the local order must reflect the backend payment method');
+assert.match(app, /payment_method: 'cash_on_delivery'/, 'the local order must reflect the backend cash-on-delivery default');
 assert.doesNotMatch(app, /Math\.round\(sub \* 0\.6\)/, 'supplier costs must not be fabricated as a retail percentage');
 assert.doesNotMatch(app, /Math\.round\(it\.price \* 0\.6\)/, 'supplier line costs must not be fabricated');
 assert.match(adminOrders, /unit_price: 0, \/\/ Supplier must provide a real quote/, 'supplier purchase requests must wait for an actual quote');
