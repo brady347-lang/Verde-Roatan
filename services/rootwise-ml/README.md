@@ -47,6 +47,14 @@ Do not route production identification traffic to this service until all gates p
 6. The catalog event adapter uses private storage references and server-side authorization. Never fetch arbitrary user-provided URLs from an untrusted client.
 7. End-to-end tests pass against a staging copy of the existing app and database.
 
+## Existing integration (consolidated from PR #54)
+
+The Gemini Worker is the trusted server-side caller. For `mode=plant` it posts the uploaded image to `POST {ROOTWISE_ML_SERVICE_URL}/v1/identify` (`X-API-Key`, 18 s timeout, 12 MB cap) and attaches a sanitized `ml_visual_evidence` object (`status`, `decision`, `model_version`, top labels only) to the response and to the Gemini prompt as a cautious cross-check. Scores, margins, entropy and similar-catalog entries are deliberately not forwarded to the client. Failures never block the Gemini result. `ROOTWISE_ML_URL` is accepted as a legacy alias for `ROOTWISE_ML_SERVICE_URL`.
+
+Worker secrets: `ROOTWISE_ML_SERVICE_URL`, `ROOTWISE_ML_API_KEY`. Neither is ever exposed to the browser.
+
+The persistent schema (`rootwise_ml.feedback_events`, `rootwise_ml.image_embeddings`, role `rootwise_ml_runtime`) is tracked in `supabase/migrations/20261108161439_rootwise_ml_feedback_embeddings.sql`. It is already applied in production; the file recovers the missing source and is idempotent.
+
 ## Deliberate non-changes
 
-This integration does not modify the existing Gemini Cloudflare Worker, its lock/digest, production bindings, Supabase migrations, or existing plant-identification UI. Those changes require separate interface-level implementation and regression testing.
+This integration does not add Python code to the Node application, does not change the Supabase schema beyond the tracked migration above, and does not put ML results into catalog records. The Gemini Worker lock was refreshed only for the ML evidence call; any further worker change needs separate owner approval.

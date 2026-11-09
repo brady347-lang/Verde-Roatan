@@ -404,7 +404,8 @@ async function crossCheckBotanicalIdentification(parsed, env) {
  * server-to-server; its result is a retrieval signal, never scientific verification.
  */
 async function fetchRootWiseMLEvidence(image, env) {
-  const baseUrl = String(env.ROOTWISE_ML_URL || '').replace(/\/+$/, '');
+  // Contract: services/rootwise-ml/INTEGRATION_CONTRACT.md. ROOTWISE_ML_URL is the legacy name.
+  const baseUrl = String(env.ROOTWISE_ML_SERVICE_URL || env.ROOTWISE_ML_URL || '').replace(/\/+$/, '');
   const serviceKey = String(env.ROOTWISE_ML_API_KEY || '');
   if (!baseUrl || !serviceKey) return { status: 'not_configured' };
 
@@ -430,7 +431,7 @@ async function fetchRootWiseMLEvidence(image, env) {
     form.append('top_k', '5');
     const response = await fetch(baseUrl + '/v1/identify', {
       method: 'POST',
-      headers: { Authorization: 'Bearer ' + serviceKey },
+      headers: { 'X-API-Key': serviceKey, Accept: 'application/json' },
       body: form,
       signal: controller.signal
     });

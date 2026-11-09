@@ -6,7 +6,7 @@ The trusted application server sends a multipart request to:
 
 `POST {ROOTWISE_ML_SERVICE_URL}/v1/identify`
 
-Headers:
+Headers (the only supported authentication is `X-API-Key`; `Authorization: Bearer` is not used):
 
 - `X-API-Key: {ROOTWISE_ML_API_KEY}`
 - `Accept: application/json`
@@ -16,7 +16,7 @@ Form fields:
 - `file`: JPEG, PNG, or WebP image bytes.
 - `top_k`: integer from 1 through 20 (optional; default 5).
 
-The browser must call the existing application server, not the Python host directly. The server owns the ML secret and forwards the image after checking the signed-in user's authorization and image access.
+The caller is the Gemini Worker (server-side). The browser must never call the Python host directly. The server owns the ML secret and forwards the image after checking the signed-in user's authorization and image access.
 
 ## Response handling
 
