@@ -69,7 +69,7 @@ jobs:
           if grep -q '^networkTimeout=' "$WRAPPER"; then
             sed -i 's/^networkTimeout=.*/networkTimeout=120000/' "$WRAPPER"
           else
-            printf '\\nnetworkTimeout=120000\\n' >> "$WRAPPER"
+            printf '\nnetworkTimeout=120000\n' >> "$WRAPPER"
           fi
           cat "$WRAPPER"
 
