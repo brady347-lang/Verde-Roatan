@@ -1,18 +1,21 @@
-name: Verde Roatan - Google Play Bundle (AAB)
+name: Verde Roatan - Signed Android Release (APK + AAB)
 
-# Manual only. Builds the signed .aab file that is uploaded to Google Play Console.
-# Needs 4 repository secrets (see docs/GOOGLE_PLAY_RELEASE.md):
-#   PLAY_UPLOAD_KEYSTORE_B64, PLAY_UPLOAD_STORE_PASSWORD, PLAY_UPLOAD_KEY_ALIAS, PLAY_UPLOAD_KEY_PASSWORD
-# Without them the bundle is still built (unsigned) so the build itself can be tested.
+# Manual release build. A change to this workflow on main also runs it once.
+# Requires the four protected PLAY_UPLOAD_* repository secrets documented in docs/GOOGLE_PLAY_RELEASE.md.
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-play-bundle.yml
 
 permissions:
   contents: read
 
 jobs:
-  play-bundle:
+  android-release:
+    name: Build signed Android release APK and Play bundle
     runs-on: ubuntu-latest
     env:
       HAS_KEY: ${{ secrets.PLAY_UPLOAD_KEYSTORE_B64 != '' }}
@@ -26,8 +29,17 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      - name: Require the private release signing key
+        if: env.HAS_KEY != 'true'
+        run: |
+          echo "::error::Release signing is not configured. Add PLAY_UPLOAD_KEYSTORE_B64, PLAY_UPLOAD_STORE_PASSWORD, PLAY_UPLOAD_KEY_ALIAS and PLAY_UPLOAD_KEY_PASSWORD in repository Actions secrets."
+          exit 1
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
+
+      - name: Field sensor and GPS regression tests
+        run: npm run test:field
 
       - name: TypeScript check
         run: npm run lint
@@ -42,56 +54,74 @@ jobs:
           if [ ! -d android ]; then npx cap add android; fi
           npx cap sync android
 
-      - name: Target Android 16 (API 36), required by Google Play since Aug 31 2026
+      - name: Target Android 16 (API 36)
         run: |
           sed -i -E 's/compileSdkVersion *= *[0-9]+/compileSdkVersion = 36/; s/targetSdkVersion *= *[0-9]+/targetSdkVersion = 36/' android/variables.gradle
           cat android/variables.gradle
 
-      - name: Stamp version
+      - name: Stamp release version
         run: |
           sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"2.4.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n "versionCode\|versionName" android/app/build.gradle
 
-      - name: Restore upload key and enable release signing
-        if: env.HAS_KEY == 'true'
+      - name: Restore upload key and configure release signing
         env:
           KS_B64: ${{ secrets.PLAY_UPLOAD_KEYSTORE_B64 }}
-        run: |
-          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
-          cat >> android/app/build.gradle <<GRADLE
-
-          android {
-              signingConfigs {
-                  release {
-                      storeFile file("$RUNNER_TEMP/upload.keystore")
-                      storePassword System.getenv("PLAY_UPLOAD_STORE_PASSWORD")
-                      keyAlias System.getenv("PLAY_UPLOAD_KEY_ALIAS")
-                      keyPassword System.getenv("PLAY_UPLOAD_KEY_PASSWORD")
-                  }
-                  buildTypes { release { signingConfig signingConfigs.release } }
-              }
-          }
-          GRADLE
-
-      - name: Build release bundle
-        working-directory: android
-        env:
           PLAY_UPLOAD_STORE_PASSWORD: ${{ secrets.PLAY_UPLOAD_STORE_PASSWORD }}
           PLAY_UPLOAD_KEY_ALIAS: ${{ secrets.PLAY_UPLOAD_KEY_ALIAS }}
           PLAY_UPLOAD_KEY_PASSWORD: ${{ secrets.PLAY_UPLOAD_KEY_PASSWORD }}
         run: |
-          chmod +x gradlew
-          ./gradlew bundleRelease
+          set -euo pipefail
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+          cat >> android/app/build.gradle <<'GRADLE'
 
-      - name: Report signing and target SDK
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file(System.getenv("RUNNER_TEMP") + "/upload.keystore")
+                      storePassword System.getenv("PLAY_UPLOAD_STORE_PASSWORD")
+                      keyAlias System.getenv("PLAY_UPLOAD_KEY_ALIAS")
+                      keyPassword System.getenv("PLAY_UPLOAD_KEY_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          GRADLE
+
+      - name: Build release APK and Google Play bundle
+        working-directory: android
         run: |
-          AAB=$(ls android/app/build/outputs/bundle/release/*.aab)
-          echo "Bundle: $AAB"
-          jarsigner -verify "$AAB" 2>&1 | grep -q "jar verified" && echo "SIGNED" || echo "UNSIGNED (add the 4 secrets before uploading to Google Play)"
-          unzip -p "$AAB" base/manifest/AndroidManifest.xml | strings | grep -i -m3 "targetSdk\|36" || true
+          chmod +x gradlew
+          ./gradlew assembleRelease bundleRelease
 
-      - uses: actions/upload-artifact@v4
+      - name: Verify release signatures
+        run: |
+          set -euo pipefail
+          APK=$(find android/app/build/outputs/apk/release -name '*.apk' -print -quit)
+          AAB=$(find android/app/build/outputs/bundle/release -name '*.aab' -print -quit)
+          test -n "$APK" && test -n "$AAB"
+          AAPT2="$(ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/aapt2 | sort -V | tail -1)"
+          PERMS=$("$AAPT2" dump permissions "$APK")
+          echo "$PERMS"
+          for p in android.permission.CAMERA android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION; do
+            echo "$PERMS" | grep -q "$p" || { echo "::error::Release APK is missing $p"; exit 1; }
+          done
+          APKSIGNER="$(dirname "$AAPT2")/apksigner"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          jarsigner -verify "$AAB"
+          echo "Verified signed release APK: $APK"
+          echo "Verified signed Play bundle: $AAB"
+
+      - name: Upload signed Android release artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: Verde-Roatan-Play-Bundle
-          path: android/app/build/outputs/bundle/release/*.aab
+          name: Verde-Roatan-Signed-Release-2.4.${{ github.run_number }}
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
