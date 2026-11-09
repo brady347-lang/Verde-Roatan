@@ -518,13 +518,14 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
-      const options = { enableHighAccuracy: true, maximumAge: 0, timeout: 45000, minimumUpdateInterval: 1000 };
+      const nativeWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 5000, minimumUpdateInterval: 1000 };
+      const webWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
       if (Capacitor.isNativePlatform()) {
         let permission = await Geolocation.checkPermissions();
         if (!hasPreciseLocation(permission)) permission = await Geolocation.requestPermissions();
         if (!hasPreciseLocation(permission)) throw new Error(permission.coarseLocation === 'granted' ? 'LOCATION_PRECISE_REQUIRED' : 'LOCATION_PERMISSION_DENIED');
         trackingActiveRef.current = true;
-        const watchId = await Geolocation.watchPosition(options, (position, error) => {
+        const watchId = await Geolocation.watchPosition(nativeWatchOptions, (position, error) => {
           if (!trackingActiveRef.current) return;
           if (error) {
             reportGpsError(error.message);
@@ -550,7 +551,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         gpsWatchRef.current = navigator.geolocation.watchPosition(
           (position) => { if (trackingActiveRef.current) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp); },
           (error) => { if (trackingActiveRef.current) reportGpsError(error.code === 1 ? 'LOCATION_PERMISSION_DENIED' : error.message); },
-          options
+          webWatchOptions
         );
       }
       setTracking(true);
