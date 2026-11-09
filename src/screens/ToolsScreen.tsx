@@ -37,6 +37,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [plotNotes, setPlotNotes] = useState('');
   const [editingPlotId, setEditingPlotId] = useState<string | null>(null);
   const [plotStorageError, setPlotStorageError] = useState('');
+  const [plotActionStatus, setPlotActionStatus] = useState('');
   const [areaView, setAreaView] = useState<'map' | 'plot'>('map');
   const [lightSamples, setLightSamples] = useState<LightReadingSample[]>([]);
   const [lightRecording, setLightRecording] = useState(false);
@@ -105,6 +106,68 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       setPlotStorageError('');
     } catch {
       setPlotStorageError(es ? 'No se pudo eliminar el mapa guardado.' : 'Could not delete the saved map.');
+    }
+  };
+  const exportPlotGeoJson = (plot: SavedPlot) => {
+    const coordinates = plot.points.map(point => [point.lon, point.lat]);
+    const closed = coordinates.length >= 3 ? [...coordinates, coordinates[0]] : coordinates;
+    const geometry = coordinates.length >= 3
+      ? { type: 'Polygon', coordinates: [closed] }
+      : coordinates.length === 2
+        ? { type: 'LineString', coordinates }
+        : { type: 'MultiPoint', coordinates };
+    const payload = {
+      type: 'Feature',
+      properties: {
+        name: plot.name,
+        area_m2: plot.areaM2,
+        perimeter_m: plot.perimeterM,
+        notes: plot.notes || '',
+        created_at: plot.createdAt,
+        updated_at: plot.updatedAt,
+        source: 'RootWise local field measurement',
+        accuracy_note: 'GPS field estimate; not a certified survey.'
+      },
+      geometry
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/geo+json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = (plot.name || 'rootwise-field-measurement').trim().replace(/[^a-z0-9-_]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() + '.geojson';
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+    setPlotActionStatus(es ? 'GeoJSON exportado. Revisa tus descargas.' : 'GeoJSON exported. Check your downloads.');
+  };
+  const sharePlotSummary = async (plot: SavedPlot) => {
+    const summary = [
+      'RootWise · ' + plot.name,
+      (es ? 'Área estimada: ' : 'Estimated area: ') + plot.areaM2.toFixed(2) + ' m²',
+      (es ? 'Perímetro estimado: ' : 'Estimated perimeter: ') + plot.perimeterM.toFixed(2) + ' m',
+      (es ? 'Puntos GPS: ' : 'GPS points: ') + plot.points.length,
+      plot.notes ? (es ? 'Notas: ' : 'Notes: ') + plot.notes : '',
+      es ? 'Estimación de campo GPS; no es un levantamiento topográfico certificado.' : 'GPS field estimate; not a certified land survey.'
+    ].filter(Boolean).join('\\n');
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'RootWise · ' + plot.name, text: summary });
+        setPlotActionStatus(es ? 'Resumen compartido.' : 'Summary shared.');
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(summary);
+        setPlotActionStatus(es ? 'Resumen copiado para compartir.' : 'Summary copied and ready to share.');
+      } else {
+        const blob = new Blob([summary], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = 'rootwise-' + (plot.name || 'measurement').trim().replace(/[^a-z0-9-_]+/gi, '-').toLowerCase() + '.txt';
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+        setPlotActionStatus(es ? 'Resumen descargado para compartir.' : 'Summary downloaded and ready to share.');
+      }
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      setPlotActionStatus(es ? 'No se pudo compartir. Exporta el GeoJSON para conservar los datos.' : 'Sharing failed. Export the GeoJSON to keep the measurement data.');
     }
   };
   const [gpsBusy, setGpsBusy] = useState(false);
@@ -898,10 +961,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         </div>}
         <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
           <div className="mb-2 flex items-center justify-between"><b className="text-xs">{es ? 'Mapas guardados' : 'Saved maps'}</b><span className="text-[10px] text-[var(--ink-soft)]">{savedPlots.length}</span></div>
+          {plotActionStatus && <p role="status" className="mb-2 text-[10px] text-[var(--ink-soft)]">{plotActionStatus}</p>}
           {savedPlots.length === 0 ? <p className="text-[11px] text-[var(--ink-soft)]">{es ? 'Tus mapas guardados aparecerán aquí.' : 'Your saved maps will appear here.'}</p> :
             <div className="space-y-2">{savedPlots.map((plot) => <div key={plot.id} className="flex items-center gap-2 rounded-xl bg-[var(--surface-2)] p-2">
               <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold">{plot.name}</p><p className="text-[10px] text-[var(--ink-soft)]">{plot.areaM2.toFixed(1)} m² · {plot.points.length} {es ? 'puntos' : 'points'} · {plot.estimatedPlants ?? '—'} {es ? 'plantas estimadas' : 'estimated plants'} · {new Date(plot.updatedAt).toLocaleDateString(es ? 'es-HN' : 'en-US')}</p>{(plot.surfaceMaterialName || plot.projectMaterialName) && <p className="mt-1 line-clamp-2 text-[10px] text-[var(--ink-soft)]">{[plot.surfaceMaterialName, plot.projectMaterialName].filter(Boolean).join(' · ')}</p>}{plot.notes && <p className="mt-1 line-clamp-2 text-[10px] text-[var(--ink-soft)]">{plot.notes}</p>}</div>
               <button onClick={() => handleOpenPlot(plot)} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold">{es ? 'Abrir' : 'Open'}</button>
+              <button onClick={() => exportPlotGeoJson(plot)} aria-label={es ? 'Exportar ' + plot.name + ' como GeoJSON' : 'Export ' + plot.name + ' as GeoJSON'} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold">{es ? 'Exportar' : 'Export'}</button>
+              <button onClick={() => void sharePlotSummary(plot)} aria-label={es ? 'Compartir resumen de ' + plot.name : 'Share summary for ' + plot.name} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold">{es ? 'Compartir' : 'Share'}</button>
               <button aria-label={es ? 'Eliminar ' + plot.name : 'Delete ' + plot.name} onClick={() => handleDeletePlot(plot.id)} className="rounded-lg border border-[var(--line)] px-2 py-1.5 text-[10px] font-bold text-red-600">{es ? 'Borrar' : 'Delete'}</button>
             </div>)}</div>}
         </div>
