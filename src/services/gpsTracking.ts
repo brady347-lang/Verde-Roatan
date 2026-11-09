@@ -29,7 +29,7 @@ export function distanceMeters(a: { lat: number; lon: number }, b: { lat: number
 
 export type FixDecision =
   | { accept: true }
-  | { accept: false; reason: 'invalid' | 'inaccurate' | 'duplicate' | 'jump' };
+  | { accept: false; reason: 'invalid' | 'inaccurate' | 'duplicate' | 'jump' | 'stale' };
 
 export type Fix = { lat: number; lon: number; accuracy: number; timestamp?: number };
 
@@ -39,7 +39,7 @@ export type Fix = { lat: number; lon: number; accuracy: number; timestamp?: numb
  */
 export function evaluateFix(previous: (TrackPoint & { timestamp?: number }) | undefined, fix: Fix): FixDecision {
   if (![fix.lat, fix.lon, fix.accuracy].every(Number.isFinite)
-    || Math.abs(fix.lat) > 90 || Math.abs(fix.lon) > 180 || fix.accuracy < 0) {
+    || Math.abs(fix.lat) > 90 || Math.abs(fix.lon) > 180 || fix.accuracy <= 0) {
     return { accept: false, reason: 'invalid' };
   }
   if (fix.accuracy > MAX_ACCEPTED_ACCURACY_M) return { accept: false, reason: 'inaccurate' };
@@ -50,8 +50,10 @@ export function evaluateFix(previous: (TrackPoint & { timestamp?: number }) | un
   const uncertaintySpacing = (previous.accuracy + fix.accuracy) * 0.25;
   if (distance < Math.max(MIN_POINT_SPACING_M, uncertaintySpacing)) return { accept: false, reason: 'duplicate' };
   if (previous.timestamp !== undefined && fix.timestamp !== undefined) {
-    const seconds = (fix.timestamp - previous.timestamp) / 1000;
-    if (seconds > 0 && distance / seconds > MAX_WALK_SPEED_MPS) return { accept: false, reason: 'jump' };
+    const elapsedMs = fix.timestamp - previous.timestamp;
+    if (elapsedMs <= 0) return { accept: false, reason: 'stale' };
+    const seconds = elapsedMs / 1000;
+    if (distance / seconds > MAX_WALK_SPEED_MPS) return { accept: false, reason: 'jump' };
   }
   return { accept: true };
 }
