@@ -1206,7 +1206,7 @@ export default function App() {
     if (!orderForSync) return;
     const currentForSync = orderForSync.canonical_status || 'order_placed';
     const progression: Partial<Record<CanonicalOrderStatus, CanonicalOrderStatus>> = {
-      order_placed: 'payment_confirmed',
+      order_placed: 'payment_pending',
       payment_pending: 'payment_confirmed',
       payment_confirmed: 'supplier_confirmed',
       order_processing: 'supplier_confirmed',
@@ -1223,7 +1223,7 @@ export default function App() {
     if (isAdmin && session?.access_token) {
       try {
         await supabaseRpcRequest('advance_order_status', {
-          p_order_id: orderForSync.order_id,
+          p_order_id: orderForSync.id,
           p_next_status: serverNextStatus,
           p_responsible_role: 'admin',
           p_responsible_name: session.user.full_name || 'Verde Administrator',
@@ -1247,7 +1247,7 @@ export default function App() {
       // Default progression chain if no specific status was provided
       let nextCanonical: CanonicalOrderStatus = targetStatus || 'order_placed';
       if (!targetStatus) {
-        if (currentCanonical === 'order_placed') nextCanonical = 'payment_confirmed';
+        if (currentCanonical === 'order_placed') nextCanonical = 'payment_pending';
         else if (currentCanonical === 'payment_pending') nextCanonical = 'payment_confirmed';
         else if (currentCanonical === 'payment_confirmed') nextCanonical = 'supplier_confirmed';
         else if (currentCanonical === 'order_processing') nextCanonical = 'supplier_confirmed';
@@ -1293,43 +1293,35 @@ export default function App() {
         canonical_status: nextCanonical,
         status_history: [...(target.status_history || []), historyEntry],
         delivered_at: nextCanonical === 'delivered' ? new Date().toISOString() : target.delivered_at,
-        payment_status: nextCanonical === 'payment_confirmed' ? 'confirmed' : target.payment_status
+        payment_status: nextCanonical === 'payment_confirmed' ? 'confirmed' : nextCanonical === 'refund_requested' ? 'refund_requested' : nextCanonical === 'refunded' ? 'refunded' : target.payment_status
       };
 
-      // Record appropriate Financial / Operational Audit Transaction
-      let txnType: TransactionRecord['type'] = 'status_change';
-      let txnStatus: TransactionRecord['status'] = 'completed';
-      let txnAmount = 0;
-
-      if (nextCanonical === 'payment_confirmed') {
-        txnType = 'customer_payment';
-        txnAmount = target.total;
-      } else if (nextCanonical === 'delivered') {
-        txnType = 'delivery_fee';
-        txnAmount = target.delivery_fee;
-      } else if (nextCanonical === 'cancelled') {
-        txnType = 'cancellation';
-      } else if (nextCanonical === 'refunded') {
-        txnType = 'refund';
-        txnAmount = target.total;
+      // Only cash-affecting events belong in the financial ledger. Operational status
+      // changes are already retained in order_status_history by the database function.
+      if (['payment_confirmed', 'cancelled', 'refunded'].includes(nextCanonical)) {
+        const txnType: TransactionRecord['type'] =
+          nextCanonical === 'payment_confirmed' ? 'customer_payment'
+            : nextCanonical === 'refunded' ? 'refund' : 'cancellation';
+        const txnStatus: TransactionRecord['status'] =
+          nextCanonical === 'refunded' ? 'refunded'
+            : nextCanonical === 'cancelled' ? 'cancelled' : 'completed';
+        const auditTxn = createTransactionRecord({
+          related_order_id: target.order_id,
+          type: txnType,
+          customer_name: target.customer_name,
+          supplier_name: target.assigned_supplier_name,
+          amount: nextCanonical === 'cancelled' ? 0 : target.total,
+          currency: target.currency,
+          exchange_rate: target.exchange_rate_used || 26,
+          payment_method: target.payment_method || 'card_pos',
+          status: txnStatus,
+          responsible_role: responsibleRole,
+          responsible_name: responsibleName,
+          notes: notes || 'Audit event: status moved to ' + ORDER_LIFECYCLE_STATUS_LABELS[nextCanonical]?.en,
+          reference_number: target.order_id
+        });
+        setTransactions((txns) => [auditTxn, ...txns]);
       }
-
-      const auditTxn = createTransactionRecord({
-        related_order_id: target.order_id,
-        type: txnType,
-        customer_name: target.customer_name,
-        supplier_name: target.assigned_supplier_name,
-        amount: txnAmount || target.total,
-        currency: target.currency,
-        exchange_rate: target.exchange_rate_used || 26,
-        payment_method: target.payment_method || 'card_pos',
-        status: txnStatus,
-        responsible_role: responsibleRole,
-        responsible_name: responsibleName,
-        notes: notes || `Audit event: status moved to ${ORDER_LIFECYCLE_STATUS_LABELS[nextCanonical]?.en}`,
-        reference_number: target.order_id
-      });
-      setTransactions((txns) => [auditTxn, ...txns]);
 
       // Create Operational/Financial Notification
       const notifCategory = ['payment_confirmed', 'refunded'].includes(nextCanonical)
