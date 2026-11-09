@@ -329,6 +329,73 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Keep verified Supabase sessions alive while the app stays open or returns from the background.
+  // Temporary access is never extended beyond its separately enforced expiry.
+  const sessionRefreshInFlight = useRef(false);
+  useEffect(() => {
+    if (!session?.access_token || !session.refresh_token) return;
+
+    let cancelled = false;
+    const refreshIfNeeded = async () => {
+      if (sessionRefreshInFlight.current) return;
+      if (session.user.temporary_expires_at &&
+          Date.parse(session.user.temporary_expires_at) <= Date.now()) {
+        setSession(null);
+        localStorage.removeItem('verde_auth_session');
+        return;
+      }
+
+      const expiresAt = Number(session.expires_at || 0);
+      if (expiresAt && expiresAt > Math.floor(Date.now() / 1000) + 120) return;
+
+      sessionRefreshInFlight.current = true;
+      try {
+        const refreshed = await refreshSupabaseSession(session.refresh_token);
+        if (!refreshed?.access_token) throw new Error('Session refresh returned no access token.');
+        const verifiedUser = await verifySupabaseUser(refreshed.access_token);
+        if (cancelled) return;
+
+        const nextSession: AuthSession = {
+          ...session,
+          access_token: refreshed.access_token,
+          refresh_token: refreshed.refresh_token || session.refresh_token,
+          expires_at: Math.floor(Date.now() / 1000) + Number(refreshed.expires_in || 3600),
+          user: {
+            ...session.user,
+            id: verifiedUser.id || refreshed.user?.id || session.user.id,
+            email: verifiedUser.email || refreshed.user?.email || session.user.email,
+            full_name: verifiedUser.user_metadata?.full_name || refreshed.user?.user_metadata?.full_name || session.user.full_name,
+            temporary_role: verifiedUser.app_metadata?.temporary_access_role || refreshed.user?.app_metadata?.temporary_access_role || session.user.temporary_role,
+            temporary_expires_at: verifiedUser.app_metadata?.temporary_access_expires_at || refreshed.user?.app_metadata?.temporary_access_expires_at || session.user.temporary_expires_at
+          }
+        };
+        setSession(nextSession);
+        safeSetItem('verde_auth_session', JSON.stringify(nextSession));
+      } catch (error) {
+        // Preserve the cached session on transient/offline failures; protected API calls
+        // will still be rejected by Supabase if the token has actually expired.
+        console.warn('Background session renewal failed; retaining the current session for retry.', error);
+      } finally {
+        sessionRefreshInFlight.current = false;
+      }
+    };
+
+    const onResume = () => {
+      if (document.visibilityState === 'visible') void refreshIfNeeded();
+    };
+    const interval = window.setInterval(() => void refreshIfNeeded(), 30000);
+    window.addEventListener('focus', onResume);
+    document.addEventListener('visibilitychange', onResume);
+    void refreshIfNeeded();
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', onResume);
+      document.removeEventListener('visibilitychange', onResume);
+    };
+  }, [session]);
+
   // --- Identify State ---
   const [identifyMode, setIdentifyMode] = useState<'plant' | 'pest'>('plant');
   const [identifyLoading, setIdentifyLoading] = useState(false);
