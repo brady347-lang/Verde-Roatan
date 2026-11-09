@@ -376,6 +376,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   useEffect(() => () => {
     trackingActiveRef.current = false;
+    stopCompassSensor();
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
     cameraRequestGenerationRef.current += 1;
@@ -565,7 +566,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     gpsHasFirstFixRef.current = false;
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
-    distanceOriginRef.current = null;\n    setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
+    distanceOriginRef.current = null;
+    setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
