@@ -37,8 +37,12 @@ assert.match(tools, /hasPreciseLocation\(permission\)/, 'coarse-only permission 
 assert.doesNotMatch(tools, /permission\.coarseLocation !== 'granted'\) permission = await/, 'old coarse-accepting check must not return');
 assert.match(tools, /disabled=\{tracking\} onClick=\{\(\) => setPoints/, 'undo must be disabled while tracking');
 assert.match(tools, /if \(!trackingActiveRef\.current\) \{[\s\S]*?clearWatch\(\{ id: watchId \}\)[\s\S]*?return;/, 'stop during watcher start must release the watcher and not re-enter tracking state');
-assert.match(tools, /map\.panTo\(\[latest\.lat, latest\.lon\]/, 'live map must follow the latest GPS point');
-assert.match(tools, /MapViewport points=\{points\} follow=\{tracking\}/, 'map follow mode must be tied to active tracking');
+assert.match(tools, /RootWiseMap points=\{points\} follow=\{tracking\}/, 'RootWise open map must receive the live track and follow state');
+const rootWiseMap = read('../components/RootWiseMap.tsx');
+assert.match(rootWiseMap, /tiles\.openfreemap\.org\/styles\/liberty/, 'field map must use the OpenStreetMap-derived open vector basemap');
+assert.match(rootWiseMap, /map\.easeTo\(\{ center: \[latest\.lon, latest\.lat\]/, 'MapLibre must follow the latest accepted GPS point');
+assert.match(rootWiseMap, /rootwise-field-area/);
+assert.match(rootWiseMap, /rootwise-field-boundary/);
 assert.match(tools, /evaluateFix\(previousPoint, \{ lat: latitude, lon: longitude, accuracy, timestamp: Date\.now\(\) \}\)/, 'manual GPS points must pass accuracy and duplicate filtering');
 assert.match(tools, /gpsFirstFixTimeoutRef/, 'GPS must report when no first fix arrives');
 assert.match(tools, /GPS connected · waiting for the first location/, 'tracking must not claim live GPS before a fix');
