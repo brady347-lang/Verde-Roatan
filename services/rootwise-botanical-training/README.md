@@ -93,7 +93,7 @@ The catalog builder refuses to emit an Android-ready catalog without a separate 
 1. Check species-level precision/recall and top-1/top-3 accuracy on the untouched holdout set.
 2. Inspect confusion pairs, especially visually similar species.
 3. Test on real Roatán/Bay Islands field photographs from different phones, seasons, lighting, backgrounds, and growth stages.
-4. Calibrate an abstention threshold on validation data; do not call cosine similarity a probability.
+4. Calibrate the abstention threshold against a separate, rights-cleared negative set; do not call cosine similarity a probability.
 5. Confirm model/catalog version equality and provenance.
 6. Test model size, latency, and memory on supported Android devices.
 7. Obtain botanical expert review for any species presented as verified.
