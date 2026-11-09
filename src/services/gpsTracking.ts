@@ -3,9 +3,9 @@
 
 export type TrackPoint = { lat: number; lon: number; accuracy: number };
 
-// A phone fix worse than 10 m is not suitable for drawing a small property boundary.
+// A phone fix worse than 5 m is not suitable for drawing a small property boundary.
 // This is a quality gate, not a claim of survey-grade accuracy.
-export const MAX_ACCEPTED_ACCURACY_M = 10;
+export const MAX_ACCEPTED_ACCURACY_M = 5;
 export const MIN_POINT_SPACING_M = 2.5;
 // A person walking or jogging a boundary will not exceed this; faster implies a GPS jump.
 export const MAX_WALK_SPEED_MPS = 6;
