@@ -26,3 +26,8 @@ This is a starter list for data collection, not a complete or already verified R
 ## Image data rights
 
 The checklist is a source of taxonomic leads; it does not grant rights to reuse photographs reproduced in the paper or elsewhere. Every training/reference image must have its own traceable source record and license or explicit permission allowing the intended use, including model training and commercial app distribution where applicable.
+
+
+## Machine-readable seed in this repository
+
+The initial source-grounded subset is recorded in `roatan_taxonomy_seed.csv` (18 named examples from the paper: 16 terrestrial vascular-plant candidates and 2 marine seagrasses explicitly held outside the V1 terrestrial model). This is intentionally not the full 347-terrestrial-species annex. Taxon authority/ID, accepted status, family, common names, nativeness, conservation/CITES values, and image provenance remain blank until independently checked and sourced. Rows are marked pending taxonomy review; no row is yet approved as a training or reference-catalog class.
