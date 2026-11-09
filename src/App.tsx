@@ -34,6 +34,7 @@ import {
   SUPABASE_PUBLISHABLE_KEY,
   SUPABASE_URL
 } from './data/initialData';
+import { mergeGardenItems, pullGarden, pushGarden } from './services/gardenSync';
 import {
   BchRateResponse,
   analyzeBotanicalImage,
@@ -500,6 +501,33 @@ export default function App() {
   useEffect(() => {
     safeSetItem('verde_garden', JSON.stringify(garden));
   }, [garden]);
+
+  // Private garden sync (owner-only table). Best effort: the phone copy always remains the source of truth for photos.
+  const gardenSyncReady = useRef(false);
+  const [gardenSyncTick, setGardenSyncTick] = useState(0);
+  useEffect(() => {
+    gardenSyncReady.current = false;
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    if (!token || !userId || token === 'local-admin-token' || session?.user?.temporary_role) return;
+    let cancelled = false;
+    void pullGarden({ baseUrl: SUPABASE_URL, apiKey: SUPABASE_PUBLISHABLE_KEY, accessToken: token, userId }).then(result => {
+      if (cancelled) return;
+      if (result.ok && result.items.length) setGarden(current => mergeGardenItems(current, result.items) as GardenItem[]);
+      gardenSyncReady.current = result.ok;
+      if (result.ok) setGardenSyncTick(tick => tick + 1);
+    });
+    return () => { cancelled = true; };
+  }, [session?.access_token, session?.user?.id]);
+  useEffect(() => {
+    const token = session?.access_token;
+    const userId = session?.user?.id;
+    if (!gardenSyncReady.current || !token || !userId || !garden.length) return;
+    const timer = window.setTimeout(() => {
+      void pushGarden({ baseUrl: SUPABASE_URL, apiKey: SUPABASE_PUBLISHABLE_KEY, accessToken: token, userId }, garden);
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [garden, gardenSyncTick, session?.access_token, session?.user?.id]);
 
   useEffect(() => {
     safeSetItem('verde_catalog', JSON.stringify(catalog));

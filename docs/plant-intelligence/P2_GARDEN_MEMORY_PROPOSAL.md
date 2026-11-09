@@ -19,3 +19,6 @@ Because the table is empty, `not valid` can be validated immediately afterwards.
 
 ## Privacy
 These rows are private. Shared learning only via `canEnterBotanicalMemory()` (consent + anonymized + reviewer approved + no private fields).
+
+## Implemented without the migration
+`src/services/gardenSync.ts` pulls the user's rows, adds server-missing entries only (write-once, no upsert), never sends photos, and is wired in App.tsx for signed-in non-temporary accounts. The optional migration above is a safety net, not a requirement.
