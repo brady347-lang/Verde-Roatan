@@ -11,26 +11,26 @@ interface Props {
 
 const OPEN_MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
-function fieldFeatures(points: TrackPoint[]): GeoJSON.FeatureCollection {
-  const features: GeoJSON.Feature[] = [];
+function fieldFeatures(points: TrackPoint[]): any {
+  const features: any[] = [];
   if (points.length >= 2) {
     features.push({
       type: 'Feature',
       properties: { kind: points.length >= 3 ? 'boundary' : 'track' },
-      geometry: { type: 'LineString', coordinates: points.map(point => [point.lon, point.lat]) } as GeoJSON.LineString
+      geometry: { type: 'LineString', coordinates: points.map(point => [point.lon, point.lat]) }
     });
   }
   if (points.length >= 3) {
     features.push({
       type: 'Feature',
       properties: { kind: 'area' },
-      geometry: { type: 'Polygon', coordinates: [[...points.map(point => [point.lon, point.lat]), [points[0].lon, points[0].lat]]] } as GeoJSON.Polygon
+      geometry: { type: 'Polygon', coordinates: [[...points.map(point => [point.lon, point.lat]), [points[0].lon, points[0].lat]]] }
     });
   }
   points.forEach((point, index) => features.push({
     type: 'Feature',
     properties: { kind: 'point', index: index + 1, accuracy: point.accuracy },
-    geometry: { type: 'Point', coordinates: [point.lon, point.lat] } as GeoJSON.Point
+    geometry: { type: 'Point', coordinates: [point.lon, point.lat] }
   }));
   return { type: 'FeatureCollection', features };
 }
@@ -104,7 +104,7 @@ export const RootWiseMap: React.FC<Props> = ({ points, follow, lang }) => {
     if (!map || !points.length) return;
     const update = () => {
       const source = map.getSource('rootwise-field') as GeoJSONSource | undefined;
-      if (source) source.setData(fieldFeatures(points) as GeoJSON.FeatureCollection);
+      if (source) source.setData(fieldFeatures(points));
       if (follow) {
         const latest = points[points.length - 1];
         map.easeTo({ center: [latest.lon, latest.lat], zoom: Math.max(map.getZoom(), 18), duration: 180 });
