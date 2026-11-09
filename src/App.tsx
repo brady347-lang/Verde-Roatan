@@ -281,7 +281,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     const restoreSession = async () => {
-      if (!session?.access_token) return;
+      if (!session?.access_token) {
+        setSessionRestoreComplete(true);
+        return;
+      }
       try {
         if (session.user.temporary_expires_at && Date.parse(session.user.temporary_expires_at) <= Date.now()) {
           throw new Error('Temporary testing access has expired.');
