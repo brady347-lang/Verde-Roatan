@@ -129,10 +129,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [cameraResponse, setCameraResponse] = useState<number | null>(null);
   const [cameraEstimatedLux, setCameraEstimatedLux] = useState<number | null>(null);
   const cameraEstimateIntervalRef = useRef<number | null>(null);
+  const cameraRequestGenerationRef = useRef(0);
   const [liveLux, setLiveLux] = useState<number | null>(null);
   const [sensorStatus, setSensorStatus] = useState('');
   const sensorRef = useRef<{ stop: () => void } | null>(null);
   const sensorTimeoutRef = useRef<number | null>(null);
+  const gpsFirstFixTimeoutRef = useRef<number | null>(null);
+  const gpsHasFirstFixRef = useRef(false);
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -149,11 +152,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     { stage: 'bright', title: 'Bright daylight', instruction: 'Point at a bright ground or wall surface. Never point the camera directly at the sun.', esTitle: 'Luz diurna intensa', esInstruction: 'Apunta a una pared o superficie brillante. Nunca apuntes directamente al sol.' }
   ];
   const stopCameraCalibration = () => {
+    cameraRequestGenerationRef.current += 1;
     cameraStreamRef.current?.getTracks().forEach(track => track.stop());
     cameraStreamRef.current = null;
     if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
   };
   const stopCameraFallback = () => {
+    cameraRequestGenerationRef.current += 1;
     if (cameraEstimateIntervalRef.current !== null) window.clearInterval(cameraEstimateIntervalRef.current);
     cameraEstimateIntervalRef.current = null;
     cameraStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -166,6 +171,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   const startCameraFallback = async () => {
     stopCameraFallback();
+    const requestGeneration = ++cameraRequestGenerationRef.current;
     sensorRef.current?.stop();
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
@@ -175,6 +181,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       audio: false,
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }
     });
+    if (requestGeneration !== cameraRequestGenerationRef.current) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
     const video = cameraVideoRef.current;
     if (!video) {
       stream.getTracks().forEach(track => track.stop());
@@ -218,6 +228,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   const startCameraCalibration = async () => {
     stopCameraFallback();
+    const requestGeneration = ++cameraRequestGenerationRef.current;
     sensorRef.current?.stop();
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
@@ -229,6 +240,10 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } } });
+      if (requestGeneration !== cameraRequestGenerationRef.current) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
       cameraStreamRef.current = stream;
       setCameraCalibrationOpen(true);
       setCameraStageIndex(0);
@@ -290,6 +305,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const lightMatches = useMemo(() => recommendPlantsForLight(lux), [lux]);
   const stopGpsTracking = async () => {
     trackingActiveRef.current = false;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
+    gpsHasFirstFixRef.current = false;
     setTracking(false);
     if (gpsWatchRef.current !== null) {
       if (typeof gpsWatchRef.current === 'string') await Geolocation.clearWatch({ id: gpsWatchRef.current }).catch(() => undefined);
@@ -300,6 +318,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   };
   useEffect(() => () => {
     trackingActiveRef.current = false;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
+    cameraRequestGenerationRef.current += 1;
     if (gpsWatchRef.current !== null) {
       if (typeof gpsWatchRef.current === 'string') void Geolocation.clearWatch({ id: gpsWatchRef.current });
       else if (typeof navigator !== 'undefined' && navigator.geolocation) navigator.geolocation.clearWatch(gpsWatchRef.current);
@@ -421,10 +442,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }
   };
   const reportGpsError = (raw: string | undefined) => {
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
     const kind = classifyGpsError(raw);
     setGpsError(gpsErrorText(kind, raw));
   };
   const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number) => {
+    gpsHasFirstFixRef.current = true;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
+    setGpsError('');
     const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp });
     if (decision.accept === false) {
       if (decision.reason === 'inaccurate') setTrackingStatus(es ? 'Esperando una señal GPS más precisa…' : 'Waiting for a more accurate GPS fix…');
@@ -439,6 +466,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     if (trackingActiveRef.current) return;
     setGpsBusy(true);
     setGpsError('');
+    gpsHasFirstFixRef.current = false;
+    if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+    gpsFirstFixTimeoutRef.current = null;
     setTrackingStatus(es ? 'Iniciando GPS…' : 'Starting GPS…');
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
@@ -475,9 +505,20 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         );
       }
       setTracking(true);
-      setTrackingStatus(es ? 'Sigue caminando por el borde. El mapa se actualiza en vivo.' : 'Walk the boundary. Your map updates live as you move.');
+      if (gpsHasFirstFixRef.current) {
+        setTrackingStatus(es ? 'Seguimiento GPS en vivo · el mapa se actualiza al caminar.' : 'Live GPS tracking · the map updates as you walk.');
+      } else {
+        setTrackingStatus(es ? 'GPS conectado · esperando la primera ubicación…' : 'GPS connected · waiting for the first location…');
+        gpsFirstFixTimeoutRef.current = window.setTimeout(() => {
+          if (!trackingActiveRef.current || gpsHasFirstFixRef.current) return;
+          setTrackingStatus(es ? 'GPS sigue buscando señal. Mantén RootWise abierto, activa Ubicación precisa y prueba al aire libre.' : 'GPS is still waiting for a fix. Keep RootWise open, enable Precise location and try outdoors.');
+          setGpsError(es ? 'Todavía no se recibió una posición GPS. Comprueba Ubicación y vuelve a intentarlo en un espacio abierto.' : 'No GPS position has arrived yet. Check Location and try again in an open area.');
+        }, 25000);
+      }
     } catch (error) {
       trackingActiveRef.current = false;
+      if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
+      gpsFirstFixTimeoutRef.current = null;
       const message = error instanceof Error ? error.message : '';
       if (message === 'GEOLOCATION_REQUIRES_HTTPS') {
         setGpsError(es ? 'La ubicación del navegador requiere HTTPS.' : 'Browser location requires HTTPS.');
