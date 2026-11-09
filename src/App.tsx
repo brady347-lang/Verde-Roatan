@@ -1990,7 +1990,7 @@ export default function App() {
               plantCount={currentCatalog.filter((item) => item.t === 'plant').length}
               catalog={currentCatalog}
               garden={garden}
-              onNavigate={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
+              onNavigate={(nextTab) => setTab(nextTab)}
               onStartIdentify={() => {
                 setIdentifyMode('plant');
                 setIdentifyResult(null);
