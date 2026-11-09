@@ -160,7 +160,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       video.srcObject = stream;
       void video.play().catch(() => undefined);
     }
-  }, [tool, cameraFallbackActive, cameraCalibrationOpen]);
+  }, [tool, cameraFallbackActive]);
   const [cameraCalibrationOpen, setCameraCalibrationOpen] = useState(false);
   const [cameraStageIndex, setCameraStageIndex] = useState(0);
   const [cameraSamples, setCameraSamples] = useState<CameraCalibrationSample[]>([]);
