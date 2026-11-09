@@ -58,7 +58,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const lastLightSampleAtRef = useRef(0);
   useEffect(() => {
     let active = true;
-    listLightReadings(1200).then(rows => { if (active) setLightSamples(rows); }).catch(error => console.warn('Light history is unavailable on this device.', error));
+    listLightReadings(10000).then(rows => { if (active) setLightSamples(rows); }).catch(error => console.warn('Light history is unavailable on this device.', error));
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -190,7 +190,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     lightSessionIdRef.current = sessionId;
     const fix = trackingActiveRef.current ? lastAcceptedFixRef.current : null;
     const sample: LightReadingSample = { id: sessionId + ':' + timestamp, sessionId, timestamp, lux: Math.max(0, luxValue), method, ...(fix ? { latitude: fix.lat, longitude: fix.lon, accuracy: fix.accuracy } : {}) };
-    setLightSamples(current => [...current.slice(-1199), sample]);
+    setLightSamples(current => [...current.slice(-9999), sample]);
     void saveLightReading(sample).catch(error => console.warn('Could not save light reading locally.', error));
   };
 
