@@ -51,15 +51,24 @@ def load_manifest(path: Path) -> pd.DataFrame:
 
 
 def assign_group_splits(frame: pd.DataFrame, seed: int) -> pd.DataFrame:
-    if "split" in frame.columns and frame["split"].astype(str).str.strip().ne("").all():
-        result = frame.copy()
-        result["split"] = result["split"].astype(str).str.lower().str.strip()
-        if not set(result["split"]).issubset({"train", "validation", "test"}):
-            raise ValueError("split values must be train, validation, or test.")
-        group_counts = result.groupby("observation_group")["split"].nunique()
-        if (group_counts > 1).any():
-            raise ValueError("An observation_group appears in more than one split.")
-        return result
+    if "split" in frame.columns:
+        supplied_splits = frame["split"].astype(str).str.strip()
+        has_any_explicit_split = supplied_splits.ne("").any()
+        has_all_explicit_splits = supplied_splits.ne("").all()
+        if has_any_explicit_split and not has_all_explicit_splits:
+            raise ValueError(
+                "The split column is partially populated. Either assign train/validation/test "
+                "to every row or leave the entire column blank for deterministic group splitting."
+            )
+        if has_all_explicit_splits:
+            result = frame.copy()
+            result["split"] = supplied_splits.str.lower()
+            if not set(result["split"]).issubset({"train", "validation", "test"}):
+                raise ValueError("split values must be train, validation, or test.")
+            group_counts = result.groupby("observation_group")["split"].nunique()
+            if (group_counts > 1).any():
+                raise ValueError("An observation_group appears in more than one split.")
+            return result
 
     # Deterministic group split within each species to avoid image/individual leakage.
     rng = np.random.default_rng(seed)
