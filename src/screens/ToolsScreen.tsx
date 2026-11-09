@@ -869,7 +869,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <p className="text-[10px] text-[var(--ink-soft)]">{es ? "Diagrama aproximado, no un mapa geográfico. Captura puntos GPS para ver el terreno sobre el mapa." : "Approximate diagram, not a geographic map. Capture GPS points to see the site on a real map."}</p>
         </div>}
 
-        <div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
+        <details className="mb-3 rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
+          <summary className="cursor-pointer list-none text-xs font-semibold text-[var(--ink-soft)]">{es ? 'Opciones adicionales de medición y materiales' : 'More measurement and material options'}</summary>
+          <div className="mt-3"><div className="mb-3 rounded-2xl border border-[var(--line)] p-3">
           <p className="text-xs font-bold">{es ? 'Planificador de césped y materiales de superficie' : 'Lawn & surface-material planner'}</p>
           <p className="mt-1 text-[11px] text-[var(--ink-soft)]">{es ? 'Calcula césped natural para jardines y áreas verdes. No incluye césped artificial.' : 'Estimate natural grass sod for lawns and green spaces. Artificial turf is not offered.'}</p>
           {sodOptions.length > 0 ? <>
@@ -938,6 +940,8 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           {lightStorageError && <p role="alert" className="mt-2 text-[10px] text-amber-700">{lightStorageError}</p>}
           {(lightRecording || lightSamples.length > 0) && <div className="mt-3"><LightHistoryChart readings={lightSamples.filter(sample => !lightSessionIdRef.current || sample.sessionId === lightSessionIdRef.current)} lang={lang} recording={lightRecording} /></div>}
         </div>
+        </div>
+        </details>
         <div className="mt-2 grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={capturePoint} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><MapPin className="mr-1 inline h-4 w-4" />{es ? 'Capturar punto manual' : 'Add manual point'}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy || tracking} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><RotateCcw className="mr-1 inline h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
         {points.length > 0 && <button disabled={tracking} onClick={() => setPoints(current => current.slice(0,-1))} className="mt-2 w-full disabled:opacity-40 rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es ? 'Deshacer último punto' : 'Undo last point'}</button>}
         {points.length > 0 && <ol className="mt-3 space-y-1 text-[11px] text-[var(--ink-soft)]">{points.map((point, index) => <li key={index}>#{index + 1} · {point.lat.toFixed(6)}, {point.lon.toFixed(6)} · ±{point.accuracy.toFixed(0)}m</li>)}</ol>}
