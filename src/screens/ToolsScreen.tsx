@@ -160,6 +160,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     cameraStreamRef.current = null;
     if (cameraVideoRef.current) cameraVideoRef.current.srcObject = null;
     setCameraFallbackActive(false);
+    setCameraCalibrationOpen(false);
     setCameraResponse(null);
     setCameraEstimatedLux(null);
   };
@@ -317,7 +318,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         });
         const errorListener = await RootWiseDeviceSensors.addListener('lightSensorError', () => {
           // The native layer could not re-register the sensor after the app resumed. Drop the stale
-          // live value so the manual lux entry is what the guidance is based on.
+          // live value so the camera fallback becomes the active source of guidance.
           if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
           setLiveLux(null);
           void startCameraFallback().catch(() => setSensorStatus(es ? 'El sensor no pudo reanudarse y la cámara tampoco está disponible. Revisa el permiso de cámara.' : 'The sensor could not resume and the camera is unavailable. Check camera permission.'));
