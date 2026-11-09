@@ -80,8 +80,25 @@ export function catalogTranslationFields(item: CatalogItem): Record<string, stri
   return out;
 }
 
-function catalogBody(item: CatalogItem) {
-  return { name: item.name, category: item.category || 'Outdoor', description: item.note || item.sci || '', price: Number(item.price), currency: item.currency || 'HNL', stock_quantity: Math.max(0, Number(item.stock_quantity) || 0), is_active: true, ...(item.material_spec ? { material_spec: item.material_spec } : {}), ...catalogTranslationFields(item) };
+function catalogBody(item: CatalogItem, userId: string, isNew: boolean) {
+  return {
+    name: item.name,
+    category: item.category || 'Outdoor',
+    description: item.note || item.sci || '',
+    price: Number(item.price),
+    currency: item.currency || 'HNL',
+    stock_quantity: Math.max(0, Number(item.stock_quantity) || 0),
+    is_active: true,
+    // This function is used only by the verified administrator catalog editor.
+    // Admin-created/approved listings must satisfy the database activation trigger.
+    listing_status: 'approved',
+    image_review_status: 'approved',
+    reviewed_by: userId,
+    reviewed_at: new Date().toISOString(),
+    ...(isNew ? { created_by: userId } : {}),
+    ...(item.material_spec ? { material_spec: item.material_spec } : {}),
+    ...catalogTranslationFields(item)
+  };
 }
 
 /** Thrown when the database row saved but a follow-up step (photo) failed, so the UI can still show what was saved. */
@@ -115,6 +132,26 @@ function tokenEmail(token?: string): string {
   }
 }
 
+function tokenUserId(token: string): string {
+  try {
+    const part = token.split('.')[1] || '';
+    const json = atob(part.replace(/-/g, '+').replace(/_/g, '/'));
+    const userId = String(JSON.parse(json).sub || '');
+    if (userId) return userId;
+  } catch {
+    // Report a clear authentication error below.
+  }
+  throw new Error('The signed-in user could not be verified for product image storage. Sign out and sign back in.');
+}
+
+export function productImageStoragePath(userId: string, productId: string, filename: string): string {
+  if (!userId || !productId || !filename || userId.includes('/') || productId.includes('/') || filename.includes('/')) {
+    throw new Error('A valid user, product, and filename are required for product image storage.');
+  }
+  // Existing Storage RLS requires the first folder to equal auth.uid().
+  return `${userId}/${productId}/${filename}`;
+}
+
 function catalogWriteError(response: Response, rows: any, action: string, token?: string): Error {
   if (response.status === 401) {
     return new CatalogRequestError('Your administrator session has expired or is no longer valid. Refreshing the sign-in may fix this.', 401);
@@ -132,7 +169,8 @@ function catalogWriteError(response: Response, rows: any, action: string, token?
 export async function saveCatalogItem(item: CatalogItem, token: string): Promise<CatalogItem> {
   const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(item.id);
   const id = uuid ? item.id : crypto.randomUUID();
-  const body = { ...catalogBody(item), ...(uuid ? {} : { id }) };
+  const userId = tokenUserId(token);
+  const body = { ...catalogBody(item, userId, !uuid), ...(uuid ? {} : { id }) };
   const url = SUPABASE_URL + '/rest/v1/products' + (uuid ? '?id=eq.' + encodeURIComponent(id) : '');
   const response = await fetch(url, { method: uuid ? 'PATCH' : 'POST', headers: catalogHeaders(token), body: JSON.stringify(body), cache: 'no-store' });
   const rows = await response.json().catch(() => []);
@@ -142,7 +180,7 @@ export async function saveCatalogItem(item: CatalogItem, token: string): Promise
   if (item.image_url?.startsWith('data:image/')) {
     const blob = await (await fetch(item.image_url)).blob();
     const ext = blob.type === 'image/webp' ? 'webp' : 'jpg';
-    const path = id + '/' + Date.now() + '-' + crypto.randomUUID() + '.' + ext;
+    const path = productImageStoragePath(userId, id, Date.now() + '-' + crypto.randomUUID() + '.' + ext);
     const storage = SUPABASE_URL + '/storage/v1/object/product-images/' + path.split('/').map(encodeURIComponent).join('/');
     const upload = await fetch(storage, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
     const up = await upload.json().catch(() => ({}));
@@ -204,7 +242,7 @@ export async function uploadCatalogPhoto(productId: string, file: File, token: s
 export async function uploadCatalogPhotoDataUrl(productId: string, dataUrl: string, token: string): Promise<string> {
   if (!dataUrl.startsWith('data:image/')) throw new Error('A compressed catalog image is required.');
   const blob = await (await fetch(dataUrl)).blob();
-  const path = productId + '/' + Date.now() + '-' + crypto.randomUUID() + '.jpg';
+  const path = productImageStoragePath(tokenUserId(token), productId, Date.now() + '-' + crypto.randomUUID() + '.jpg');
   const storage = SUPABASE_URL + '/storage/v1/object/product-images/' + path.split('/').map(encodeURIComponent).join('/');
   const upload = await fetch(storage, { method: 'POST', headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': blob.type || 'image/jpeg', 'x-upsert': 'false' }, body: blob });
   const d = await upload.json().catch(() => ({}));
