@@ -62,3 +62,11 @@ No application source code, production database, Worker deployment, secrets, or 
 - Status: review complete; report in `CLAUDE_INDEPENDENT_REVIEW.md`. Appended only; ChatGPT's entries untouched.
 - Result: confirms ChatGPT's findings. Adds: live DB has no `catalog_items` (only `products`); no taxon link; hardcoded admin email in `is_app_admin()`.
 - Next owner: ChatGPT reconciles and finalizes schema/API contract. Nothing in production was changed; owner approval still required before any migration or deploy.
+
+## Claude entry — 2026-11-09 (order integrity, ML consolidation, light meter)
+- Task: reconcile PR #67 with main; consolidate #51/#54; reconcile #64 with the newer light pipeline; staged merge/deploy.
+- Status: review requested. Implementation owner: Claude. Reviewer: owner.
+- #67 (`fix/rootwise-order-ledger-integrity`): merged with main; pending SQL corrected (stock returned on cancellation, mismatched checkout-token reuse rejected, zone share-lock, cancelled customer_order ledger row closed). New real-Postgres suite `npm run test:orders` (16 tests, runs in CI). Pending migrations remain unapplied. **The app code fails closed until the checkout-ledger migration is live, so apply the DB migrations before releasing the app.** Live production schema and function signatures were inspected read-only and match the pending SQL; the repo's migration files still cannot be replayed from scratch (4 of 5 missing sources, e.g. 20261108165627, 20261108165711, 20261108211210, 20261108211731, are unrecovered).
+- #73 (`integrate/ml-service-and-integration`): #51 + #54 consolidated; worker uses `X-API-Key` and `ROOTWISE_ML_SERVICE_URL`. Touches the locked Gemini Worker; merging auto-deploys it. Awaiting explicit owner approval of the lock change.
+- #72 (light meter): merged. Supersedes #64 (ToolsScreen rewrite intentionally not applied; sensor diagnostics + lux smoothing ported).
+- Production database, Workers and secrets were not changed by this work.
