@@ -97,6 +97,11 @@ function catalogBody(item: CatalogItem, userId: string, isNew: boolean) {
     reviewed_at: new Date().toISOString(),
     ...(isNew ? { created_by: userId } : {}),
     ...(item.material_spec ? { material_spec: item.material_spec } : {}),
+    // Persist pasted remote image URLs directly. Local data URLs are uploaded to
+    // Storage after the row is saved and must never be written into image_url.
+    ...(item.image_url && !item.image_url.startsWith('data:image/')
+      ? { image_url: item.image_url.trim() }
+      : {}),
     ...catalogTranslationFields(item)
   };
 }
