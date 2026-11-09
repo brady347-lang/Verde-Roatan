@@ -28,10 +28,10 @@ assert.deepEqual(measurePolygon(square.slice(0, 2)), { area: 0, perimeter: 0 });
 assert.deepEqual(measurePolygon([]), { area: 0, perimeter: 0 });
 
 // --- fix filtering
-assert.equal(MAX_ACCEPTED_ACCURACY_M, 10, 'small boundary tracking must reject fixes worse than 10 m');
+assert.equal(MAX_ACCEPTED_ACCURACY_M, 5, 'small boundary tracking must reject fixes worse than 5 m');
 assert.deepEqual(evaluateFix(undefined, at(0, 0, 5)), { accept: true });
 assert.deepEqual(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M + 1)), { accept: false, reason: 'inaccurate' });
-assert.deepEqual(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M)), { accept: true }, '10 m boundary accuracy accepted');
+assert.deepEqual(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M)), { accept: true }, '5 m boundary accuracy accepted');
 assert.equal(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M + 0.1)).reason, 'inaccurate');
 assert.equal(evaluateFix(undefined, { lat: NaN, lon: 0, accuracy: 5 }).reason, 'invalid');
 assert.equal(evaluateFix(undefined, { lat: 95, lon: 0, accuracy: 5 }).reason, 'invalid');
