@@ -125,9 +125,11 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
     const value = recordValues(r);
     const refs = lines(sourceText[r.id] ?? (r.source_references || []).map(x => String(x.citation || x.title || x.url || '')).filter(Boolean).join('\n'));
     const basis = verificationBasis[r.id] || '';
+    // A free-text explanation is not proof of scientific verification.
+    // Reserve that status for a separate evidence-based verification workflow.
     const verification_status = decision !== 'approved'
       ? 'community_submitted'
-      : basis.trim().length >= 20 ? 'scientifically_verified' : refs.length ? 'source_supported' : 'community_submitted';
+      : refs.length ? 'source_supported' : 'community_submitted';
     setBusy('record-' + r.id); setError(''); setNotice('');
     try {
       await reviewBotanicalHealthRecord(accessToken, {
@@ -306,18 +308,16 @@ export const BotanicalKnowledgeCorePanel: React.FC<Props> = ({ lang, accessToken
               <label className="flex flex-col gap-1 text-[11px] font-bold text-[var(--ink)]">{es ? 'Referencias' : 'Source references'}
                 <textarea className={fieldClass} rows={2} value={refs} onChange={e => setSourceText(old => ({ ...old, [record.id]: e.target.value }))} />
               </label>
-              <label className="flex flex-col gap-1 text-[11px] font-bold text-[var(--ink)]">{es ? 'Base para verificación científica (opcional, mínimo 20 caracteres)' : 'Scientific verification basis (optional, min 20 characters)'}
+              <label className="flex flex-col gap-1 text-[11px] font-bold text-[var(--ink)]">{es ? 'Notas de revisión (opcionales; no demuestran por sí solas verificación científica)' : 'Review notes (optional; do not by themselves establish scientific verification)'}
                 <textarea className={fieldClass} rows={2} value={verificationBasis[record.id] || ''} onChange={e => setVerificationBasis(old => ({ ...old, [record.id]: e.target.value }))} />
               </label>
               <select className={fieldClass} value={visibility[record.id] || record.visibility || 'private'} onChange={e => setVisibility(old => ({ ...old, [record.id]: e.target.value as 'private' | 'public' }))}>
                 <option value="private">{es ? 'Privado' : 'Private'}</option><option value="public">{es ? 'Público' : 'Public'}</option>
               </select>
               {record.review_status !== 'rejected' && <div className="grid grid-cols-2 gap-2">
-                <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || value.common_name.trim().length < 2 || (basis.trim().length >= 20 && !refs.length)} onClick={() => void decideRecord(record, 'approved')}>{es ? 'Aprobar e indexar' : 'Approve & index'}</button>
+                <button type="button" className={buttonClass + ' bg-[var(--palm)] text-white'} disabled={!!busy || value.common_name.trim().length < 2} onClick={() => void decideRecord(record, 'approved')}>{es ? 'Aprobar e indexar' : 'Approve & index'}</button>
                 <button type="button" className={buttonClass + ' border border-red-500/40 text-red-600'} disabled={!!busy} onClick={() => void decideRecord(record, 'rejected')}>{es ? 'Rechazar' : 'Reject'}</button>
               </div>}
-              {verificationBasis[record.id]?.trim().length > 0 && verificationBasis[record.id].trim().length < 20 && <p className="text-[10px] text-amber-700">{es ? 'La base científica necesita al menos 20 caracteres; el registro no se marcará como verificado.' : 'Scientific basis needs at least 20 characters; the record will not be marked verified.'}</p>}
-              {basis.trim().length >= 20 && !refs.length && <p className="text-[10px] text-amber-700">{es ? 'Para verificar científicamente también debes agregar al menos una referencia.' : 'Scientific verification also requires at least one source reference.'}</p>}
             </article>;
           })}
         </>
