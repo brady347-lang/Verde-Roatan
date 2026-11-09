@@ -25,7 +25,8 @@ const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: strin
   compost: { en: 'Compost & soil blend', es: 'Compost y mezcla de suelo', terms: /compost|soil blend|soil mix|coir|worm cast/i },
   pavers: { en: 'Pavers & stepping stones', es: 'Adoquines y losas', terms: /paver|stepping stone|patio block|adoqu[ií]n|losa/i }
 };
-function cardinalDirection(degrees:number) { return ['N','NE','E','SE','S','SW','W','NW'][Math.round(degrees/45)%8]; }\nfunction gpsDistanceMeters(a:{lat:number;lon:number},b:{lat:number;lon:number}) { const rad=(v:number)=>v*Math.PI/180; const x=rad(b.lon-a.lon)*6371000*Math.cos(rad((a.lat+b.lat)/2)); const y=rad(b.lat-a.lat)*6371000; return Math.hypot(x,y); }
+function cardinalDirection(degrees:number) { return ['N','NE','E','SE','S','SW','W','NW'][Math.round(degrees/45)%8]; }
+function gpsDistanceMeters(a:{lat:number;lon:number},b:{lat:number;lon:number}) { const rad=(v:number)=>v*Math.PI/180; const x=rad(b.lon-a.lon)*6371000*Math.cos(rad((a.lat+b.lat)/2)); const y=rad(b.lat-a.lat)*6371000; return Math.hypot(x,y); }
 function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
   const map = useMap();
   useEffect(() => {
