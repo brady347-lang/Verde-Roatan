@@ -42,7 +42,8 @@
     "@capacitor/local-notifications": "^7.0.1",
     "@capacitor/geolocation": "^7.1.5",
     "maplibre-gl": "^5.6.2",
-    "@rootwise/device-sensors": "file:./capacitor-plugins/rootwise-device-sensors"
+    "@rootwise/device-sensors": "file:./capacitor-plugins/rootwise-device-sensors",
+    "@rootwise/botanical-ml": "file:./capacitor-plugins/rootwise-botanical-ml"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
