@@ -107,7 +107,7 @@ assert.match(tools, /startCompassSensor/);
 assert.match(tools, /compassCalibrationScore/);
 assert.match(tools, /distanceOriginRef/);
 assert.match(tools, /gpsDistanceMeters\(distanceOriginRef\.current, liveFix\)/);
-assert.match(tools, /liveFix\.accuracy > 10/);
+assert.match(tools, /liveFix\.accuracy > 5/);
 
 // Opt-in GPS diagnostics must remain local, bounded, exportable, and include rejected raw fixes.
 const gpsDiagnostics = read('../lib/gpsDiagnosticsStore.ts');
