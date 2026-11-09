@@ -13,18 +13,26 @@ const WINDOWS = [
 export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording = false }) => {
   const es = lang === 'es';
   const [windowId, setWindowId] = useState<(typeof WINDOWS)[number]['id']>('15m');
-  const visible = useMemo(() => {
+  const filtered = useMemo(() => {
     const selected = WINDOWS.find(item => item.id === windowId) || WINDOWS[1];
     const cutoff = selected.ms === Number.POSITIVE_INFINITY ? 0 : Date.now() - selected.ms;
-    const filtered = readings.filter(item => item.timestamp >= cutoff);
+    return readings.filter(item => item.timestamp >= cutoff);
+  }, [readings, windowId]);
+  const visible = useMemo(() => {
     if (filtered.length <= 360) return filtered;
     const stride = (filtered.length - 1) / 359;
     return Array.from({ length: 360 }, (_, index) => filtered[Math.round(index * stride)]);
-  }, [readings, windowId]);
-  const values = visible.map(item => item.lux).filter(Number.isFinite);
+  }, [filtered]);
+  const values = filtered.map(item => item.lux).filter(Number.isFinite);
   const min = values.length ? Math.min(...values) : 0;
   const max = values.length ? Math.max(...values) : 0;
   const avg = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+  const latest = filtered[filtered.length - 1];
+  const geoTaggedCount = filtered.filter(sample => sample.latitude !== undefined && sample.longitude !== undefined).length;
+  const sourceLabel = new Set(filtered.map(sample => sample.method)).size > 1
+    ? (es ? 'Sensor + cámara' : 'Sensor + camera')
+    : latest?.method === 'camera_estimated' ? (es ? 'Cámara estimada' : 'Camera estimate')
+      : latest ? (es ? 'Sensor ambiental' : 'Ambient sensor') : '';
   const chartW = 640;
   const chartH = 220;
   const left = 52;
@@ -44,12 +52,6 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
   }));
   const line = coords.map((point, index) => `${index ? 'L' : 'M'} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(' ');
   const area = coords.length ? `${line} L ${coords[coords.length - 1].x.toFixed(1)} ${(top + innerH).toFixed(1)} L ${coords[0].x.toFixed(1)} ${(top + innerH).toFixed(1)} Z` : '';
-  const latest = visible[visible.length - 1];
-  const geoTaggedCount = visible.filter(sample => sample.latitude !== undefined && sample.longitude !== undefined).length;
-  const sourceLabel = new Set(visible.map(sample => sample.method)).size > 1
-    ? (es ? 'Sensor + cámara' : 'Sensor + camera')
-    : latest?.method === 'camera_estimated' ? (es ? 'Cámara estimada' : 'Camera estimate')
-      : latest ? (es ? 'Sensor ambiental' : 'Ambient sensor') : '';
 
   return (
     <section className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-3">
@@ -87,7 +89,7 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
         </svg>
       </div>
       <div className="mt-2 flex items-center justify-between text-[10px] text-[var(--ink-soft)]">
-        <span>{visible.length} {es ? 'lecturas' : 'readings'} · {geoTaggedCount} GPS</span>
+        <span>{filtered.length} {es ? 'lecturas' : 'readings'} · {geoTaggedCount} GPS</span>
         <span>{sourceLabel} · {latest ? new Date(latest.timestamp).toLocaleTimeString(es ? 'es-HN' : 'en-US') : '—'}</span>
       </div>
     </section>
