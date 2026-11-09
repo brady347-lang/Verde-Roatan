@@ -1,5 +1,5 @@
 import React from 'react';
-import { TrackPoint, distanceMeters } from '../services/gpsTracking';
+import { distanceMeters, type TrackPoint } from '../services/gpsTracking';
 
 type Props = { points: TrackPoint[]; lang: 'en' | 'es'; areaM2: number; perimeterM: number };
 
