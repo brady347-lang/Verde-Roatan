@@ -41,13 +41,15 @@ assert.match(tools, /evaluateFix\(previousPoint, \{ lat: latitude, lon: longitud
 assert.match(tools, /gpsFirstFixTimeoutRef/, 'GPS must report when no first fix arrives');
 assert.match(tools, /GPS connected · waiting for the first location/, 'tracking must not claim live GPS before a fix');
 assert.match(tools, /30000/, 'the first-fix wait must have a bounded feedback timeout');
-assert.match(tools, /minimumUpdateInterval: 1000/, 'Android GPS watch must request frequent updates');
-assert.match(tools, /Geolocation\\.getCurrentPosition\\(/, 'GPS watch startup must request an initial fresh fix');
-assert.match(tools, /setAreaView\\('plot'\\)/, 'the measured boundary must have a plot-diagram view');
-assert.match(tools, /FieldPlotDiagram points=\\{points\\}/, 'map and diagram must render the same GPS points');
-assert.match(tools, /recordLightReading\\(Math\\.max\\(0, event\\.lux\\), 'sensor_measured'\\)/, 'sensor lux must be recorded during a field walk');
-assert.match(tools, /saveLightReading\\(sample\\)/, 'light samples must persist locally');
-assert.match(tools, /lightSamples\\.filter/, 'the live graph must render saved sensor samples');
+for (const fragment of [
+  'minimumUpdateInterval: 1000',
+  'Geolocation.getCurrentPosition(',
+  "setAreaView('plot')",
+  'FieldPlotDiagram points={points}',
+  "recordLightReading(Math.max(0, event.lux), 'sensor_measured')",
+  'saveLightReading(sample)',
+  'lightSamples.filter'
+]) assert.ok(tools.includes(fragment), `missing field capture behavior: ${fragment}`);
 assert.match(tools, /cameraRequestGenerationRef/, 'late camera permission results must be invalidated when the tool is stopped');
 assert.match(tools, /requestGeneration !== cameraRequestGenerationRef\.current/, 'stopped camera requests must not reactivate a stream');
 assert.doesNotMatch(tools, /luxInput/, 'ordinary light readings must not require manual lux entry');
