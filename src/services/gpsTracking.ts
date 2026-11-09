@@ -107,7 +107,7 @@ function segmentsIntersect(a: { x: number; y: number }, b: { x: number; y: numbe
   const o2 = orientation(a.x, a.y, b.x, b.y, d.x, d.y);
   const o3 = orientation(c.x, c.y, d.x, d.y, a.x, a.y);
   const o4 = orientation(c.x, c.y, d.x, d.y, b.x, b.y);
-  if (o1 !== o2 && o3 !== o4) return true;
+  if (o1 !== 0 && o2 !== 0 && o3 !== 0 && o4 !== 0 && o1 !== o2 && o3 !== o4) return true;
   return (o1 === 0 && onSegment(a.x, a.y, b.x, b.y, c.x, c.y))
     || (o2 === 0 && onSegment(a.x, a.y, b.x, b.y, d.x, d.y))
     || (o3 === 0 && onSegment(c.x, c.y, d.x, d.y, a.x, a.y))
