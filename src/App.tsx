@@ -973,44 +973,73 @@ export default function App() {
       );
 
       const zone = zones.find((z) => z.id === selectedZoneId) || zones[0];
-      const serverItems = Array.isArray(res?.items) ? res.items : null;
-      const itemsList = serverItems
-        ? serverItems.map((item) => {
-            const catalogItem = currentCatalog.find((entry) => String(entry.id) === String(item.product_id));
-            return {
-              id: String(item.product_id || catalogItem?.id || ''),
-              name: String(item.product_name || catalogItem?.name || 'Island Specimen'),
-              price: Number(item.unit_price),
-              currency: item.currency === 'USD' ? 'USD' as const : 'HNL' as const,
-              qty: Number(item.quantity),
-              size: item.size || catalogItem?.size,
-              image_url: item.image_url || catalogItem?.image_url,
-              supplier_name: item.supplier_name || catalogItem?.nursery
-            };
-          })
-        : cart.map((ci) => {
-            const item = currentCatalog.find((entry) => String(entry.id) === String(ci.id));
-            return {
-              id: ci.id,
-              name: item?.name || 'Island Specimen',
-              price: item?.price || 0,
-              currency: item?.currency || details.currency,
-              qty: ci.qty,
-              size: item?.size,
-              image_url: item?.image_url,
-              supplier_name: item?.nursery
-            };
-          });
-      const localSubtotal = itemsList.reduce((acc, item) => acc + item.price * item.qty, 0);
-      const sub = Number.isFinite(Number(res?.subtotal)) ? Number(res.subtotal) : localSubtotal;
-      const fee = Number.isFinite(Number(res?.delivery_fee)) ? Number(res.delivery_fee) : Number(zone?.fee || 0);
-      const serverTotal = Number(res?.total);
-      const orderTotal = Number.isFinite(serverTotal) ? serverTotal : sub + fee;
       const orderCode = String(res?.order_id || res?.id || '').trim();
       if (!orderCode) throw new Error('The server did not return a confirmed order number. Your cart has been kept intact.');
-      const activeExchangeRate = Number(res?.usd_to_hnl_rate) > 0
-        ? Number(res.usd_to_hnl_rate)
-        : rateData?.hnlPerUsd || 26;
+
+      // Never create a local financial projection when the checkout service omits
+      // its database-calculated item prices, subtotal, delivery fee, or total.
+      const serverItems = Array.isArray(res?.items) ? res.items : [];
+      if (serverItems.length === 0) {
+        throw new Error('Checkout service did not return authoritative item pricing. Your cart has been kept intact; please try again later.');
+      }
+
+      const serverSubtotal = Number(res?.subtotal);
+      const serverDeliveryFee = Number(res?.delivery_fee);
+      const serverTotal = Number(res?.total);
+      const activeExchangeRate = Number(res?.usd_to_hnl_rate);
+      if (
+        ![serverSubtotal, serverDeliveryFee, serverTotal, activeExchangeRate].every(Number.isFinite) ||
+        serverSubtotal < 0 ||
+        serverDeliveryFee < 0 ||
+        serverTotal < 0 ||
+        activeExchangeRate <= 0 ||
+        res?.currency !== details.currency ||
+        Math.abs(serverSubtotal + serverDeliveryFee - serverTotal) > 0.02
+      ) {
+        throw new Error('Checkout service returned incomplete or inconsistent financial totals. Your cart has been kept intact.');
+      }
+
+      const expectedCart = new Map(cart.map((item) => [String(item.id), Number(item.qty)]));
+      if (serverItems.length !== expectedCart.size) {
+        throw new Error('Checkout service returned an item list that does not match your cart. Your cart has been kept intact.');
+      }
+
+      const itemsList = serverItems.map((item) => {
+        const id = String(item.product_id || '');
+        const quantity = Number(item.quantity);
+        const unitPrice = Number(item.unit_price);
+        if (
+          !id ||
+          !expectedCart.has(id) ||
+          quantity !== expectedCart.get(id) ||
+          !Number.isFinite(unitPrice) ||
+          unitPrice < 0 ||
+          item.currency !== details.currency ||
+          !String(item.product_name || '').trim()
+        ) {
+          throw new Error('Checkout service returned invalid item pricing or quantities. Your cart has been kept intact.');
+        }
+        const catalogItem = currentCatalog.find((entry) => String(entry.id) === id);
+        return {
+          id,
+          name: String(item.product_name),
+          price: unitPrice,
+          currency: details.currency,
+          qty: quantity,
+          size: item.size || catalogItem?.size,
+          image_url: item.image_url || catalogItem?.image_url,
+          supplier_name: item.supplier_name || catalogItem?.nursery
+        };
+      });
+
+      const itemSubtotal = itemsList.reduce((sum, item) => sum + item.price * item.qty, 0);
+      if (Math.abs(itemSubtotal - serverSubtotal) > 0.02) {
+        throw new Error('Checkout item prices do not reconcile with the server subtotal. Your cart has been kept intact.');
+      }
+
+      const sub = serverSubtotal;
+      const fee = serverDeliveryFee;
+      const orderTotal = serverTotal;
 
       const newOrder: ActiveOrder = {
         id: orderCode,
