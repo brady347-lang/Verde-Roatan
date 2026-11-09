@@ -217,6 +217,12 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     }, 1000);
   };
   const startCameraCalibration = async () => {
+    stopCameraFallback();
+    sensorRef.current?.stop();
+    sensorRef.current = null;
+    if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
+    sensorTimeoutRef.current = null;
+    setLiveLux(null);
     if (!navigator.mediaDevices?.getUserMedia) {
       setCameraStatus(es ? 'La cámara requiere un navegador seguro compatible.' : 'Camera access requires a supported secure browser context.');
       return;
