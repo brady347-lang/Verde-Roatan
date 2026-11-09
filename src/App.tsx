@@ -349,6 +349,7 @@ export default function App() {
   // --- Checkout & Orders State (Persistent Tracking & History) ---
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderResult, setOrderResult] = useState<OrderCheckoutResult | null>(null);
+  const checkoutAttemptRef = useRef<{ fingerprint: string; token: string } | null>(null);
 
   const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>(() => loadSavedOrders());
 
@@ -598,7 +599,14 @@ export default function App() {
   useEffect(() => {
     fetchBchRate().then((res) => setRateData(res));
     fetchDeliveryZones().then((res) => {
-      if (res && res.length) setZones(res);
+      if (res && res.length) {
+        setZones(res);
+        setSelectedZoneId((current) =>
+          res.some((zone) => zone.id === current)
+            ? current
+            : (res.find((zone) => /west end/i.test(zone.name)) || res[0]).id
+        );
+      }
     });
 
     // Refresh the catalog from the existing API worker on every app launch.
