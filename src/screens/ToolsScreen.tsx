@@ -574,7 +574,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       gpsDiagnosticsWrite({
         id: sessionId + ':gps:' + fixTimestamp, sessionId, kind: 'gps', timestamp: fixTimestamp,
         latitude, longitude, accuracy, altitude: altitude ?? null, speed: speed ?? null,
-        deviceHeading: heading ?? null, accepted: decision.accept, ...(decision.accept ? {} : { rejectionReason: decision.reason })
+        deviceHeading: heading ?? null, accepted: decision.accept, ...(decision.accept === false ? { rejectionReason: decision.reason } : {})
       });
     }
     if (decision.accept === false) {
