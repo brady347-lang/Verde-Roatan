@@ -114,7 +114,7 @@ import {
   Trash2
 } from 'lucide-react';
 
-const TAB_ORDER: TabType[] = ['home', 'tools', 'id', 'explore', 'plants', 'svc', 'request', 'account'];
+const TAB_ORDER: TabType[] = ['home', 'explore', 'id', 'my-rootwise', 'tools', 'plants', 'svc', 'request', 'account'];
 
 export default function App() {
   // --- Persistent State ---
@@ -127,7 +127,6 @@ export default function App() {
     safeSetItem(THEME_STORAGE_KEY, theme);
   }, [theme]);
   const [tab, setTab] = useState<TabType>('home');
-  const [showMyRootWise, setShowMyRootWise] = useState(false);
   const prevTabRef = useRef<TabType>(tab);
   const prevIdx = TAB_ORDER.indexOf(prevTabRef.current);
   const currentIdx = TAB_ORDER.indexOf(tab);
@@ -258,7 +257,7 @@ export default function App() {
   useEffect(() => {
     if (session?.user?.temporary_role === 'supplier') {
       setTab('account');
-      setShowMyRootWise(false);
+      
     }
   }, [session?.user?.id, session?.user?.temporary_role]);
 
@@ -1909,7 +1908,7 @@ export default function App() {
             }
             setActiveModal(null);
             setIsGardenAdvisorOpen(false);
-            setShowMyRootWise(false);
+            
             setTab('home');
           }}
         />
@@ -1947,17 +1946,17 @@ export default function App() {
               }}
               className="flex flex-col min-h-full will-change-transform"
             >
-              {tab === 'home' && !showMyRootWise && (
+              {tab === 'home' && (
             <CommunityHomeScreen
               lang={lang}
               displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
               isSignedIn={Boolean(session?.user)}
-              onOpenMyRootWise={() => setShowMyRootWise(true)}
-              onNavigate={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
+              onOpenMyRootWise={() => setTab('my-rootwise')}
+              onNavigate={(nextTab) => { setTab(nextTab); }}
             />
           )}
 
-          {tab === 'home' && showMyRootWise && (
+          {tab === 'my-rootwise' && (
             <RootWiseHomeScreen
               lang={lang}
               displayName={session?.user?.full_name || session?.user?.email?.split('@')[0] || ''}
@@ -1965,7 +1964,7 @@ export default function App() {
               plantCount={currentCatalog.filter((item) => item.t === 'plant').length}
               catalog={currentCatalog}
               garden={garden}
-              onNavigate={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
+              onNavigate={(nextTab) => { setTab(nextTab); }}
               onStartIdentify={() => {
                 setIdentifyMode('plant');
                 setIdentifyResult(null);
@@ -2218,7 +2217,7 @@ export default function App() {
           <div className="app-bottom-nav shrink-0 px-3 pt-1 bg-gradient-to-t from-[var(--bg)] via-[var(--bg)] to-transparent">
             <Navigation
               activeTab={tab}
-              onSelectTab={(nextTab) => { setShowMyRootWise(false); setTab(nextTab); }}
+              onSelectTab={(nextTab) => { setTab(nextTab); }}
               cartCount={cartCount}
               activeOrdersCount={activeOrders.length}
               lang={lang}
