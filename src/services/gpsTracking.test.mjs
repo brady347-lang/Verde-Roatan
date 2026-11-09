@@ -41,9 +41,9 @@ assert.equal(evaluateFix(undefined, { lat: 0, lon: 0, accuracy: 0 }).reason, 'in
 assert.equal(evaluateFix(undefined, { lat: 0, lon: 0, accuracy: Infinity }).reason, 'invalid');
 // Stationary jitter within 2.5 m is a duplicate; 3 m of real movement is accepted.
 assert.equal(evaluateFix(at(0, 0), at(1, 1)).reason, 'duplicate');
-assert.deepEqual(evaluateFix(at(0, 0), at(3, 0)), { accept: true });
-assert.equal(evaluateFix(at(0, 0, 10), at(4, 0, 10)).reason, 'duplicate', 'large uncertainty must suppress sub-uncertainty jitter');
-assert.deepEqual(evaluateFix(at(0, 0, 10), at(6, 0, 10)), { accept: true }, 'real movement beyond the uncertainty spacing is accepted');
+assert.deepEqual(evaluateFix(at(0, 0, 3), at(3, 0, 3)), { accept: true }, 'better fixes preserve useful small boundary detail');
+assert.equal(evaluateFix(at(0, 0, 5), at(3, 0, 5)).reason, 'duplicate', 'less precise fixes must suppress sub-uncertainty jitter');
+assert.deepEqual(evaluateFix(at(0, 0, 5), at(6, 0, 5)), { accept: true }, 'real movement beyond the uncertainty spacing is accepted');
 // A 200 m jump one second later is a GPS glitch, not walking.
 assert.equal(evaluateFix({ ...at(0, 0), timestamp: 1000 }, { ...at(200, 0), timestamp: 2000 }).reason, 'jump');
 assert.equal(evaluateFix({ ...at(0, 0), timestamp: 2000 }, { ...at(3, 0), timestamp: 1000 }).reason, 'stale', 'older fixes must not move the recorded boundary backwards');
