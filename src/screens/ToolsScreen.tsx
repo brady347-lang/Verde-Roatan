@@ -136,12 +136,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [compassStatus, setCompassStatus] = useState('');
   const [compassActive, setCompassActive] = useState(false);
   const [gpsDiagnosticsEnabled, setGpsDiagnosticsEnabled] = useState(false);
+  const gpsDiagnosticsEnabledRef = useRef(false);
   const [gpsDiagnosticsCount, setGpsDiagnosticsCount] = useState(0);
   const [gpsDiagnosticsStatus, setGpsDiagnosticsStatus] = useState('');
   const gpsDiagnosticsSessionRef = useRef<string | null>(null);
   const gpsDiagnosticsLastWriteRef = useRef(0);
   const gpsDiagnosticsWrite = (sample: GpsDiagnosticsSample) => {
-    if (!gpsDiagnosticsEnabled) return;
+    if (!gpsDiagnosticsEnabledRef.current) return;
     void saveGpsDiagnosticsSample(sample).then(() => {
       setGpsDiagnosticsCount(count => count + 1);
       setGpsDiagnosticsStatus(es ? 'Datos de diagnóstico guardados solo en este dispositivo.' : 'Diagnostic data saved on this device only.');
@@ -565,7 +566,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setGpsError('');
     const fixTimestamp = timestamp ?? Date.now();
     const decision = evaluateFix(lastAcceptedFixRef.current ?? undefined, { lat: latitude, lon: longitude, accuracy, timestamp: fixTimestamp });
-    if (gpsDiagnosticsEnabled && fixTimestamp - gpsDiagnosticsLastWriteRef.current >= 900) {
+    if (gpsDiagnosticsEnabledRef.current && fixTimestamp - gpsDiagnosticsLastWriteRef.current >= 900) {
       gpsDiagnosticsLastWriteRef.current = fixTimestamp;
       const sessionId = gpsDiagnosticsSessionRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + Date.now());
       gpsDiagnosticsSessionRef.current = sessionId;
@@ -595,7 +596,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
         if (!Number.isFinite(event.heading)) return;
         const heading = (event.heading + 360) % 360;
         setCompassHeading(heading); setCompassPitch(event.pitch); setCompassRoll(event.roll); setCompassAccuracy(event.accuracy);
-        if (gpsDiagnosticsEnabled) {
+        if (gpsDiagnosticsEnabledRef.current) {
           const timestamp = Date.now();
           const sessionId = gpsDiagnosticsSessionRef.current || (typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + timestamp);
           gpsDiagnosticsSessionRef.current = sessionId;
@@ -630,7 +631,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
     distanceOriginRef.current = null;
-    if (gpsDiagnosticsEnabled) {
+    if (gpsDiagnosticsEnabledRef.current) {
       gpsDiagnosticsSessionRef.current = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : 'gps-' + Date.now();
       gpsDiagnosticsLastWriteRef.current = 0;
     }
@@ -803,7 +804,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--surface)]"><div className="h-full rounded-full bg-[var(--palm)]" style={{width:compassCalibrationScore+'%'}}/></div>
           <p className="mt-2 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es?'Mueve lentamente el teléfono en forma de ocho durante 15–20 segundos. Aléjalo de imanes, fundas magnéticas, vehículos y metal. El indicador muestra cobertura de orientación, no certifica una calibración del sistema.':'Slowly move the phone in a figure-eight for 15–20 seconds. Keep it away from magnets, magnetic cases, vehicles and metal. The indicator measures heading coverage; it does not certify OS calibration.'}</p>
           <div className="mt-3 rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface)] p-3">
-            <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={gpsDiagnosticsEnabled} onChange={event => { setGpsDiagnosticsEnabled(event.target.checked); setGpsDiagnosticsStatus(event.target.checked ? (es ? 'La próxima sesión GPS guardará muestras locales.' : 'The next GPS session will save local samples.') : (es ? 'La captura de diagnóstico está desactivada.' : 'Diagnostic capture is off.')); }} className="mt-0.5" /><span><b>{es ? 'Guardar datos para mejorar la precisión GPS' : 'Save data to improve GPS accuracy'}</b><span className="mt-1 block text-[var(--ink-soft)]">{es ? 'Opcional. Guarda coordenadas, precisión, velocidad, rumbo y lecturas rechazadas en este teléfono. No se sube nada automáticamente.' : 'Optional. Saves coordinates, accuracy, speed, heading and rejected fixes on this phone. Nothing is uploaded automatically.'}</span></span></label>
+            <label className="flex items-start gap-2 text-xs"><input type="checkbox" checked={gpsDiagnosticsEnabled} onChange={event => { gpsDiagnosticsEnabledRef.current = event.target.checked; setGpsDiagnosticsEnabled(event.target.checked); setGpsDiagnosticsStatus(event.target.checked ? (es ? 'La próxima sesión GPS guardará muestras locales.' : 'The next GPS session will save local samples.') : (es ? 'La captura de diagnóstico está desactivada.' : 'Diagnostic capture is off.')); }} className="mt-0.5" /><span><b>{es ? 'Guardar datos para mejorar la precisión GPS' : 'Save data to improve GPS accuracy'}</b><span className="mt-1 block text-[var(--ink-soft)]">{es ? 'Opcional. Guarda coordenadas, precisión, velocidad, rumbo y lecturas rechazadas en este teléfono. No se sube nada automáticamente.' : 'Optional. Saves coordinates, accuracy, speed, heading and rejected fixes on this phone. Nothing is uploaded automatically.'}</span></span></label>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-[10px] text-[var(--ink-soft)]">{gpsDiagnosticsCount} {es ? 'muestras guardadas' : 'samples saved'}</span><button onClick={() => void exportGpsDiagnostics()} disabled={gpsDiagnosticsCount === 0} className="rounded-lg border border-[var(--line)] px-3 py-2 text-[10px] font-bold disabled:opacity-40">{es ? 'Exportar JSON' : 'Export JSON'}</button></div>
             {gpsDiagnosticsStatus && <p className="mt-2 text-[10px] text-[var(--ink-soft)]" role="status">{gpsDiagnosticsStatus}</p>}
           </div>
