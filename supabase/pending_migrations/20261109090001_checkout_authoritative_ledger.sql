@@ -65,6 +65,11 @@ BEGIN
   -- An identical retry returns the original order and its original server-calculated values.
   SELECT * INTO v_order FROM public.orders WHERE checkout_token = p_checkout_token;
   IF FOUND THEN
+    -- Idempotency tokens are scoped to the verified customer identity.
+    -- This prevents one account from replaying another account's checkout token.
+    IF v_order.customer_id IS DISTINCT FROM p_customer_id THEN
+      RAISE EXCEPTION 'Checkout token does not belong to this customer';
+    END IF;
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'product_id', oi.product_id,
       'product_name', oi.product_name,
@@ -129,6 +134,12 @@ BEGIN
   -- If another request with this token won the race, return that order without deducting stock.
   IF v_order_id IS NULL THEN
     SELECT * INTO v_order FROM public.orders WHERE checkout_token = p_checkout_token;
+    IF NOT FOUND THEN
+      RAISE EXCEPTION 'Checkout retry could not be resolved';
+    END IF;
+    IF v_order.customer_id IS DISTINCT FROM p_customer_id THEN
+      RAISE EXCEPTION 'Checkout token does not belong to this customer';
+    END IF;
     SELECT COALESCE(jsonb_agg(jsonb_build_object(
       'product_id', oi.product_id, 'product_name', oi.product_name,
       'quantity', oi.quantity, 'unit_price', oi.unit_price, 'currency', oi.currency,
