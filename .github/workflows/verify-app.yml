@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, feature/rootwise-unified-development, fix/rootwise-ui-tools-gps-light]
   pull_request:
-    branches: [main]
+    branches: [main, feature/rootwise-unified-development]
 
 jobs:
   web-build:
