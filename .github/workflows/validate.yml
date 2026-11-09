@@ -35,6 +35,8 @@ jobs:
         run: npm run test:worker
       - name: Field tool tests (GPS tracking, Android wiring, light meter)
         run: npm run test:field
+      - name: Botanical training manifest regression checks
+        run: npm run test:botanical-training
       - name: TypeScript check
         run: npm run lint
       - name: Production web build
