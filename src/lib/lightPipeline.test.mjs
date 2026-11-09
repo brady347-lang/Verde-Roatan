@@ -3,7 +3,7 @@ import * as lp from './lightPipeline.ts';
 
 assert.equal(lp.bandForLux(50), 'deep_shade'); assert.equal(lp.bandForLux(500), 'low_light');
 assert.equal(lp.bandForLux(5000), 'bright_indirect'); assert.equal(lp.bandForLux(18000), 'partial_sun');
-assert.equal(lp.bandForLux(40000), 'full_sun'); assert.equal(lp.bandForLux(NaN), 'deep_shade');
+assert.equal(lp.bandForLux(40000), 'full_sun'); assert.equal(lp.bandForLux(NaN), null); assert.equal(lp.bandForLux(-1), null);
 
 const verified = { value: 'full_sun', provenance: 'source_supported', evidenceRefs: ['hibiscus'] };
 const sensor = lp.interpretLight({ lux: 40000, method: 'sensor_measured' }, verified);
@@ -23,8 +23,11 @@ assert.equal(bright.value.direction, 'reduce_light');
 const none = lp.interpretLight({ lux: 2000, method: 'sensor_measured' }, null);
 assert.equal(none.value.fit, null); assert.ok(none.caveats.some(c => /not identified/.test(c)));
 // Invalid readings never produce confidence
-assert.equal(lp.interpretLight({ lux: -5, method: 'sensor_measured' }, null).confidence, 0);
-assert.equal(lp.interpretLight({ lux: NaN, method: 'camera_estimated' }, null).confidence, 0);
+const invalidNegative = lp.interpretLight({ lux: -5, method: 'sensor_measured' }, null);
+const invalidNaN = lp.interpretLight({ lux: NaN, method: 'camera_estimated' }, null);
+assert.equal(invalidNegative.confidence, 0); assert.equal(invalidNegative.value.lux, null); assert.equal(invalidNegative.value.band, null);
+assert.match(invalidNegative.value.summary, /No valid light reading/);
+assert.equal(invalidNaN.confidence, 0); assert.equal(invalidNaN.value.lux, null); assert.equal(invalidNaN.value.band, null);
 
 // Profile requirement: unverified is never fact
 assert.equal(lp.requirementCandidate({ id: 'a', is_verified: false, horticulture: { sunlight_requirements: 'full_sun' } }).provenance, 'model_prediction');
