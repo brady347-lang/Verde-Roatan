@@ -11,6 +11,7 @@ on:
       - fix/verde-knowledge-learning
       - feature/rootwise-continuous-intelligence-engine
       - feature/rootwise-unified-development
+      - fix/rootwise-ui-tools-gps-light
 
 permissions:
   contents: write
