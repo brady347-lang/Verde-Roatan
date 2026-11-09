@@ -28,9 +28,11 @@ assert.deepEqual(measurePolygon(square.slice(0, 2)), { area: 0, perimeter: 0 });
 assert.deepEqual(measurePolygon([]), { area: 0, perimeter: 0 });
 
 // --- fix filtering
+assert.equal(MAX_ACCEPTED_ACCURACY_M, 10, 'small boundary tracking must reject fixes worse than 10 m');
 assert.deepEqual(evaluateFix(undefined, at(0, 0, 5)), { accept: true });
 assert.deepEqual(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M + 1)), { accept: false, reason: 'inaccurate' });
-assert.deepEqual(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M)), { accept: true }, 'boundary accuracy accepted');
+assert.deepEqual(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M)), { accept: true }, '10 m boundary accuracy accepted');
+assert.equal(evaluateFix(undefined, at(0, 0, MAX_ACCEPTED_ACCURACY_M + 0.1)).reason, 'inaccurate');
 assert.equal(evaluateFix(undefined, { lat: NaN, lon: 0, accuracy: 5 }).reason, 'invalid');
 assert.equal(evaluateFix(undefined, { lat: 95, lon: 0, accuracy: 5 }).reason, 'invalid');
 assert.equal(evaluateFix(undefined, { lat: 0, lon: 200, accuracy: 5 }).reason, 'invalid');
@@ -39,6 +41,8 @@ assert.equal(evaluateFix(undefined, { lat: 0, lon: 0, accuracy: Infinity }).reas
 // Stationary jitter within 2.5 m is a duplicate; 3 m of real movement is accepted.
 assert.equal(evaluateFix(at(0, 0), at(1, 1)).reason, 'duplicate');
 assert.deepEqual(evaluateFix(at(0, 0), at(3, 0)), { accept: true });
+assert.equal(evaluateFix(at(0, 0, 10), at(4, 0, 10)).reason, 'duplicate', 'large uncertainty must suppress sub-uncertainty jitter');
+assert.deepEqual(evaluateFix(at(0, 0, 10), at(6, 0, 10)), { accept: true }, 'real movement beyond the uncertainty spacing is accepted');
 // A 200 m jump one second later is a GPS glitch, not walking.
 assert.equal(evaluateFix({ ...at(0, 0), timestamp: 1000 }, { ...at(200, 0), timestamp: 2000 }).reason, 'jump');
 // The same distance after 100 s is plausible movement.
