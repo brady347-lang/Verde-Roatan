@@ -40,7 +40,7 @@ assert.match(tools, /MapViewport points=\{points\} follow=\{tracking\}/, 'map fo
 assert.match(tools, /evaluateFix\(previousPoint, \{ lat: latitude, lon: longitude, accuracy, timestamp: Date\.now\(\) \}\)/, 'manual GPS points must pass accuracy and duplicate filtering');
 assert.match(tools, /gpsFirstFixTimeoutRef/, 'GPS must report when no first fix arrives');
 assert.match(tools, /GPS connected · waiting for the first location/, 'tracking must not claim live GPS before a fix');
-assert.match(tools, /30000/, 'the first-fix wait must have a bounded feedback timeout');
+assert.match(tools, /50000/, 'the first-fix wait must have a bounded feedback timeout');
 for (const fragment of [
   'minimumUpdateInterval: 1000',
   'Geolocation.getCurrentPosition(',
