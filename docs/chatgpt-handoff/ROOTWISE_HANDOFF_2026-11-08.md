@@ -151,3 +151,14 @@ The user wants hands-on work directly in GitHub, clear continuity between chats,
   - `81499b6a1decfcf98d5aee03f24ce7b8554e30de` — strengthen migration constraints.
 - Static source inspection is complete. No migration was applied, no Supabase schema changed, and no production deployment or build was triggered. Full lint/build and live API round-trip remain outstanding.
 - Next: after owner approval, apply the migration to the correct production Supabase project, then verify admin save/read round-trip for both product and grass records. Afterwards add calculation tests and support paver quantity estimates only when verified coverage exists.
+
+
+## Production approval and merge completion (Round 9)
+- Owner explicitly approved the catalog material-spec migration and merge.
+- Applied migration `catalog_material_specs` to the primary `verde-roatan` Supabase project (`tjzqxsyxvfdabfguezmu`). Schema inspection confirms `public.products.material_spec` exists as nullable JSONB with the positive-number / bounded-label validation constraint. Existing rows remain NULL; no values were guessed or backfilled.
+- Supabase security and performance advisors were run. They reported existing findings elsewhere in the project (including pre-existing SECURITY DEFINER views/functions, RLS policy performance notices, unindexed foreign keys and duplicate indexes). The material-spec migration did not change RLS, policies or grants.
+- GitHub PR #56 merged into `main` using squash merge. Merge commit: `83df2187157d2135fc8a5aacea6be214074a41d0`. The branch `feature/rootwise-unified-development` remains available.
+- Post-merge integration hardening: `fetchCatalog()` now requests only `id,material_spec` for active products directly from the public Supabase REST endpoint as a best-effort supplement to the legacy `/plants` worker response. This avoids relying on the older worker to expose the new JSONB column. If that supplementary request fails, catalog loading continues using worker/local data.
+- Post-merge commit: `31d7d01ea96b6950bca3e59529de13057adf4254`.
+- Verified after merge: `main` points to the PR merge commit before the follow-up hardening commit; PR #56 is merged; Supabase confirms the JSONB column and RLS remains enabled.
+- Not performed: Cloudflare worker deployment, web deployment, APK build, Android device testing, full lint/build, or end-to-end admin save/read test. Those remain separate validation/release steps.

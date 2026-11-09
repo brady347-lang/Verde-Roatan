@@ -282,6 +282,28 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
     const response = await fetch(`${API_URL}/plants`, { cache: 'no-store' });
     const payload = await response.json();
     if (response.ok && payload.status === 'success' && Array.isArray(payload.plants)) {
+      // The legacy catalog worker may not yet include material_spec in its response.
+      // Read only the public, active product IDs and verified specs from Supabase so
+      // material estimates remain current without changing the worker contract.
+      let materialSpecs = new Map<string, unknown>();
+      try {
+        const specResponse = await fetch(
+          SUPABASE_URL + '/rest/v1/products?select=id,material_spec&is_active=eq.true',
+          { headers: { apikey: SUPABASE_PUBLISHABLE_KEY, Accept: 'application/json' }, cache: 'no-store' }
+        );
+        if (specResponse.ok) {
+          const specRows = await specResponse.json();
+          if (Array.isArray(specRows)) {
+            materialSpecs = new Map(
+              specRows
+                .filter((row: any) => row && row.id && row.material_spec && typeof row.material_spec === 'object')
+                .map((row: any) => [String(row.id), row.material_spec])
+            );
+          }
+        }
+      } catch (error) {
+        console.warn('Catalog material specifications could not be refreshed; using worker/local data.', error);
+      }
       return payload.plants.map((p: any) => {
         const category = String(p.category || 'Outdoor');
         const name = String(p.name || 'Unnamed plant');
@@ -322,7 +344,7 @@ export async function fetchCatalog(): Promise<CatalogItem[]> {
           category,
           image_url: p.image_url || '',
           native_to_bay_islands: typeof p.native_to_bay_islands === 'boolean' ? p.native_to_bay_islands : undefined,
-          material_spec: p.material_spec && typeof p.material_spec === 'object' ? p.material_spec : undefined
+          material_spec: p.material_spec && typeof p.material_spec === 'object' ? p.material_spec : materialSpecs.get(String(p.id)) as CatalogItem['material_spec']
         };
       });
     }
