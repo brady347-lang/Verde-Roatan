@@ -13,6 +13,7 @@ on:
       - feature/rootwise-unified-development
       - fix/rootwise-ui-tools-gps-light-v2
       - feat/rootwise-field-capture-customer-catalog
+      - feat/gps-compass-calibration-live-accuracy
 
 permissions:
   contents: write
