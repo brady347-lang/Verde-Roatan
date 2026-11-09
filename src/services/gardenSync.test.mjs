@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import * as gs from './gardenSync.ts';
 
+const local = new Map();
+const localStorageMock = { getItem: key => local.has(key) ? local.get(key) : null, setItem: (key, value) => local.set(key, value) };
+localStorageMock.setItem('verde_garden', JSON.stringify([{ id: 'legacy-private', date: '2026-01-01', mode: 'plant', name: 'Legacy', data: {} }]));
+assert.equal(gs.readLocalGarden(null, localStorageMock)[0].id, 'legacy-private', 'legacy garden data remains guest-only');
+assert.deepEqual(gs.readLocalGarden('user-1', localStorageMock), [], 'a signed-in user must not inherit the unscoped guest garden');
+gs.writeLocalGarden('user-1', [{ id: 'private-1', date: '2026-01-01', mode: 'plant', name: 'User One', data: {} }], localStorageMock);
+assert.equal(gs.readLocalGarden('user-1', localStorageMock)[0].name, 'User One');
+assert.deepEqual(gs.readLocalGarden('user-2', localStorageMock), [], 'another account must not read user one garden data');
+
 const store = [];
 const calls = [];
 const fakeFetch = async (url, init = {}) => {
