@@ -37,7 +37,7 @@ function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
       // Keep the walker centered at a useful field zoom instead of repeatedly fitting
       // the ever-growing route (which would zoom farther out as the user walks).
       if (map.getZoom() < 18) map.setZoom(18, { animate: false });
-      map.panTo([latest.lat, latest.lon], { animate: true, duration: 0.35 });
+      map.panTo([latest.lat, latest.lon], { animate: true, duration: 0.15 });
       return;
     }
     const bounds = points.map((point) => [point.lat, point.lon] as [number, number]);
@@ -653,7 +653,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
       // Capacitor 7.1 uses `timeout` as the default Android watch interval; keep it short for walking.
-      const nativeWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 5000, minimumUpdateInterval: 1000 };
+      const nativeWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 5000, minimumUpdateInterval: 500 };
       const webWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
       if (Capacitor.isNativePlatform()) {
         let permission = await Geolocation.checkPermissions();
