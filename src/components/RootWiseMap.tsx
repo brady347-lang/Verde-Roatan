@@ -11,26 +11,26 @@ interface Props {
 
 const OPEN_MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
 
-function fieldFeatures(points: TrackPoint[]) {
-  const features: Array<Record<string, unknown>> = [];
+function fieldFeatures(points: TrackPoint[]): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = [];
   if (points.length >= 2) {
     features.push({
       type: 'Feature',
       properties: { kind: points.length >= 3 ? 'boundary' : 'track' },
-      geometry: { type: 'LineString', coordinates: points.map(point => [point.lon, point.lat]) }
+      geometry: { type: 'LineString', coordinates: points.map(point => [point.lon, point.lat]) } as GeoJSON.LineString
     });
   }
   if (points.length >= 3) {
     features.push({
       type: 'Feature',
       properties: { kind: 'area' },
-      geometry: { type: 'Polygon', coordinates: [[...points.map(point => [point.lon, point.lat]), [points[0].lon, points[0].lat]]] }
+      geometry: { type: 'Polygon', coordinates: [[...points.map(point => [point.lon, point.lat]), [points[0].lon, points[0].lat]]] } as GeoJSON.Polygon
     });
   }
   points.forEach((point, index) => features.push({
     type: 'Feature',
     properties: { kind: 'point', index: index + 1, accuracy: point.accuracy },
-    geometry: { type: 'Point', coordinates: [point.lon, point.lat] }
+    geometry: { type: 'Point', coordinates: [point.lon, point.lat] } as GeoJSON.Point
   }));
   return { type: 'FeatureCollection', features };
 }
@@ -64,7 +64,7 @@ export const RootWiseMap: React.FC<Props> = ({ points, follow, lang }) => {
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
     map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
     map.on('load', () => {
-      map.addSource('rootwise-field', { type: 'geojson', data: fieldFeatures(points) as GeoJSON.FeatureCollection });
+      map.addSource('rootwise-field', { type: 'geojson', data: fieldFeatures(points) });
       map.addLayer({
         id: 'rootwise-field-area',
         type: 'fill',
