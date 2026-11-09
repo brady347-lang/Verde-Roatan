@@ -126,15 +126,6 @@ jobs:
             echo "$PERMS" | grep -q "$p" || { echo "::error::Merged APK is missing $p"; exit 1; }
           done
 
-      - name: Verify merged APK permissions (camera and precise location prompts depend on these)
-        run: |
-          AAPT2="$(ls "${ANDROID_HOME:-$ANDROID_SDK_ROOT}"/build-tools/*/aapt2 | sort -V | tail -1)"
-          PERMS="$("$AAPT2" dump permissions android/app/build/outputs/apk/debug/app-debug.apk)"
-          echo "$PERMS"
-          for p in android.permission.CAMERA android.permission.ACCESS_FINE_LOCATION android.permission.ACCESS_COARSE_LOCATION; do
-            echo "$PERMS" | grep -q "$p" || { echo "::error::Merged APK is missing $p"; exit 1; }
-          done
-
       - name: Show APK signing fingerprint (must stay the same on every build)
         run: keytool -printcert -jarfile android/app/build/outputs/apk/debug/app-debug.apk | grep 'SHA256'
 
@@ -145,15 +136,3 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
-
-      - name: Publish APK as the latest release (main branch only)
-        if: github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk Verde-Roatan.apk
-          TAG="build-${{ github.run_number }}"
-          gh release create "$TAG" Verde-Roatan.apk --target "${{ github.sha }}" --latest \
-            --title "Verde Roatan 2.4.${{ github.run_number }}" \
-            --notes "build_number=${{ github.run_number }}
-          $(git log -1 --pretty=%s)"
