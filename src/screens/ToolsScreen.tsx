@@ -25,6 +25,7 @@ const MATERIAL_LABELS: Record<Exclude<MaterialType, ''>, { en: string; es: strin
   compost: { en: 'Compost & soil blend', es: 'Compost y mezcla de suelo', terms: /compost|soil blend|soil mix|coir|worm cast/i },
   pavers: { en: 'Pavers & stepping stones', es: 'Adoquines y losas', terms: /paver|stepping stone|patio block|adoqu[ií]n|losa/i }
 };
+function gpsDistanceMeters(a:{lat:number;lon:number},b:{lat:number;lon:number}) { const rad=(v:number)=>v*Math.PI/180; const x=rad(b.lon-a.lon)*6371000*Math.cos(rad((a.lat+b.lat)/2)); const y=rad(b.lat-a.lat)*6371000; return Math.hypot(x,y); }
 function MapViewport({ points, follow }: { points: Point[]; follow: boolean }) {
   const map = useMap();
   useEffect(() => {
@@ -125,6 +126,16 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [gpsError, setGpsError] = useState('');
   const [tracking, setTracking] = useState(false);
   const [trackingStatus, setTrackingStatus] = useState('');
+  const [liveFix, setLiveFix] = useState<{lat:number;lon:number;accuracy:number;altitude:number|null;speed:number|null;heading:number|null;timestamp:number}|null>(null);
+  const [compassHeading, setCompassHeading] = useState<number|null>(null);
+  const [compassPitch, setCompassPitch] = useState<number|null>(null);
+  const [compassRoll, setCompassRoll] = useState<number|null>(null);
+  const [compassAccuracy, setCompassAccuracy] = useState<number|null>(null);
+  const [compassStatus, setCompassStatus] = useState('');
+  const [compassActive, setCompassActive] = useState(false);
+  const [compassCalibrationScore, setCompassCalibrationScore] = useState(0);
+  const compassBinsRef = useRef<Set<number>>(new Set());
+  const distanceOriginRef = useRef<{lat:number;lon:number}|null>(null);
   const gpsWatchRef = useRef<string | number | null>(null);
   const trackingActiveRef = useRef(false);
   const lastAcceptedFixRef = useRef<(TrackPoint & { timestamp?: number }) | null>(null);
@@ -501,7 +512,9 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     const kind = classifyGpsError(raw);
     setGpsError(gpsErrorText(kind, raw));
   };
-  const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number) => {
+  const appendTrackedPoint = (latitude: number, longitude: number, accuracy: number, timestamp?: number, altitude?: number|null, speed?: number|null, heading?: number|null) => {
+    setLiveFix({lat:latitude,lon:longitude,accuracy,altitude:altitude ?? null,speed:speed ?? null,heading:heading ?? null,timestamp:timestamp ?? Date.now()});
+    if (!distanceOriginRef.current) distanceOriginRef.current = {lat:latitude,lon:longitude};
     gpsHasFirstFixRef.current = true;
     if (gpsFirstFixTimeoutRef.current !== null) window.clearTimeout(gpsFirstFixTimeoutRef.current);
     gpsFirstFixTimeoutRef.current = null;
@@ -516,6 +529,35 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setPoints((current) => [...current, { lat: latitude, lon: longitude, accuracy }]);
     setTrackingStatus(es ? `Seguimiento en vivo · precisión ±${Math.round(accuracy)} m` : `Live tracking · ±${Math.round(accuracy)} m accuracy`);
   };
+  const startCompassSensor = async () => {
+    if (compassActive) return;
+    compassBinsRef.current = new Set();
+    setCompassCalibrationScore(0);
+    setCompassStatus(es ? 'Iniciando brújula…' : 'Starting compass…');
+    try {
+      if (!Capacitor.isNativePlatform()) throw new Error('NATIVE_COMPASS_REQUIRED');
+      const listener = await RootWiseDeviceSensors.addListener('compassReading', event => {
+        if (!Number.isFinite(event.heading)) return;
+        const heading = (event.heading + 360) % 360;
+        setCompassHeading(heading); setCompassPitch(event.pitch); setCompassRoll(event.roll); setCompassAccuracy(event.accuracy);
+        compassBinsRef.current.add(Math.floor(heading / 30));
+        setCompassCalibrationScore(Math.round(compassBinsRef.current.size / 12 * 100));
+      });
+      await RootWiseDeviceSensors.startCompass();
+      compassListenerRef.current = listener;
+      setCompassActive(true);
+      setCompassStatus(es ? 'Brújula activa. Gira lentamente el teléfono en forma de ocho.' : 'Compass active. Slowly move the phone in a figure-eight.');
+    } catch (error) {
+      setCompassStatus(es ? 'No se pudo iniciar la brújula nativa. Comprueba que el dispositivo tenga sensor magnético.' : 'Native compass could not start. Check that the device has a magnetic/rotation sensor.');
+    }
+  };
+  const stopCompassSensor = () => {
+    void RootWiseDeviceSensors.stopCompass().catch(() => undefined);
+    void compassListenerRef.current?.remove();
+    compassListenerRef.current = null;
+    setCompassActive(false);
+  };
+  const compassListenerRef = useRef<{remove:()=>Promise<void>}|null>(null);
   const startGpsTracking = async () => {
     if (trackingActiveRef.current) return;
     setGpsBusy(true);
@@ -541,7 +583,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
             reportGpsError(error.message);
             return;
           }
-          if (position) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp);
+          if (position) appendTrackedPoint(position.coords.latitude, position.coords.longitude, position.coords.accuracy, position.timestamp, position.coords.altitude, position.coords.speed, position.coords.heading);
         });
         if (!trackingActiveRef.current) {
           // Stopped (or the screen closed) while the native watcher was still starting: release it and
@@ -678,6 +720,24 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       {tool === 'area' && <section className="rounded-3xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-sm">
         <div className="flex items-center gap-2"><MapPin className="h-5 w-5 text-[var(--palm)]" /><h2 className="text-lg font-extrabold">{es ? 'Medición de terreno por GPS' : 'GPS land measurement'}</h2></div>
         <p className="mt-1 text-sm text-[var(--ink-soft)]">{es ? 'Inicia el seguimiento y camina por todo el perímetro. RootWise seguirá tu recorrido GPS y actualizará el mapa y el área en vivo.' : 'Start tracking and walk the full boundary. RootWise follows your GPS path and updates the map and area live.'}</p>
+        <div className="my-3 rounded-2xl border border-[var(--line)] bg-[var(--surface-2)] p-3">
+          <div className="flex items-center justify-between"><b className="text-sm"><Compass className="mr-1 inline h-4 w-4 text-[var(--palm)]"/> {es ? 'Calibración GPS y brújula' : 'GPS & compass calibration'}</b><span className="text-[10px] font-bold">{compassActive ? (es?'ACTIVA':'ACTIVE') : (es?'LISTA':'READY')}</span></div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <div className="rounded-xl bg-[var(--surface)] p-3"><span className="text-[10px] text-[var(--ink-soft)]">GPS ± accuracy</span><b className="block text-2xl tabular-nums">{liveFix ? liveFix.accuracy.toFixed(1)+' m' : '—'}</b><span className="text-[10px]">{liveFix && liveFix.accuracy <= 5 ? (es?'Alta confianza':'High confidence') : liveFix && liveFix.accuracy <= 10 ? (es?'Aceptable con cautela':'Usable with caution') : (es?'Esperando señal precisa':'Waiting for precise fix')}</span></div>
+            <div className="rounded-xl bg-[var(--surface)] p-3"><span className="text-[10px] text-[var(--ink-soft)]">{es?'Distancia desde inicio':'Distance from start'}</span><b className="block text-2xl tabular-nums">{liveFix && distanceOriginRef.current ? gpsDistanceMeters(distanceOriginRef.current, liveFix).toFixed(1)+' m' : '0.0 m'}</b><span className="text-[10px]">{es?'Objetivo de referencia: 10 m':'10 m reference target'}</span></div>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+            <div className="rounded-xl bg-[var(--surface)] p-2"><span className="text-[var(--ink-soft)]">Lat</span><b className="block tabular-nums">{liveFix?.lat.toFixed(7) ?? '—'}</b><span className="text-[var(--ink-soft)]">Lon</span><b className="block tabular-nums">{liveFix?.lon.toFixed(7) ?? '—'}</b></div>
+            <div className="rounded-xl bg-[var(--surface)] p-2"><span className="text-[var(--ink-soft)]">{es?'Rumbo':'Heading'}</span><b className="block text-xl tabular-nums">{compassHeading !== null ? compassHeading.toFixed(0)+'°' : '—'}</b><span className="text-[var(--ink-soft)]">{es?'Pitch / Roll':'Pitch / Roll'}: {compassPitch?.toFixed(0) ?? '—'}° / {compassRoll?.toFixed(0) ?? '—'}°</span></div>
+          </div>
+          <div className="mt-2 flex items-center justify-between gap-2"><span className="text-xs">{es?'Cobertura de giro':'Rotation coverage'}: {compassCalibrationScore}%</span><span className="text-[10px] text-[var(--ink-soft)]">{compassAccuracy !== null ? (es?'Estado sensor':'Sensor status')+': '+compassAccuracy : '—'}</span></div>
+          <div className="mt-1 h-2 overflow-hidden rounded-full bg-[var(--surface)]"><div className="h-full rounded-full bg-[var(--palm)]" style={{width:compassCalibrationScore+'%'}}/></div>
+          <p className="mt-2 text-[10px] leading-relaxed text-[var(--ink-soft)]">{es?'Mueve lentamente el teléfono en forma de ocho durante 15–20 segundos. Aléjalo de imanes, fundas magnéticas, vehículos y metal. El indicador muestra cobertura de orientación, no certifica una calibración del sistema.':'Slowly move the phone in a figure-eight for 15–20 seconds. Keep it away from magnets, magnetic cases, vehicles and metal. The indicator measures heading coverage; it does not certify OS calibration.'}</p>
+          <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startCompassSensor} disabled={compassActive} className="rounded-xl bg-[var(--palm)] px-3 py-2 text-xs font-bold text-white">{es?'Iniciar brújula':'Start compass'}</button><button onClick={stopCompassSensor} disabled={!compassActive} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold">{es?'Detener':'Stop'}</button></div>
+          {compassStatus && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{compassStatus}</p>}
+          {liveFix && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">GPS: {liveFix.lat.toFixed(7)}, {liveFix.lon.toFixed(7)} · ±{liveFix.accuracy.toFixed(1)} m · {liveFix.altitude === null ? 'alt —' : 'alt '+liveFix.altitude.toFixed(1)+' m'} · {liveFix.speed === null ? 'speed —' : (liveFix.speed*3.6).toFixed(1)+' km/h'}</p>}
+          {liveFix && liveFix.accuracy > 10 && <p className="mt-2 rounded-lg bg-amber-100 p-2 text-[10px] text-amber-900">{es?'Este punto no cumple el objetivo de 10 m. Espera una señal mejor; la precisión indicada es la incertidumbre estimada por Android.':'This fix does not meet the 10 m target. Wait for a better signal; the displayed accuracy is Android’s estimated uncertainty.'}</p>}
+        </div>
         <div className="my-4 grid grid-cols-2 gap-2">
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length}</b><p className="text-xs text-[var(--ink-soft)]">{es ? 'Puntos capturados' : 'Points captured'}</p></div>
           <div className="rounded-2xl bg-[var(--surface-2)] p-3"><b className="text-2xl tabular-nums">{points.length >= 3 ? (area >= 10000 ? (area / 10000).toFixed(3) : area.toFixed(1)) : manualArea.toFixed(1)}</b><p className="text-xs text-[var(--ink-soft)]">{points.length >= 3 && area >= 10000 ? 'ha' : 'm²'} {es ? 'área estimada' : 'estimated area'}</p></div>
