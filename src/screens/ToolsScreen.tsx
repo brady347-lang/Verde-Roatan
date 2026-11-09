@@ -518,6 +518,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     const lastPoint = points[points.length - 1];
     lastAcceptedFixRef.current = lastPoint ? { ...lastPoint } : null;
     try {
+      // Capacitor 7.1 uses `timeout` as the default Android watch interval; keep it short for walking.
       const nativeWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 5000, minimumUpdateInterval: 1000 };
       const webWatchOptions = { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 };
       if (Capacitor.isNativePlatform()) {
@@ -563,7 +564,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           if (!trackingActiveRef.current || gpsHasFirstFixRef.current) return;
           setTrackingStatus(es ? 'GPS sigue buscando señal. Mantén RootWise abierto, activa Ubicación precisa y prueba al aire libre.' : 'GPS is still waiting for a fix. Keep RootWise open, enable Precise location and try outdoors.');
           setGpsError(es ? 'Todavía no se recibió una posición GPS. Comprueba Ubicación y vuelve a intentarlo en un espacio abierto.' : 'No GPS position has arrived yet. Check Location and try again in an open area.');
-        }, 30000);
+        }, 50000);
       }
     } catch (error) {
       trackingActiveRef.current = false;
