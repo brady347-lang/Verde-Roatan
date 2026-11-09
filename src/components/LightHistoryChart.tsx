@@ -41,9 +41,10 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
   const bottom = 28;
   const innerW = chartW - left - right;
   const innerH = chartH - top - bottom;
-  const dataRange = Math.max(100, max - min);
-  const yMin = Math.max(0, min - dataRange * 0.12);
-  const yMax = Math.max(yMin + 100, max + dataRange * 0.12);
+  // Lux is an absolute quantity: anchor the vertical axis at zero so autoscaling
+  // cannot visually exaggerate ordinary changes in illumination.
+  const yMin = 0;
+  const yMax = Math.max(100, Math.ceil(max * 1.1 / 100) * 100);
   const firstTimestamp = visible[0]?.timestamp ?? 0;
   const timeSpan = Math.max(1, (visible[visible.length - 1]?.timestamp ?? firstTimestamp) - firstTimestamp);
   const coords = visible.map(sample => ({
@@ -58,7 +59,7 @@ export const LightHistoryChart: React.FC<Props> = ({ readings, lang, recording =
       <div className="flex items-center justify-between gap-2">
         <div>
           <b className="text-sm">{es ? 'Historial de luz en vivo' : 'Live light history'}</b>
-          <p className="text-[10px] text-[var(--ink-soft)]">{es ? 'Lecturas guardadas localmente durante la sesión' : 'Readings saved locally during this session'}</p>
+          <p className="text-[10px] text-[var(--ink-soft)]">{es ? 'Lux suavizado para coincidir con la lectura principal; el valor crudo se conserva por separado' : 'Smoothed lux to match the main reading; raw sensor values are retained separately'}</p>
         </div>
         <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${recording ? 'bg-emerald-100 text-emerald-800' : 'bg-[var(--surface-2)] text-[var(--ink-soft)]'}`}>
           {recording ? (es ? 'GRABANDO' : 'RECORDING') : (es ? 'PAUSADO' : 'PAUSED')}
