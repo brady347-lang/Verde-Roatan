@@ -63,6 +63,8 @@ interface AdminOrderCommandCenterProps {
   suppliers: RegisteredSupplier[];
   formatMoney: (val: number, cur: string) => React.ReactNode;
   exchangeRateHnl: number;
+  dataSyncStatus: 'idle' | 'loading' | 'ready' | 'error';
+  dataSyncError: string;
 }
 
 export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = ({
@@ -79,7 +81,9 @@ export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = (
   onMarkAllNotificationsRead,
   suppliers,
   formatMoney,
-  exchangeRateHnl
+  exchangeRateHnl,
+  dataSyncStatus,
+  dataSyncError
 }) => {
   // Command Center Navigation Tabs
   const [activeTab, setActiveTab] = useState<'orders' | 'transactions' | 'notifications' | 'reports'>('orders');
@@ -215,6 +219,22 @@ export const AdminOrderCommandCenter: React.FC<AdminOrderCommandCenterProps> = (
 
   return (
     <div className="flex flex-col gap-4">
+      {dataSyncStatus === 'loading' && (
+        <div role="status" className="rounded-xl border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-[11px] text-[var(--ink-soft)]">
+          Synchronizing orders, supplier requests, financial records, and notifications with Supabase…
+        </div>
+      )}
+      {dataSyncStatus === 'ready' && (
+        <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800">
+          Live administrator data synchronized with Supabase.
+        </div>
+      )}
+      {dataSyncStatus === 'error' && (
+        <div role="alert" className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+          <b>Dashboard data is not fully synchronized.</b> Cached information may be stale; do not use it as the current operational record until synchronization succeeds.
+          <p className="mt-1 break-words">{dataSyncError}</p>
+        </div>
+      )}
       {/* Central Command Header */}
       <div className="bg-[var(--surface-2)] border border-[var(--line)] rounded-3xl p-4 flex flex-col gap-3 shadow-xs">
         <div className="flex items-center justify-between">
