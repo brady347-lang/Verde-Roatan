@@ -12,7 +12,7 @@ for (const fragment of [
   'has_any_explicit_split = supplied_splits.ne("").any()',
   'has_all_explicit_splits = supplied_splits.ne("").all()',
   'has_any_explicit_split and not has_all_explicit_splits',
-  'partially populated split columns must fail',
+  'The split column is partially populated.',
   'result.groupby("observation_group")["split"].nunique()',
   'An observation_group appears in more than one split',
   'Deterministic group split within each species'
