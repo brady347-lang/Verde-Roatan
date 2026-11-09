@@ -54,11 +54,12 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const [areaView, setAreaView] = useState<'map' | 'plot'>('map');
   const [lightSamples, setLightSamples] = useState<LightReadingSample[]>([]);
   const [lightRecording, setLightRecording] = useState(false);
+  const [lightStorageError, setLightStorageError] = useState('');
   const lightSessionIdRef = useRef<string | null>(null);
   const lastLightSampleAtRef = useRef(0);
   useEffect(() => {
     let active = true;
-    listLightReadings(10000).then(rows => { if (active) setLightSamples(rows); }).catch(error => console.warn('Light history is unavailable on this device.', error));
+    listLightReadings(10000).then(rows => { if (active) setLightSamples(rows); }).catch(error => { if (active) setLightStorageError(es ? 'No se pudo abrir el historial local de luz en este dispositivo.' : 'Could not open local light history on this device.'); console.warn('Light history is unavailable on this device.', error); });
     return () => { active = false; };
   }, []);
   useEffect(() => {
@@ -199,7 +200,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     const fix = trackingActiveRef.current ? lastAcceptedFixRef.current : null;
     const sample: LightReadingSample = { id: sessionId + ':' + timestamp, sessionId, timestamp, lux: Math.max(0, luxValue), method, ...(fix ? { latitude: fix.lat, longitude: fix.lon, accuracy: fix.accuracy } : {}) };
     setLightSamples(current => [...current.slice(-9999), sample]);
-    void saveLightReading(sample).catch(error => console.warn('Could not save light reading locally.', error));
+    void saveLightReading(sample).catch(error => { setLightStorageError(es ? 'La lectura está en vivo, pero no se pudo guardar en el dispositivo.' : 'The reading is live, but could not be saved on this device.'); console.warn('Could not save light reading locally.', error); });
   };
 
   const startCameraFallback = async () => {
@@ -774,6 +775,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
           {sensorStatus && lightRecording && <p className="mt-2 text-[10px] text-[var(--ink-soft)]">{sensorStatus}</p>}
           <video ref={cameraVideoRef} autoPlay muted playsInline className={`mt-2 aspect-video w-full rounded-xl bg-black object-cover ${cameraFallbackActive ? '' : 'hidden'}`} />
           <canvas ref={cameraCanvasRef} className="hidden" />
+          {lightStorageError && <p role="alert" className="mt-2 text-[10px] text-amber-700">{lightStorageError}</p>}
           {(lightRecording || lightSamples.length > 0) && <div className="mt-3"><LightHistoryChart readings={lightSamples.filter(sample => !lightSessionIdRef.current || sample.sessionId === lightSessionIdRef.current)} lang={lang} recording={lightRecording} /></div>}
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2"><button disabled={gpsBusy || tracking} onClick={capturePoint} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><MapPin className="mr-1 inline h-4 w-4" />{es ? 'Capturar punto manual' : 'Add manual point'}</button><button onClick={() => { setPoints([]); setEditingPlotId(null); setPlotName(''); setPlotNotes(''); setMaterialType(''); setSelectedMaterialId(''); setSelectedSodId(''); }} disabled={!points.length || gpsBusy || tracking} className="rounded-xl border border-[var(--line)] px-3 py-2 text-xs font-bold disabled:opacity-40"><RotateCcw className="mr-1 inline h-4 w-4" />{es ? 'Reiniciar' : 'Reset'}</button></div>
@@ -827,6 +829,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
 
         <div className="mt-2 grid grid-cols-2 gap-2"><button onClick={startLightSensor} className="rounded-xl bg-[var(--palm)] px-3 py-3 text-xs font-bold text-white"><Activity className="mr-1 inline h-4 w-4" />{es ? 'Leer sensor' : 'Read sensor'}</button><button onClick={stopLightSensor} className="rounded-xl border border-[var(--line)] px-3 py-3 text-xs font-bold">{es ? 'Detener sensor' : 'Stop sensor'}</button></div>
         {sensorStatus && <p className="mt-2 text-xs text-[var(--ink-soft)]" role="status">{sensorStatus}</p>}
+        {lightStorageError && <p role="alert" className="mt-2 text-xs text-amber-700">{lightStorageError}</p>}
         <div className="mt-3"><LightHistoryChart readings={lightSamples.filter(sample => !lightSessionIdRef.current || sample.sessionId === lightSessionIdRef.current)} lang={lang} recording={lightRecording} /></div>
         <div className="mt-3 rounded-2xl border border-[var(--line)] p-3">
           <div className="flex items-center gap-2"><Camera className="h-4 w-4 text-[var(--palm)]" /><b className="text-sm">{es ? 'Calibración de cámara' : 'Camera calibration'}</b></div>
