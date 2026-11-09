@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 const read = path => readFileSync(new URL(path, import.meta.url), 'utf8');
 const api = read('./api.ts');
+const app = read('../App.tsx');
 const supplier = read('../components/SupplierOnboardingPanel.tsx');
 const migration = read('../../supabase/migrations/20261109000400_publish_only_approved_supplier_products.sql');
 
@@ -14,6 +15,10 @@ assert.match(api, /created_by: userId/);
 assert.match(api, /function tokenUserId\(token: string\)/);
 assert.match(api, /productImageStoragePath\(userId, id,/);
 assert.match(api, /productImageStoragePath\(tokenUserId\(token\), productId,/);
+assert.match(app, /Starter entries \(for example p-areca\) are local-only/);
+assert.match(app, /targetItem = await saveCatalogItemWithAdminSession\(existingItem\)/);
+assert.match(app, /uploadCatalogPhoto\(targetItem\.id, file, session\.access_token\)/);
+assert.match(app, /String\(item\.id\) === String\(productId\) \? targetItem : item/);
 assert.match(api, /current\.is_active === true/);
 assert.match(api, /approvedSupplierItems/);
 assert.match(api, /productReadSucceeded && current/);
