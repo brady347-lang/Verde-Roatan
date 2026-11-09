@@ -165,7 +165,7 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
     setCameraEstimatedLux(null);
   };
   const startCameraFallback = async () => {
-    stopCameraCalibration();
+    stopCameraFallback();
     sensorRef.current?.stop();
     sensorRef.current = null;
     if (sensorTimeoutRef.current) window.clearTimeout(sensorTimeoutRef.current);
