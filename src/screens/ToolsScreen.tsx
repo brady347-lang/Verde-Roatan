@@ -200,6 +200,12 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       video.srcObject = null;
       throw error;
     }
+    if (requestGeneration !== cameraRequestGenerationRef.current) {
+      stream.getTracks().forEach(track => track.stop());
+      if (cameraStreamRef.current === stream) cameraStreamRef.current = null;
+      if (video.srcObject === stream) video.srcObject = null;
+      return;
+    }
     setCameraCalibrationOpen(false);
     setCameraFallbackActive(true);
     setLiveLux(null);
@@ -250,7 +256,13 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
       setCameraSamples([]);
       setCameraReferenceLux('');
       setCameraStatus(es ? 'Cámara lista. Sigue cada paso.' : 'Camera ready. Follow each step.');
-      window.setTimeout(() => { if (cameraVideoRef.current) { cameraVideoRef.current.srcObject = stream; void cameraVideoRef.current.play().catch(() => undefined); } }, 0);
+      window.setTimeout(() => {
+        if (requestGeneration !== cameraRequestGenerationRef.current) return;
+        if (cameraVideoRef.current) {
+          cameraVideoRef.current.srcObject = stream;
+          void cameraVideoRef.current.play().catch(() => undefined);
+        }
+      }, 0);
     } catch (error) {
       const name = error instanceof Error ? error.name : '';
       setCameraStatus(name === 'NotAllowedError' || name === 'SecurityError'
