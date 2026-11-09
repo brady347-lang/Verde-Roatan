@@ -47,7 +47,7 @@ export function evaluateFix(previous: (TrackPoint & { timestamp?: number }) | un
   const distance = distanceMeters(previous, fix);
   // Do not turn sub-uncertainty GPS jitter into extra boundary vertices. As reported
   // uncertainty grows, require a little more displacement before recording a point.
-  const uncertaintySpacing = (previous.accuracy + fix.accuracy) * 0.25;
+  const uncertaintySpacing = (previous.accuracy + fix.accuracy) * 0.35;
   if (distance < Math.max(MIN_POINT_SPACING_M, uncertaintySpacing)) return { accept: false, reason: 'duplicate' };
   if (previous.timestamp !== undefined && fix.timestamp !== undefined) {
     const elapsedMs = fix.timestamp - previous.timestamp;
