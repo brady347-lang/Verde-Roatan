@@ -64,17 +64,26 @@ public class RootWiseBotanicalMLPlugin extends Plugin {
             JSObject result = new JSObject();
             boolean modelReady = assetExists(MODEL_ASSET);
             boolean catalogReady = isReferenceCatalogReady();
+            boolean runtimeReady = false;
+            if (modelReady && catalogReady) {
+                try {
+                    ensureReady(); // also validates real input/output tensor shapes and types
+                    runtimeReady = interpreter != null;
+                } catch (Exception error) {
+                    initializationError = error.getMessage();
+                }
+            }
             result.put("available", true);
-            result.put("modelReady", modelReady);
+            result.put("modelReady", modelReady && runtimeReady);
             result.put("referenceCatalogReady", catalogReady);
-            result.put("ready", modelReady && catalogReady);
+            result.put("ready", modelReady && catalogReady && runtimeReady);
             result.put("modelVersion", MODEL_VERSION);
             if (!modelReady) {
                 result.put("reason", "The trained LiteRT model asset is not installed.");
             } else if (!catalogReady) {
                 result.put("reason", "A model-aligned botanical reference catalog is not installed or failed validation.");
-            } else if (initializationError != null) {
-                result.put("reason", initializationError);
+            } else if (!runtimeReady) {
+                result.put("reason", initializationError == null ? "The LiteRT runtime could not be initialized." : initializationError);
             }
             call.resolve(result);
         });
