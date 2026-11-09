@@ -2572,6 +2572,7 @@ export default function App() {
 
         {/* Plant Modal (Add or Edit) */}
         <PlantEditModal
+          key={String(plantModal.isOpen) + ':' + (plantModal.plant?.id || 'new')}
           lang={lang}
           isOpen={plantModal.isOpen}
           initialPlant={plantModal.plant}
@@ -2583,6 +2584,7 @@ export default function App() {
 
         {/* Product Modal (Add or Edit) */}
         <ProductEditModal
+          key={String(productModal.isOpen) + ':' + (productModal.product?.id || 'new')}
           lang={lang}
           isOpen={productModal.isOpen}
           initialProduct={productModal.product}
