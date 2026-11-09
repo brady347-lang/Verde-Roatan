@@ -3,19 +3,28 @@
 
 export type TrackPoint = { lat: number; lon: number; accuracy: number };
 
-export const MAX_ACCEPTED_ACCURACY_M = 30;
+// A phone fix worse than 10 m is not suitable for drawing a small property boundary.
+// This is a quality gate, not a claim of survey-grade accuracy.
+export const MAX_ACCEPTED_ACCURACY_M = 10;
 export const MIN_POINT_SPACING_M = 2.5;
 // A person walking or jogging a boundary will not exceed this; faster implies a GPS jump.
 export const MAX_WALK_SPEED_MPS = 6;
-const EARTH_RADIUS_M = 6371000;
+const EARTH_MEAN_RADIUS_M = 6371008.8;
+const WGS84_A = 6378137;
+const WGS84_E2 = 6.69437999014e-3;
 
 export const toRadians = (value: number) => value * Math.PI / 180;
 
+/** Great-circle distance on the mean Earth sphere (stable for short field edges and antimeridian crossings). */
 export function distanceMeters(a: { lat: number; lon: number }, b: { lat: number; lon: number }): number {
-  const latMean = toRadians((a.lat + b.lat) / 2);
-  const dx = toRadians(b.lon - a.lon) * EARTH_RADIUS_M * Math.cos(latMean);
-  const dy = toRadians(b.lat - a.lat) * EARTH_RADIUS_M;
-  return Math.hypot(dx, dy);
+  const lat1 = toRadians(a.lat);
+  const lat2 = toRadians(b.lat);
+  const dLat = lat2 - lat1;
+  const dLon = toRadians(b.lon - a.lon);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLon = Math.sin(dLon / 2);
+  const haversine = sinLat * sinLat + Math.cos(lat1) * Math.cos(lat2) * sinLon * sinLon;
+  return 2 * EARTH_MEAN_RADIUS_M * Math.atan2(Math.sqrt(haversine), Math.sqrt(Math.max(0, 1 - haversine)));
 }
 
 export type FixDecision =
@@ -46,16 +55,31 @@ export function evaluateFix(previous: (TrackPoint & { timestamp?: number }) | un
 
 export function measurePolygon(points: TrackPoint[]): { area: number; perimeter: number } {
   if (points.length < 3) return { area: 0, perimeter: 0 };
+
+  // Project the small field around its centroid onto a WGS84 local tangent plane.
+  // Meridional and prime-vertical radii account for Earth's ellipsoidal shape; using
+  // raw degrees or a fixed metres-per-degree constant creates latitude-dependent bias.
   const lat0 = toRadians(points.reduce((sum, point) => sum + point.lat, 0) / points.length);
-  const metersPerDegreeLat = 111132.92;
-  const metersPerDegreeLon = 111412.84 * Math.cos(lat0);
-  const xy = points.map((point) => ({ x: point.lon * metersPerDegreeLon, y: point.lat * metersPerDegreeLat }));
+  const lon0 = points.reduce((sum, point) => sum + point.lon, 0) / points.length;
+  const sinLat = Math.sin(lat0);
+  const denominator = Math.sqrt(1 - WGS84_E2 * sinLat * sinLat);
+  const primeVerticalRadius = WGS84_A / denominator;
+  const meridionalRadius = WGS84_A * (1 - WGS84_E2) / (denominator ** 3);
+  const xy = points.map((point) => {
+    // Normalize longitude delta so a small plot crossing ±180° remains local.
+    const deltaLon = ((point.lon - lon0 + 540) % 360) - 180;
+    return {
+      x: toRadians(deltaLon) * primeVerticalRadius * Math.cos(lat0),
+      y: toRadians(point.lat - points.reduce((sum, item) => sum + item.lat, 0) / points.length) * meridionalRadius
+    };
+  });
+
   let twiceArea = 0;
   let perimeter = 0;
   xy.forEach((point, index) => {
     const next = xy[(index + 1) % xy.length];
     twiceArea += point.x * next.y - next.x * point.y;
-    perimeter += Math.hypot(next.x - point.x, next.y - point.y);
+    perimeter += distanceMeters(points[index], points[(index + 1) % points.length]);
   });
   return { area: Math.abs(twiceArea) / 2, perimeter };
 }
