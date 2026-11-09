@@ -234,12 +234,6 @@ export default {
           return jsonResponse(413, { status: 'error', error: 'The review photo must be smaller than 12 MB.' });
         }
       }
-      if (pathname === '/' || pathname === '/analyze' || pathname === '/api/analyze' || pathname === '/refine' || pathname === '/api/refine') {
-        const contentLength = Number(request.headers.get('content-length') || 0);
-        if (Number.isFinite(contentLength) && contentLength > 17 * 1024 * 1024) {
-          return jsonResponse(413, { status: 'error', error: 'The analysis image must be smaller than 12 MB.' });
-        }
-      }
       const body = await request.json().catch(() => ({}));
       if (pathname === '/internal/evidence-review') return await handleInternalEvidenceReview(request, body, env);
 
@@ -298,10 +292,7 @@ export default {
       }
 
       // Route 3: Initial Identification / Pest Diagnosis
-      if (pathname === '/' || pathname === '/analyze' || pathname === '/api/analyze') {
-        return await handleAnalyze(body, apiKey, env);
-      }
-      return jsonResponse(404, { status: 'error', error: 'Route not found.' });
+      return await handleAnalyze(body, apiKey, env);
     } catch (err) {
       return new Response(
         JSON.stringify({ status: 'error', error: err.message || 'Worker processing failed' }),
@@ -413,50 +404,23 @@ async function crossCheckBotanicalIdentification(parsed, env) {
  */
 async function handleAnalyze(body, apiKey, env) {
   const { mode = 'plant', image, lang = 'en' } = body;
-  if (typeof image !== 'string' || !image.trim()) {
+  if (!image) {
     return new Response(JSON.stringify({ status: 'error', error: 'Missing image payload' }), {
       status: 400,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-    });
-  }
-  if (image.length > 16 * 1024 * 1024) {
-    return new Response(JSON.stringify({ status: 'error', error: 'The analysis image must be smaller than 12 MB.' }), {
-      status: 413,
       headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
     });
   }
 
   let mimeType = 'image/jpeg';
   let base64Data = image;
-  if (image.startsWith('data:')) {
-    const match = image.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/i);
-    if (!match) {
-      return new Response(JSON.stringify({ status: 'error', error: 'Unsupported or malformed image data.' }), {
-        status: 400,
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-      });
+  if (image.includes(',')) {
+    const match = image.match(/^data:(image\/[a-zA-Z0-9.+_-]+);base64,(.+)$/);
+    if (match) {
+      mimeType = match[1];
+      base64Data = match[2];
+    } else {
+      base64Data = image.split(',')[1];
     }
-    mimeType = match[1].toLowerCase();
-    base64Data = match[2];
-  } else if (!/^[A-Za-z0-9+/]+={0,2}$/.test(base64Data)) {
-    return new Response(JSON.stringify({ status: 'error', error: 'Malformed base64 image data.' }), {
-      status: 400,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-    });
-  }
-
-  if (base64Data.length % 4 === 1) {
-    return new Response(JSON.stringify({ status: 'error', error: 'Malformed base64 image data.' }), {
-      status: 400,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-    });
-  }
-  const decodedBytes = Math.floor(base64Data.length * 3 / 4) - (base64Data.endsWith('==') ? 2 : base64Data.endsWith('=') ? 1 : 0);
-  if (decodedBytes <= 0 || decodedBytes > 12 * 1024 * 1024) {
-    return new Response(JSON.stringify({ status: 'error', error: 'The analysis image must be smaller than 12 MB.' }), {
-      status: 413,
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' }
-    });
   }
 
   const prompt =
