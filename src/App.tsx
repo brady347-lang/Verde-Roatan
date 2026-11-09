@@ -34,7 +34,7 @@ import {
   SUPABASE_PUBLISHABLE_KEY,
   SUPABASE_URL
 } from './data/initialData';
-import { mergeGardenItems, pullGarden, pushGarden } from './services/gardenSync';
+import { mergeGardenItems, pullGarden, pushGarden, readLocalGarden, writeLocalGarden } from './services/gardenSync';
 import {
   BchRateResponse,
   analyzeBotanicalImage,
@@ -117,6 +117,15 @@ import {
 
 const TAB_ORDER: TabType[] = ['home', 'explore', 'id', 'my-rootwise', 'tools', 'plants', 'svc', 'request', 'account'];
 
+function getStoredSessionUserId(): string | null {
+  try {
+    const stored = JSON.parse(localStorage.getItem('verde_auth_session') || 'null');
+    return typeof stored?.user?.id === 'string' && stored.user.id ? stored.user.id : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
   // --- Persistent State ---
   const [lang, setLang] = useState<Language>(() => {
@@ -147,13 +156,7 @@ export default function App() {
       return [];
     }
   });
-  const [garden, setGarden] = useState<GardenItem[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem('verde_garden') || '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [garden, setGarden] = useState<GardenItem[]>(() => readLocalGarden<GardenItem>(getStoredSessionUserId()));
   const [customImages, setCustomImages] = useState<Record<string, string>>(() => {
     try {
       return JSON.parse(localStorage.getItem('verde_custom_images') || '{}');
@@ -341,27 +344,9 @@ export default function App() {
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [orderResult, setOrderResult] = useState<OrderCheckoutResult | null>(null);
 
-  const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>(() => {
-    try {
-      const saved = localStorage.getItem('verde_active_orders');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-      return loadSavedOrders();
-    } catch {
-      return loadSavedOrders();
-    }
-  });
+  const [activeOrders, setActiveOrders] = useState<ActiveOrder[]>(() => loadSavedOrders());
 
-  const [orderHistory, setOrderHistory] = useState<ActiveOrder[]>(() => {
-    try {
-      const saved = localStorage.getItem('verde_order_history');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [orderHistory, setOrderHistory] = useState<ActiveOrder[]>([]);
 
   const [transactions, setTransactions] = useState<TransactionRecord[]>(() => {
     return loadSavedTransactions();
@@ -377,21 +362,8 @@ export default function App() {
 
   // Persistent Storage Sync
   useEffect(() => {
-    try {
-      localStorage.setItem('verde_active_orders', JSON.stringify(activeOrders));
-      saveOrders(activeOrders);
-    } catch (e) {
-      console.warn('Failed saving active orders', e);
-    }
+    saveOrders(activeOrders);
   }, [activeOrders]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('verde_order_history', JSON.stringify(orderHistory));
-    } catch (e) {
-      console.warn('Failed saving order history', e);
-    }
-  }, [orderHistory]);
 
   useEffect(() => {
     saveTransactions(transactions);
@@ -497,8 +469,8 @@ export default function App() {
   }, [cart]);
 
   useEffect(() => {
-    safeSetItem('verde_garden', JSON.stringify(garden));
-  }, [garden]);
+    writeLocalGarden(session?.user?.id, garden);
+  }, [garden, session?.user?.id]);
 
   // Private garden sync (owner-only table). Best effort: the phone copy always remains the source of truth for photos.
   const gardenSyncReady = useRef(false);
