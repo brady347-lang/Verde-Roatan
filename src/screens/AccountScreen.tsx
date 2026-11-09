@@ -114,6 +114,8 @@ interface AccountScreenProps {
   onMarkAllNotificationsRead?: () => void;
   exchangeRateHnl?: number;
   onSendOrderMessage?: (orderId: string, message: string, senderId: string, senderName: string) => void;
+  adminSyncStatus?: 'idle' | 'loading' | 'ready' | 'error';
+  adminSyncError?: string;
 }
 
 /** Garden thumbnail: reads the photo from IndexedDB, falling back to a legacy inline photo. */
@@ -168,7 +170,9 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
   onMarkNotificationRead = () => {},
   onMarkAllNotificationsRead = () => {},
   exchangeRateHnl = 26,
-  onSendOrderMessage = () => {}
+  onSendOrderMessage = () => {},
+  adminSyncStatus = 'idle',
+  adminSyncError = ''
 }) => {
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'admin' | 'temporary'>('login');
   const [accountRole, setAccountRole] = useState<'customer' | 'nursery_owner' | 'supplier' | 'unknown'>('customer');
@@ -551,6 +555,8 @@ export const AccountScreen: React.FC<AccountScreenProps> = ({
                     suppliers={registeredSuppliers}
                     formatMoney={formatMoney}
                     exchangeRateHnl={exchangeRateHnl}
+                    dataSyncStatus={adminSyncStatus}
+                    dataSyncError={adminSyncError}
                   />
                 )}
 
