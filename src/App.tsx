@@ -1647,19 +1647,36 @@ export default function App() {
       return;
     }
     try {
-      showToast('Compressing and uploading photo to Supabase…');
-      const publicUrl = await uploadCatalogPhoto(productId, file, session.access_token);
-      setCatalog((prev) => prev.map((item) =>
-        item.id === productId ? { ...item, image_url: publicUrl } : item
+      showToast('Preparing catalog record and uploading photo…');
+      const existingItem = catalog.find(item => String(item.id) === String(productId));
+      if (!existingItem) throw new Error('This catalog item is no longer loaded. Refresh the catalog and try again.');
+
+      // Starter entries (for example p-areca) are local-only. The live Supabase
+      // project has no public.catalog_items table; promote the item into products
+      // first, then upload against its database UUID.
+      let targetItem = existingItem;
+      if (!isDatabaseCatalogId(productId)) {
+        targetItem = await saveCatalogItemWithAdminSession(existingItem);
+        setCatalog(prev => prev.map(item =>
+          String(item.id) === String(productId) ? targetItem : item
+        ));
+      }
+
+      const publicUrl = await uploadCatalogPhoto(targetItem.id, file, session.access_token);
+      const savedWithPhoto = { ...targetItem, image_url: publicUrl };
+      setCatalog(prev => prev.map(item =>
+        String(item.id) === String(productId) || String(item.id) === String(targetItem.id)
+          ? savedWithPhoto
+          : item
       ));
-      setCustomImages((prev) => {
+      setCustomImages(prev => {
         const next = { ...prev };
         delete next[productId];
+        delete next[targetItem.id];
         return next;
       });
-      const updatedItem = catalog.find(item => String(item.id) === String(productId));
-      if (updatedItem && session?.access_token) {
-        void enqueueCatalogBotanicalEvidence(session.access_token, { ...updatedItem, image_url: publicUrl })
+      if (session?.access_token) {
+        void enqueueCatalogBotanicalEvidence(session.access_token, savedWithPhoto)
           .catch(error => console.warn('Botanical evidence queue submission failed:', error));
       }
       showToast('Photo uploaded and catalog record updated in Supabase.');
