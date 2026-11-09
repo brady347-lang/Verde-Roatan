@@ -7,6 +7,7 @@ const checkoutMigration = readFileSync(new URL('../../supabase/pending_migration
 const adminOrders = readFileSync(new URL('../components/AdminOrderCommandCenter.tsx', import.meta.url), 'utf8');
 
 assert.match(app, /p_order_id:\s*orderForSync\.id\s*,/, 'order status RPC must receive the UUID primary key');
+assert.match(app, /serverNextStatus === currentForSync/, 'the client must reject repeated same-status submissions before the legacy RPC writes duplicates');
 assert.doesNotMatch(app, /p_order_id:\s*orderForSync\.order_id\s*,/, 'human-readable order numbers must never be passed to the UUID RPC');
 assert.match(app, /order_placed:\s*'payment_pending'/, 'default progression must not mark an unpaid order as paid');
 assert.match(app, /currentCanonical === 'order_placed'\) nextCanonical = 'payment_pending'/, 'local status projection must match the server progression');
