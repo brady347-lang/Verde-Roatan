@@ -11,7 +11,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from sklearn.model_selection import GroupShuffleSplit
 from tensorflow import keras
 from tensorflow.keras import layers
 
@@ -89,7 +88,7 @@ def assign_group_splits(frame: pd.DataFrame, seed: int) -> pd.DataFrame:
     return pd.concat(parts, ignore_index=True)
 
 
-def make_dataset(frame: pd.DataFrame, class_to_index: dict[str, int], training: bool) -> tf.data.Dataset:
+def make_dataset(frame: pd.DataFrame, class_to_index: dict[str, int], training: bool, batch_size: int) -> tf.data.Dataset:
     paths = frame["image_path"].tolist()
     labels = frame["species_id"].map(class_to_index).to_numpy(dtype=np.int32)
     ds = tf.data.Dataset.from_tensor_slices((paths, labels))
@@ -111,7 +110,7 @@ def make_dataset(frame: pd.DataFrame, class_to_index: dict[str, int], training: 
     ds = ds.map(decode, num_parallel_calls=tf.data.AUTOTUNE)
     if training:
         ds = ds.shuffle(min(len(frame), 4096), reshuffle_each_iteration=True)
-    return ds.batch(32).prefetch(tf.data.AUTOTUNE)
+    return ds.batch(batch_size).prefetch(tf.data.AUTOTUNE)
 
 
 def build_models(class_count: int):
@@ -169,9 +168,9 @@ def main() -> None:
     )
     (args.output / "label_map.json").write_text(json.dumps(label_map, indent=2), encoding="utf-8")
 
-    train_ds = make_dataset(frame[frame.split == "train"], class_to_index, True)
-    val_ds = make_dataset(frame[frame.split == "validation"], class_to_index, False)
-    test_ds = make_dataset(frame[frame.split == "test"], class_to_index, False)
+    train_ds = make_dataset(frame[frame.split == "train"], class_to_index, True, args.batch_size)
+    val_ds = make_dataset(frame[frame.split == "validation"], class_to_index, False, args.batch_size)
+    test_ds = make_dataset(frame[frame.split == "test"], class_to_index, False, args.batch_size)
 
     model, encoder, backbone = build_models(len(classes))
     model.compile(
