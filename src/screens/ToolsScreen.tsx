@@ -152,6 +152,14 @@ export const ToolsScreen: React.FC<Props> = ({ lang, catalog }) => {
   const cameraVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  useEffect(() => {
+    const video = cameraVideoRef.current;
+    const stream = cameraStreamRef.current;
+    if (video && stream && video.srcObject !== stream) {
+      video.srcObject = stream;
+      void video.play().catch(() => undefined);
+    }
+  }, [tool, cameraFallbackActive, cameraCalibrationOpen]);
   const [cameraCalibrationOpen, setCameraCalibrationOpen] = useState(false);
   const [cameraStageIndex, setCameraStageIndex] = useState(0);
   const [cameraSamples, setCameraSamples] = useState<CameraCalibrationSample[]>([]);
