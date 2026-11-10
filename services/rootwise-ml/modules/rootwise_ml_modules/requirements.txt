@@ -1,0 +1,23 @@
+# Core (needed by every module that touches images / vectors)
+numpy>=1.26
+Pillow>=10.0
+
+# Optional: image_quality uses OpenCV if present (falls back to NumPy otherwise)
+opencv-python-headless>=4.8
+
+# Uncertainty calibration (Platt / isotonic) and splitting utilities
+scikit-learn>=1.3
+
+# Needed only for Keras embedding model, training and TFLite export
+tensorflow>=2.16            # includes Keras and tf.lite; Python 3.11+
+
+# Optional LiteRT runtime for inference/validation of .tflite files (alternative to tf.lite)
+# ai-edge-litert>=1.0
+
+# Optional: HTTP wrapper in inference/fastapi_app.py
+# fastapi>=0.110
+# uvicorn>=0.27
+# python-multipart>=0.0.9
+
+# Tests
+pytest>=8.0
