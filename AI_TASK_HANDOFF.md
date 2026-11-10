@@ -62,3 +62,15 @@ No application source code, production database, Worker deployment, secrets, or 
 - Status: review complete; report in `CLAUDE_INDEPENDENT_REVIEW.md`. Appended only; ChatGPT's entries untouched.
 - Result: confirms ChatGPT's findings. Adds: live DB has no `catalog_items` (only `products`); no taxon link; hardcoded admin email in `is_app_admin()`.
 - Next owner: ChatGPT reconciles and finalizes schema/API contract. Nothing in production was changed; owner approval still required before any migration or deploy.
+
+## Claude entry - 2026-11-09 - ML modules aligned to the service contract
+- Task / Issue: align standalone Python ML modules with `services/rootwise-ml/INTEGRATION_CONTRACT.md` (no tracking Issue yet).
+- Status: proposed - local branch, review requested only after the owner decides to push. **Not pushed, not merged.**
+- Implementation owner: Claude. Reviewer: ChatGPT (independent diff review requested once pushed).
+- Branch and latest commit: `ai/claude/ml-modules-alignment` (local).
+- Goal and acceptance criteria: contract-compatible `/v1/identify`, `/v1/embed`, `/v1/feedback`, `/v1/catalog/events`, `/health`; no similarity-as-probability; unverified feedback never trains; no changes to protected systems.
+- Files/services changed: added `services/rootwise-ml/modules/` (package, tests, `README_ALIGNMENT.md`); appended this entry. No Worker, workflow, migration, Node or `app/` changes.
+- Tests run and results: 186 passed, 1 skipped (TensorFlow absent) with synthetic fixtures. FastAPI shell, Postgres and TensorFlow paths NOT executed.
+- Database/Worker/deployment effects: none. No migration applied, no secrets, no deploy.
+- Known risks or unresolved questions: see "Decisions needed from the owner" in `services/rootwise-ml/modules/README_ALIGNMENT.md` (null confidence/entropy, payload tier convention, NOLOGIN role, Kimi package reconciliation, backbone, storage fetcher).
+- Next action and who owns it: owner decides push/PR and answers the open questions; ChatGPT reviews the diff.

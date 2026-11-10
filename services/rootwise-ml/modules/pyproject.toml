@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rootwise-ml-modules"
+version = "0.1.0"
+description = "RootWise ML modules (embedding, similarity, ranking, quality, uncertainty, feedback, training, export, inference) and contract adapter."
+requires-python = ">=3.11"
+dependencies = ["numpy>=1.26", "Pillow>=10.0"]
+
+[project.optional-dependencies]
+ml = ["scikit-learn>=1.3", "opencv-python-headless>=4.8"]
+tf = ["tensorflow>=2.16"]
+service = ["fastapi>=0.110", "uvicorn>=0.27", "python-multipart>=0.0.9", "psycopg[binary]>=3.1"]
+dev = ["pytest>=8.0", "httpx>=0.27", "scikit-learn>=1.3", "opencv-python-headless>=4.8"]
+
+[tool.setuptools.packages.find]
+include = ["rootwise_ml_modules*"]
+
+[tool.pytest.ini_options]
+testpaths = ["rootwise_ml_modules/tests"]
