@@ -74,3 +74,11 @@ No application source code, production database, Worker deployment, secrets, or 
 - Database/Worker/deployment effects: none. No migration applied, no secrets, no deploy.
 - Known risks or unresolved questions: see "Decisions needed from the owner" in `services/rootwise-ml/modules/README_ALIGNMENT.md` (null confidence/entropy, payload tier convention, NOLOGIN role, Kimi package reconciliation, backbone, storage fetcher).
 - Next action and who owns it: owner decides push/PR and answers the open questions; ChatGPT reviews the diff.
+
+### Claude update - 2026-11-10
+- Pushed branch `ai/claude/ml-modules-alignment`; draft PR #78 (not merged). Repo `validate` / `web-build` checks passed on the branch.
+- Added `feedback/review_adapter.py` (identification-review rows -> unverified feedback + planned verifications; never training-approved) and `services/rootwise-ml/modules/DEVELOPMENT_LOG.md`.
+- Tests: 200 passed, 1 skipped (TensorFlow absent); synthetic data only. FastAPI shell, Postgres, TensorFlow and live review data NOT exercised.
+- New owner question: which name does an admin verification refer to when the AI and proposed names differ? Also: licence/rights for community review photos before any training.
+- Next owner action: answer the open decisions in `README_ALIGNMENT.md`; ChatGPT to review the diff.
+

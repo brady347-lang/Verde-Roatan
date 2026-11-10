@@ -25,11 +25,12 @@ Gemini Worker, workflows, Supabase migrations, Node app or `services/rootwise-ml
 | `POST /v1/catalog/events` | Disabled (503) until a **private-storage fetcher** is supplied. When enabled: internal storage scheme only (http/https/file/data rejected), sha256 verified, embedding stored in the **pending** tier only, license required, Gemini output kept as an unverified candidate |
 | Embeddings in `rootwise_ml.image_embeddings` | Insert/exists/load-trusted implemented; fake-connection tests only |
 | Evidence-queue payload for the Knowledge Core | `service/provenance.py` builds it (keys match the Worker route); never writes to the RLS-protected tables |
+| Review-table adapter (`feedback/review_adapter.py`) | Implemented; synthetic-row tests only, not run against live data |
 | Request timeout (< Worker's 18 s) | 15 s default; FastAPI shell only, **not executed** |
 
 ## Not executed here
 FastAPI shell (`service/app.py`), real Postgres/pgvector, TensorFlow/Keras/TFLite paths, the Worker -> service call.
-Executed: 186 pytest tests pass (1 TensorFlow test skipped) - synthetic fixtures, software correctness only.
+Executed: 200 pytest tests pass (1 TensorFlow test skipped) - synthetic fixtures, software correctness only.
 
 ## Decisions needed from the owner (not assumed)
 1. **`confidence` / `entropy` are null.** The contract lists them; filling them from cosine similarity would break the "not calibrated probabilities" gate. They stay null until a calibrator is fitted on a held-out, expert-labelled set (module `uncertainty`).
@@ -39,7 +40,7 @@ Executed: 186 pytest tests pass (1 TensorFlow test skipped) - synthetic fixtures
 5. **Kimi package (`RootWise_ML_Fixed_Review_Copy.zip`) is not in the repo**, so I could not compare. Decide whether these modules become the engine behind it, replace it, or stay separate, to avoid two competing implementations.
 6. **Backbone.** The deployment gates require a benchmarked botanical model (BioCLIP/DINOv2). The MobileNetV3 baseline here is untrained for botany and is not production-grade. Any other backbone/weights needs its own `model_version`; do not reuse `rootwise_mobilenetv3_512d_v1`.
 7. **Private-storage fetcher** (which storage, credentials, URI scheme - default allowed scheme is `storage`) is not implemented. Catalog event field names are inferred from the contract's prose and need confirmation.
-8. **Approved-label source.** `feedback.export_training_manifest` consumes approved records; I did not write an adapter from the existing identification-review tables (`supabase/separate-review-db`) - not inspected in depth.
+8. **Approved-label source.** `feedback/review_adapter.py` now converts `identification_reviews` / `identification_confirmations` rows into feedback records (admin approval != verification; only `scientifically_verified` with an admin and written basis becomes `verified`; nothing is training-approved). It is tested on synthetic rows only. The review tables do not record *which name* an admin verified when the AI name and the proposed name differ, so such reviews stay unverified unless a policy is passed (`verified_label_source`). They also hold no licence, so manifests carry `license: null` until rights are cleared.
 9. **CI.** `validate.yml` has no Python job. Suggested: install `[dev]`, run `pytest services/rootwise-ml/modules`. Not added (workflow changes need approval).
 10. Rate limiting, request logging and key rotation (deployment gate 5) are left to the host / reverse proxy.
 
@@ -49,3 +50,5 @@ Executed: 186 pytest tests pass (1 TensorFlow test skipped) - synthetic fixtures
 `ROOTWISE_ML_DATABASE_URL`, `ROOTWISE_ML_INDEX_SOURCE` (`file`|`database`), `ROOTWISE_ML_MAX_IMAGE_BYTES`,
 `ROOTWISE_ML_REQUEST_TIMEOUT_S`, `ROOTWISE_ML_STORAGE_SCHEMES`, `ROOTWISE_ML_ENABLE_DOCS`. Caller side (unchanged):
 `ROOTWISE_ML_SERVICE_URL`, `ROOTWISE_ML_API_KEY`. Never expose any of them through `VITE_*`.
+
+See `DEVELOPMENT_LOG.md` for the chronological record of what was built, executed and decided.
